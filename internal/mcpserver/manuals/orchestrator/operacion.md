@@ -45,7 +45,7 @@ Es lo primero que te van a preguntar, y lo primero que necesitas para revisar cu
 | Cómo lo abre el usuario | Menú inicio → `Piumy` |
 | El tablero | `http://127.0.0.1:8092/dashboard/` |
 
-**El instalador se descarga de `https://github.com/chamilonster/Piumy/releases/latest`** — un solo `.exe`, doble clic, no pregunta nada más. Solo Windows por ahora.
+**El instalador se descarga de `https://github.com/clevercat64/Piumy/releases/latest`** — un solo `.exe`, doble clic, no pregunta nada más. Solo Windows por ahora.
 
 **Piumy es una aplicación de bandeja: al abrirla no aparece ninguna ventana**, solo un ícono al lado del reloj. Si el usuario dice "le di y no pasó nada", eso es lo esperado — lo que hay que comprobar es si el tablero responde, no si vio algo.
 

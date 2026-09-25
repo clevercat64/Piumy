@@ -28,7 +28,7 @@ Sigue los seis pasos en orden. No inventes un atajo: cada uno existe porque el a
 | Sus datos y claves | `%LOCALAPPDATA%\Piumy\secrets\` |
 | Acceso directo | Menú inicio → `Piumy` |
 
-Si esa carpeta no existe, no hay nada corriendo. **El instalador se descarga de `https://github.com/chamilonster/Piumy/releases/latest`** — un único `.exe`, se instala con doble clic y no pide nada más. Hoy solo existe instalador para Windows.
+Si esa carpeta no existe, no hay nada corriendo. **El instalador se descarga de `https://github.com/clevercat64/Piumy/releases/latest`** — un único `.exe`, se instala con doble clic y no pide nada más. Hoy solo existe instalador para Windows.
 
 Si el programa está pero no responde, arráncalo desde el menú inicio o ejecutando `%LOCALAPPDATA%\Piumy\Piumy.exe`. Es una aplicación de bandeja: al arrancar no abre ventana, se queda como ícono al lado del reloj.
 

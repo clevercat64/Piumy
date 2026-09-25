@@ -6,7 +6,7 @@ Everything runs on your machine. There are no servers in between, because there 
 
 ## Getting it
 
-You do not need this repository to use Piumy. **[Download the installer](https://github.com/chamilonster/Piumy/releases/latest)** — one `.exe`, one double click, Windows only for now.
+You do not need this repository to use Piumy. **[Download the installer](https://github.com/clevercat64/Piumy/releases/latest)** — one `.exe`, one double click, Windows only for now.
 
 This repository is the source: for reading it, auditing it, or building it yourself.
 
