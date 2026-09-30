@@ -6,9 +6,10 @@ Se actualiza en cada deploy/build junto con el relanzamiento del gateway.
 
 ---
 
-## Sin publicar
+## 0.12.2 — 2026-09-29
 
 ### Changed
+- El botón **GitHub** del tablero apunta a la cuenta nueva, `clevercat64/Piumy`.
 - **Un agente ya no necesita que le escribas para leer un grupo.** Antes, un
   agente que creaba un grupo podía escribir ahí pero no leer las respuestas
   hasta que tú escribieras. Ahora, sin un mensaje en curso, puede leer y
