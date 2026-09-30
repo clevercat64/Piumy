@@ -42,7 +42,7 @@ Orden, sin saltear:
 
 1. **Cambiar la clave del tablero.** Viene con clave de fábrica. Primer paso, no último.
 2. **Parear el teléfono** — QR. Advertirle aquí mismo: si se pierde esa sesión, hay que parear de nuevo (`operacion.md`). El número con el que se parea queda marcado dueño SOLO, sin que nadie toque nada (T12) — nada que hacer en este paso más allá de parear.
-3. **Si tiene OTRO número personal que también quiere como dueño, decírselo al sistema.** El que pareó WhatsApp ya quedó marcado solo (paso anterior) — esto es solo para un segundo número, y es manual a propósito: ningún otro número se puede adivinar.
+3. **Si tiene OTRO número personal que también quiere como dueño, se marca desde el tablero** (`set_is_boss` siempre se rechaza por MCP). El que pareó WhatsApp ya quedó marcado solo (paso anterior) — esto es solo para un segundo número, y es manual a propósito: ningún otro número se puede adivinar.
 4. **Elegir qué pasa con el que llega nuevo** — desconocido: ¿se atiende, se ignora, espera visto bueno?
 5. **Escribir las reglas** — cómo tiene que hablar el agente. Se las sacas conversando, no le pidas que las redacte.
 6. **Un chat de prueba**, con confirmación puesta, antes de soltar nada.

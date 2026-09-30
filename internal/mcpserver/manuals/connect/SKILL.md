@@ -117,7 +117,7 @@ Un despacho solo cambia las cosas **mientras está vivo** (te llegó un mensaje 
 
 - Si es de un desconocido (nivel caution/danger), durante ese turno te quedas acotado a ESE chat: no ves los demás chats ni los listados (anti-filtración). Al cerrar el turno, esa restricción termina sola.
 - Antes de contestar ese mensaje corres el ritual `get_instructions` → `unlock` → `remember`/`skip`. Es la lectura de las reglas del chat, no un permiso.
-- `set_kill_switch` es la única herramienta que solo el dueño (un despacho vivo de él) puede tocar: es el freno anti-baneo.
+- `set_kill_switch` se rechaza a todo agente, salvo el terminal principal y un despacho vivo del dueño: es el freno anti-baneo.
 
 Si algo te rechaza, lee el texto: dice qué regla aplica. `get_status` responde siempre y sirve para diagnosticar tu conexión — mira `agent_connected` y `agents`; si también falla, entonces sí es la conexión: vuelve al paso 3 (clave) y al paso 5 (identificador).
 
@@ -137,7 +137,7 @@ refusing to send: <jid> is ignored — the owner must change its status first
 
 **Lo que ya NO existe, a propósito:** hasta T65 había una whitelist del router que bloqueaba el envío a cualquier número no agregado explícitamente — el dueño la pidió sacar, tres veces, hasta que se sacó de verdad (verbatim: *"yo quierp todo en witelist... para algo esta ignorar, eso ya apaga el chat"*). Hoy todo chat está permitido por defecto; `ignorado`/`blacklist` es el único freno de envío que queda, y también el único filtro de entrada — antes un mensaje de un número no habilitado ni siquiera se guardaba; ahora se guarda y se ve, siempre.
 
-**Sobre el riesgo de baneo — información, no un candado.** Escribirle primero a números que nunca te escribieron, o mandar muchos mensajes seguidos a desconocidos, es el patrón que WhatsApp banea por mensajería masiva. Nada en el código te lo va a impedir — es responsabilidad del dueño, tal como él la reclamó (verbatim: *"si te doy una lista de numeros es mi responsabilidad"*). Como agente: tenlo en cuenta antes de escribirle primero a alguien sin despacho previo, no porque el sistema te vaya a frenar, sino porque el costo de un baneo lo paga la cuenta del dueño.
+**Sobre el riesgo de baneo — información, no un candado.** Escribirle primero a números que nunca te escribieron, o mandar muchos mensajes seguidos a desconocidos, es el patrón que WhatsApp banea por mensajería masiva. El código no lo rechaza (el governor espacia los envíos y el límite de llamadas por minuto frena las ráfagas, pero no te lo prohíben) — es responsabilidad del dueño, tal como él la reclamó (verbatim: *"si te doy una lista de numeros es mi responsabilidad"*). Como agente: tenlo en cuenta antes de escribirle primero a alguien sin despacho previo, no porque el sistema te vaya a frenar, sino porque el costo de un baneo lo paga la cuenta del dueño.
 
 ### Un rechazo del gate es la respuesta, no un obstáculo
 

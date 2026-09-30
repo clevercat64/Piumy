@@ -18,7 +18,7 @@ Si ese archivo se pierde o se corrompe: hay que **parear de nuevo con el QR**. E
 
 Usuario `admin`, clave `piumy`, sembrada al primer arranque. Cambiarla es el **primer** paso del setup.
 
-**Si el dueño la pierde después, no es un callejón sin salida.** `reset_dashboard_password` es boss-only y ningún agente la ejecuta por él — pero no hace falta: la pantalla de login tiene recuperación por WhatsApp o email (link "¿Olvidaste la contraseña?"), mismo flujo de código en las dos vías. Decíselo si pregunta; no le confirmes que perdió el acceso.
+**Si el dueño la pierde después, no es un callejón sin salida.** `reset_dashboard_password` no tiene candado por dueño (solo exige que el servidor MCP tenga clave, `PIUMY_MCP_KEY`) — pero no hace falta: la pantalla de login tiene recuperación por WhatsApp o email (link "¿Olvidaste la contraseña?"), mismo flujo de código en las dos vías. Decíselo si pregunta; no le confirmes que perdió el acceso.
 
 ### 3. Sin el identificador del agente principal, los mensajes del dueño se pierden en silencio
 

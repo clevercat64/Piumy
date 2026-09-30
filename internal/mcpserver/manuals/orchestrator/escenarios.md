@@ -12,7 +12,7 @@ Amigos y familia. Cada uno con su trato y su memoria.
 
 **Pregunta:** "¿Quieres que conteste solo, o que te avise antes?" · "¿Hay alguno con el que tenga que hablar distinto?"
 
-**Deja puesto:** cada chat en automático, con sus reglas propias (`set_chat_rules` desde el tablero). La memoria del chat se llena sola con lo que el agente aprende.
+**Deja puesto:** cada chat en automático (desde el tablero, o el dueño se lo pide al agente hablándole él: `set_config_level("auto")` exige un despacho vivo del dueño), con sus reglas propias (`set_chat_rules`). La memoria del chat se llena sola con lo que el agente aprende.
 
 **Cuidado:** las reglas de un chat pisan a las del tipo, y las del tipo pisan a las generales. Escribe lo particular donde va, no en las generales.
 
@@ -26,7 +26,7 @@ Comunicaciones internas, avisos, coordinación.
 
 **Deja puesto:** los grupos arrancan **pidiendo confirmación** por defecto — eso es a propósito, un error en un grupo lo ven todos. Si el usuario quiere soltarlo, que sea explícito.
 
-Reglas por tipo (`set_type_rules` para grupos) en vez de repetirlas chat por chat.
+Reglas por tipo (desde el tablero: `set_type_rules` siempre se rechaza por MCP) en vez de repetirlas chat por chat.
 
 ---
 
@@ -60,7 +60,7 @@ Atender, cotizar, seguir. Que no se caiga ninguno.
 
 **Pregunta:** "¿Quieres que conteste solo las consultas y te avise cuando hay que cerrar?"
 
-**Deja puesto:** el chat en automático, y confirmación puesta para el momento de cerrar — o el chat entero en confirmación si el usuario prefiere leer todo. Es la combinación más pedida: rápido en lo de arriba, con freno en lo que importa.
+**Deja puesto** (desde el tablero, o el dueño se lo pide al agente hablándole él — aflojar con `set_config_level("auto")` o `set_confirmation_mode("none")` exige un despacho vivo del dueño; restringir es libre): el chat en automático, y confirmación puesta para el momento de cerrar — o el chat entero en confirmación si el usuario prefiere leer todo. Es la combinación más pedida: rápido en lo de arriba, con freno en lo que importa.
 
 ---
 

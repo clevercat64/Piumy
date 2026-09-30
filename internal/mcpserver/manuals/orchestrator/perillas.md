@@ -92,13 +92,13 @@ Si el usuario dice "no está contestando nada", esto es lo primero a mirar.
 
 ## Leer el estado de WhatsApp: libre. Escribirlo: del dueño
 
-El mismo dato, dos caminos distintos — otro caso de "restringir es gratis, aflojar cuesta" (arriba). Cualquier agente conectado puede leer el "Estado" (About) propio de la cuenta: viaja como `profile_status` dentro de `get_status`, sin candado — leerlo no cambia nada ni toca a terceros. Cambiarlo (`set_profile_status`) sigue siendo boss-only, igual que el resto de las tools que tocan WhatsApp hacia afuera de forma irreversible.
+El mismo dato, dos caminos distintos — otro caso de "restringir es gratis, aflojar cuesta" (arriba). Cualquier agente conectado puede leer el "Estado" (About) propio de la cuenta: viaja como `profile_status` dentro de `get_status`, sin candado — leerlo no cambia nada ni toca a terceros. Cambiarlo (`set_profile_status`) no tiene candado de código desde T148: cualquier agente registrado puede hacerlo.
 
 Antes de T103 (ct-2026-08-29-1759) esta asimetría era peor: un agente podía ESCRIBIR el estado y no tenía forma de LEER el que había — la única vía era pedirle al dueño que abriera el tablero y mirara. Corregido: el dato que ya existía en el adapter (T96) se expuso también por MCP.
 
 ## La foto de perfil y el ícono de grupo
 
-`set_profile_photo` (T111, ct-2026-09-01-1442) cambia la foto de perfil de la CUENTA — la ven todos los contactos, al instante. Boss-only, igual que `set_group_icon` (el ícono de un grupo) y el resto de lo que toca WhatsApp hacia afuera sin vuelta atrás.
+`set_profile_photo` (T111, ct-2026-09-01-1442) cambia la foto de perfil de la CUENTA — la ven todos los contactos, al instante. Sin candado de código desde T148, igual que `set_group_icon` (el ícono de un grupo): cualquier agente registrado puede usarla, y es lo que toca WhatsApp hacia afuera sin vuelta atrás.
 
 **No hace falta mandar un JPEG.** Las dos tools convierten sola cualquier imagen común (PNG, GIF) a JPEG antes de subirla — el dueño no tiene que convertirla a mano. Solo lo que no se puede decodificar como imagen (un archivo que no es una imagen, un formato exótico) da error.
 
