@@ -43,7 +43,8 @@ type fakeGroupProfile struct {
 	createGroupParticipants []types.GroupParticipant
 	lastPromoteGroup        string
 	lastPromoteParticipants []string
-	promoteErr              error // independent of err — see PromoteParticipants's own doc
+	promoteMu               sync.Mutex // T170: promotion retries run on a goroutine
+	promoteErr              error      // independent of err — see PromoteParticipants's own doc
 	// promoteFailCount/promoteFailErr (T145, ct-2026-09-07): the first N
 	// calls fail with promoteFailErr, then calls succeed — simulates the
 	// live hypothesis A shape (a 403 fresh off group creation that clears
@@ -112,6 +113,8 @@ func (f *fakeGroupProfile) AddParticipant(ctx context.Context, groupJID, partici
 // created fine, but promoting the owner failed", which f.err alone can't
 // express (it would also fail CreateGroup itself).
 func (f *fakeGroupProfile) PromoteParticipants(ctx context.Context, groupJID string, participantJIDs []string) ([]types.GroupParticipant, error) {
+	f.promoteMu.Lock()
+	defer f.promoteMu.Unlock()
 	f.lastPromoteGroup = groupJID
 	f.lastPromoteParticipants = participantJIDs
 	f.promoteCalls++
@@ -237,9 +240,29 @@ func serverWithGroupProfileAndStore(t *testing.T, fgp *fakeGroupProfile) (*store
 // never see the override.
 func fastPromoteRetries(t *testing.T) {
 	t.Helper()
-	orig := promoteRetryWindow
+	orig, origBudget := promoteRetryWindow, promoteRetryBudget
 	promoteRetryWindow = governor.DelayWindow{Min: time.Microsecond, Max: 2 * time.Microsecond}
-	t.Cleanup(func() { promoteRetryWindow = orig })
+	promoteRetryBudget = 50 * time.Millisecond
+	t.Cleanup(func() { promoteRetryWindow, promoteRetryBudget = orig, origBudget })
+}
+
+// calls reads promoteCalls under the fake's lock (the retry runs on a
+// goroutine since T170).
+func (f *fakeGroupProfile) calls() int {
+	f.promoteMu.Lock()
+	defer f.promoteMu.Unlock()
+	return f.promoteCalls
+}
+
+func waitFor(t *testing.T, cond func() bool, what string) {
+	t.Helper()
+	for i := 0; i < 200; i++ {
+		if cond() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", what)
 }
 
 // fastGroupActionSpacing (T149, ct-2026-09-07-1730) overrides
@@ -350,8 +373,8 @@ func TestCreateGroupNeverAttemptsPromotionForAnUnresolvedLIDBoss(t *testing.T) {
 	if fgp.lastPromoteGroup != "" || fgp.lastPromoteParticipants != nil {
 		t.Errorf("PromoteParticipants was called (group=%q participants=%v), want never called — an unresolved @lid never matches the boss's PN-keyed chats row", fgp.lastPromoteGroup, fgp.lastPromoteParticipants)
 	}
-	if strings.Contains(out, "could not promote") {
-		t.Errorf("create_group result = %s, want no promotion warning at all — the miss is silent, not a WhatsApp error", out)
+	if strings.Contains(out, "could not promote") || !strings.Contains(out, "no participant is marked as the owner") {
+		t.Errorf("create_group result = %s, want the T170 \"no owner among the participants\" warning, not a WhatsApp error", out)
 	}
 }
 
@@ -372,9 +395,13 @@ func TestCreateGroupDoesNotPromoteNonBossParticipants(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	callTool(t, ctx, srv, "create_group", map[string]any{
+	out := callTool(t, ctx, srv, "create_group", map[string]any{
 		"name": "Grupo", "participants": []string{"555000000088@s.whatsapp.net", "555000000077@s.whatsapp.net"},
 	})
+	// T170: with nobody to promote, create_group says so instead of staying silent.
+	if !strings.Contains(out, "no participant is marked as the owner") || !strings.Contains(out, "promote_group_admin") {
+		t.Errorf("create_group with no is_boss participant = %s, want the warning that names promote_group_admin", out)
+	}
 
 	if fgp.lastPromoteGroup != "" || fgp.lastPromoteParticipants != nil {
 		t.Errorf("PromoteParticipants was called (group=%q participants=%v), want never called — nobody is is_boss", fgp.lastPromoteGroup, fgp.lastPromoteParticipants)
@@ -417,11 +444,17 @@ func TestCreateGroupPromotionFailureStillReturnsTheGroup(t *testing.T) {
 	if !strings.Contains(out, "Piumy") {
 		t.Errorf("create_group result = %s, want the group itself still in the response", out)
 	}
-	if !strings.Contains(out, "network hiccup promoting") {
-		t.Errorf("create_group result = %s, want the promotion failure reported as a warning", out)
+	if !strings.Contains(out, "network hiccup promoting") || !strings.Contains(out, "retrying in the background") {
+		t.Errorf("create_group result = %s, want the failure reported as a warning that says it keeps retrying", out)
 	}
-	if fgp.promoteCalls != maxPromoteAttempts {
-		t.Errorf("PromoteParticipants calls = %d, want %d (a failure that never clears must exhaust every retry, then stop)", fgp.promoteCalls, maxPromoteAttempts)
+	// T170: the tool answered after ONE attempt; the goroutine keeps going
+	// until its budget ends, then stops (calls stop growing).
+	waitFor(t, func() bool { return fgp.calls() > 3 }, "background retries to keep trying")
+	time.Sleep(2 * promoteRetryBudget)
+	settled := fgp.calls()
+	time.Sleep(50 * time.Millisecond)
+	if fgp.calls() != settled {
+		t.Errorf("PromoteParticipants kept being called after the retry budget ended (%d -> %d)", settled, fgp.calls())
 	}
 }
 
@@ -456,11 +489,13 @@ func TestCreateGroupPromotionRetriesAndSucceedsOnTransientFailure(t *testing.T) 
 	if strings.Contains(out, `"isError":true`) {
 		t.Fatalf("create_group with a transient promotion failure = %s, want success", out)
 	}
-	if strings.Contains(out, "warnings") || strings.Contains(out, "403") {
-		t.Errorf("create_group result = %s, want NO warning at all — the retry recovered, the owner never needs to know it took a second try", out)
+	if !strings.Contains(out, "retrying in the background") {
+		t.Errorf("create_group result = %s, want the warning that the first try failed and it keeps retrying", out)
 	}
-	if fgp.promoteCalls != 2 {
-		t.Errorf("PromoteParticipants calls = %d, want 2 (fails once, succeeds on the retry)", fgp.promoteCalls)
+	waitFor(t, func() bool { return fgp.calls() == 2 }, "the background retry to succeed")
+	time.Sleep(2 * promoteRetryBudget)
+	if fgp.calls() != 2 {
+		t.Errorf("PromoteParticipants calls = %d, want exactly 2 (fails once, succeeds on the retry, then stops)", fgp.calls())
 	}
 }
 
@@ -472,7 +507,7 @@ func TestCreateGroupPromotionRetriesAndSucceedsOnTransientFailure(t *testing.T) 
 // randomization — this only guards that group_tools.go's window is a
 // real, non-degenerate range, not a single fixed value in disguise).
 func TestPromoteRetryWindowIsRandomizedNotFixed(t *testing.T) {
-	if promoteRetryWindow.Min <= 0 || promoteRetryWindow.Max <= promoteRetryWindow.Min {
+	if promoteRetryWindow.Min <= 0 || promoteRetryWindow.Max <= promoteRetryWindow.Min || promoteRetryBudget < 3*time.Minute {
 		t.Errorf("promoteRetryWindow = %+v, want a real [Min, Max) range (Min > 0, Max > Min) — a degenerate window samples the same fixed wait every time", promoteRetryWindow)
 	}
 }
@@ -1234,4 +1269,22 @@ func TestGroupActionBrakeNeverRejectsOnlyDelays(t *testing.T) {
 	if elapsed := time.Since(start); elapsed < (calls-1)*groupActionSpacing.Min {
 		t.Errorf("%d calls back-to-back took %v, want at least %v across the %d gaps between them (a burst must space itself out)", calls, elapsed, (calls-1)*groupActionSpacing.Min, calls-1)
 	}
+}
+
+// T170: promote_group_admin answers after ONE attempt too — a failure is
+// reported as "still retrying" and the retry runs in the background.
+func TestPromoteGroupAdminFailureKeepsRetryingInBackground(t *testing.T) {
+	fastPromoteRetries(t)
+	fgp := &fakeGroupProfile{
+		promoteFailCount: 1,
+		promoteFailErr:   errors.New("info query returned status 403: forbidden"),
+	}
+	ctx, srv := serverWithGroupProfile(t, fgp)
+
+	out := callTool(t, ctx, srv, "promote_group_admin", map[string]any{"group_id": "555001@g.us", "participant_id": "555000000099@s.whatsapp.net"})
+
+	if !strings.Contains(out, "403") || !strings.Contains(out, "retrying in the background") {
+		t.Errorf("promote_group_admin after a failed first try = %s, want the error plus the background-retry notice", out)
+	}
+	waitFor(t, func() bool { return fgp.calls() == 2 }, "the background retry")
 }

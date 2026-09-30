@@ -33,6 +33,7 @@ package mcpserver
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -116,24 +117,54 @@ func seedCreatedGroup(d Deps, info *types.GroupInfo) []string {
 	return warnings
 }
 
-// maxPromoteAttempts caps promoteBossParticipants' retry (T145,
-// ct-2026-09-07 — hypothesis A confirmed live: WhatsApp can 403 an admin
-// op on a group it JUST created, and a manual retry ~1 minute later
-// worked). 3 total attempts (1 + 2 retries): enough to plausibly cross
-// whatever propagation delay caused the live 403, without hanging
-// create_group's own response indefinitely if WhatsApp is genuinely
-// refusing (a dead network, a real permissions problem) — those attempts
-// would fail identically at attempt 10 as at attempt 1.
-const maxPromoteAttempts = 3
-
-// promoteRetryWindow bounds the randomized wait BETWEEN promote attempts —
-// anti-ban discipline is non-negotiable even here (project convention,
-// governor.DelayWindow — same mechanism/reasoning as
+// promoteRetryWindow bounds the randomized wait BETWEEN background promote
+// retries — anti-ban discipline is non-negotiable even here (project
+// convention, governor.DelayWindow — same mechanism/reasoning as
 // internal/whatsmeow/avatar.go's own recheck windows): never a fixed or
-// round wait, sampled fresh on every retry. No KV override: nobody has
-// asked to tune this yet (YAGNI, unlike avatarRecheckWindow's own contacts
-// window, which already needed one when a second real case showed up).
-var promoteRetryWindow = governor.DelayWindow{Min: 2 * time.Second, Max: 7 * time.Second}
+// round wait, sampled fresh on every retry. T170 (ct-2026-09-29-2049): the
+// old 2-7 s window kept the 3 retries inside 15 s, and the live evidence
+// ("info query returned status 403: forbidden" on all 3) showed WhatsApp
+// refusing admin ops on a just-created group for longer than that (T145
+// measured a manual retry ~1 min later working). No KV override: nobody
+// has asked to tune this yet (YAGNI).
+var promoteRetryWindow = governor.DelayWindow{Min: 20 * time.Second, Max: 40 * time.Second}
+
+// promoteRetryBudget is how long the background retry keeps trying before it
+// gives up (T170) — about 3 minutes in total.
+var promoteRetryBudget = 3 * time.Minute
+
+// promoteFirstTry makes ONE inline PromoteParticipants attempt. If it fails,
+// a goroutine with its OWN context (the tool call returns long before the
+// budget ends, so the request's ctx would cancel it) keeps retrying with
+// promoteRetryWindow waits, logging every attempt and the final result — the
+// caller only learns "still trying". Window and budget are read here, on the
+// caller's goroutine, so a later change to the globals never races the retry.
+func promoteFirstTry(ctx context.Context, gp GroupProfile, groupJID string, jids []string) ([]types.GroupParticipant, error) {
+	participants, err := gp.PromoteParticipants(ctx, groupJID, jids)
+	if err != nil {
+		log.Printf("mcpserver: group: promote %s attempt 1 failed: %v — retrying in the background", groupJID, err)
+		go retryPromote(gp, groupJID, jids, promoteRetryWindow, promoteRetryBudget)
+	}
+	return participants, err
+}
+
+func retryPromote(gp GroupProfile, groupJID string, jids []string, window governor.DelayWindow, budget time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+	for attempt := 2; ; attempt++ {
+		window.Sleep(ctx)
+		if ctx.Err() != nil {
+			log.Printf("mcpserver: group: promote %s gave up after %d attempts (%s budget spent)", groupJID, attempt-1, budget)
+			return
+		}
+		_, err := gp.PromoteParticipants(ctx, groupJID, jids)
+		if err == nil {
+			log.Printf("mcpserver: group: promote %s attempt %d succeeded", groupJID, attempt)
+			return
+		}
+		log.Printf("mcpserver: group: promote %s attempt %d failed: %v", groupJID, attempt, err)
+	}
+}
 
 // promoteBossParticipants grants group-admin rights to whichever of the
 // group's participants are marked is_boss in OUR OWN store (T135,
@@ -167,23 +198,13 @@ func promoteBossParticipants(ctx context.Context, d Deps, info *types.GroupInfo)
 		}
 	}
 	if len(toPromote) == 0 {
-		return warnings
+		// T170: this miss used to be silent — the agent never knew the owner
+		// was NOT made admin.
+		return append(warnings, "no participant is marked as the owner (is_boss), so nobody was promoted to group admin — use promote_group_admin to make someone admin")
 	}
-	// T145: attempt 1 fires immediately (no wait before the FIRST try — the
-	// live incident's own first attempt failed instantly, a pre-wait
-	// wouldn't have changed that); a 403 there is exactly the shape
-	// hypothesis A predicts (WhatsApp not yet accepting admin ops on a
-	// group it just created), so retries wait for that window to pass.
-	var err error
-	for attempt := 1; attempt <= maxPromoteAttempts; attempt++ {
-		if attempt > 1 {
-			promoteRetryWindow.Sleep(ctx)
-		}
-		if _, err = d.GroupProfile.PromoteParticipants(ctx, info.JID.String(), toPromote); err == nil {
-			return warnings
-		}
+	if _, err := promoteFirstTry(ctx, d.GroupProfile, info.JID.String(), toPromote); err != nil {
+		warnings = append(warnings, fmt.Sprintf("could not promote the owner to group admin on the first try (%v) — still retrying in the background for about %.0f min; if the owner is not admin by then, call promote_group_admin", err, promoteRetryBudget.Minutes()))
 	}
-	warnings = append(warnings, fmt.Sprintf("could not promote the owner to group admin after %d attempts: %v", maxPromoteAttempts, err))
 	return warnings
 }
 
@@ -333,9 +354,9 @@ func addGroupTools(s *server.MCPServer, d Deps, tracker *agentTracker) {
 			// can carry a ":<device>" suffix WhatsApp itself never expects
 			// on a group-membership operation.
 			participantID = store.StripDeviceSuffix(participantID)
-			participants, err := d.GroupProfile.PromoteParticipants(ctx, groupID, []string{participantID})
+			participants, err := promoteFirstTry(ctx, d.GroupProfile, groupID, []string{participantID})
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return mcp.NewToolResultError(fmt.Sprintf("%v — still retrying in the background for about %.0f min", err, promoteRetryBudget.Minutes())), nil
 			}
 			// UpdateGroupParticipants (whatsmeow) reports a per-participant
 			// failure — promoting someone who isn't actually in the group,

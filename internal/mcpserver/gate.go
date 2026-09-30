@@ -105,20 +105,6 @@ type dispatch struct {
 	// keys — an alias nobody removes on eviction is a dangling entry that
 	// would resolve a future terminal to a dead dispatch forever.
 	antennaAlias string
-	// sends (T167, ct-2026-09-17-1255, boss verbatim: "quiero que lo quiten
-	// o aumenten a 4 mensajes") counts how many send_message/draft calls
-	// RecordSend has recorded for this dispatch — send.go's validateSend
-	// checks it (via ActiveDispatch.SendCount) to let up to
-	// maxSendsPerDispatch calls through for the dispatch's OWN chat even
-	// after Consume has already marked it done, so one reply can land as
-	// several pieces (text + sticker) without a fresh dispatch. Deliberately
-	// separate from the state machine below: Consume still retires the
-	// dispatch (state -> gateDone, InFlight -> false) on the very FIRST
-	// call, exactly as before this contract — the cap lives entirely in
-	// send.go's policy check, never in the lock/ready/done transitions
-	// here. silent_act never calls RecordSend, so it never sees this cap;
-	// its own one-shot behavior (send.go) is untouched.
-	sends int
 }
 
 // Gate is the per-dispatch lock/unlock/noting/ready state machine. Safe for
@@ -755,13 +741,6 @@ type ActiveDispatch struct {
 	// "already finished" (done) into the same false, which is exactly the
 	// ambiguity that made T147 unreadable from its own error messages.
 	Done bool
-	// SendCount (T167, ct-2026-09-17-1255) mirrors dispatch.sends — how many
-	// send_message/draft calls RecordSend has recorded for this dispatch so
-	// far. send.go's validateSend reads this only once Done is true and the
-	// target is this dispatch's own chat, to allow up to maxSendsPerDispatch
-	// total before finally refusing with "already consumed". Meaningless
-	// (always 0) for silent_act, which never calls RecordSend.
-	SendCount int
 }
 
 // Active reports terminalID's current dispatch, if any.
@@ -780,7 +759,7 @@ func (g *Gate) Active(terminalID string) (ActiveDispatch, bool) {
 	if d == nil {
 		return ActiveDispatch{}, false
 	}
-	return ActiveDispatch{ChatJID: d.chatJID, Level: d.level, Ready: d.state == gateReady, BurstMaxTS: d.burstMaxTS, Sender: d.sender, Nonce: d.nonce, Done: d.state == gateDone, SendCount: d.sends}, true
+	return ActiveDispatch{ChatJID: d.chatJID, Level: d.level, Ready: d.state == gateReady, BurstMaxTS: d.burstMaxTS, Sender: d.sender, Nonce: d.nonce, Done: d.state == gateDone}, true
 }
 
 // Consume retires the dispatch identified by nonce — one-shot, so a used
@@ -818,26 +797,4 @@ func (g *Gate) Consume(terminalID, nonce string) {
 	g.retireLocked(d.nonce, "consumed — this dispatch's own turn already finished (send_message/draft/silent_act); one-shot, wait for a fresh dispatch")
 	delete(g.byNonce, d.nonce)
 	d.state = gateDone
-}
-
-// RecordSend increments the per-dispatch send counter (dispatch.sends,
-// exposed as ActiveDispatch.SendCount) that send.go's validateSend checks
-// against maxSendsPerDispatch — T167 (ct-2026-09-17-1255), the boss's own
-// "envíe un mensaje y despues un sticker" case. Deliberately NOT part of
-// Consume: the lock/ready/done state machine, and the instant InFlight
-// release it gives on the very first send, are untouched by this contract —
-// only send.go's policy for how many MORE sends the dispatch's own chat may
-// receive after that first one changes. Same identity guard as Consume
-// (T147): a no-op if nonce isn't d's CURRENT nonce, so a stale caller can
-// never inflate a newer dispatch's count. Never called for silent_act — it
-// has no cap to track.
-func (g *Gate) RecordSend(terminalID, nonce string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	d := g.byTerminal[terminalID]
-	if d == nil || d.nonce != nonce {
-		return
-	}
-	d.sends++
-	d.lastActivity = time.Now()
 }

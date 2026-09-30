@@ -20,26 +20,6 @@ import (
 	"piumy-gateway/internal/store"
 )
 
-// maxSendsPerDispatch caps how many send_message/draft calls one dispatch
-// may deliver to its OWN chat before validateSend finally refuses with
-// "already consumed" — T167 (ct-2026-09-17-1255, boss verbatim: "quiero que
-// lo quiten o aumenten a 4 mensajes"; his own number, taken as-is, not a more
-// cautious version of it). Lets one reply land as several pieces (text +
-// sticker, two short messages as a person would write) without a fresh
-// dispatch. The single place this number lives — change it here, nowhere
-// else, if it ever needs to be a different number.
-//
-// Deliberately NOT the gate's one-shot Consume/InFlight lifecycle (see
-// gate.go's RecordSend doc): Consume still retires the dispatch, and
-// InFlight still frees the terminal for OTHER chats, on the very FIRST send
-// — a would-be shared counter across send_message/draft/silent_act was tried
-// and rejected (Tourmaline's own repro to Citrino, T167): silent_act is
-// nearly always a turn's ONLY call, and counting it here would have left
-// InFlight true for up to dispatchStaleAfter after every silent-only turn,
-// reintroducing the exact backlog S4b exists to prevent. silent_act stays
-// completely outside this cap — one call, always final, as before.
-const maxSendsPerDispatch = 4
-
 // validateSend runs the F4b gate check + the policy_version gate + Piumy's
 // 6 base checks shared by send_message and draft. Returns the resolved
 // chat on success ("" error), or a user-facing error message to return
@@ -78,57 +58,26 @@ func validateSend(ctx context.Context, d Deps, active ActiveDispatch, bound bool
 	// than the one it was actually dispatched for (anti-leakage). Only the
 	// "no dispatch at all" case changes, from DENY to allowed.
 	if bound {
-		// T150 (ct-2026-09-07-1839): Consume() leaves the dispatch bound in
-		// byTerminal forever (marked done, Ready=false) — "it stays gated
-		// until a NEW get_instructions binds it" (gate.go's own Consume doc).
-		// The Ready lock below is about THAT dispatch's own chat: reusing a
-		// consumed (or never-unlocked) dispatch to act on the chat it was
-		// actually for stays rejected. A DIFFERENT chat is a different
-		// question — T64's "any registered agent may INITIATE, no dispatch
-		// required" must hold even with a stale dispatch sitting on this
-		// terminal from something else entirely; before this fix a terminal
-		// that ever consumed ONE dispatch was locked out of send_message to
-		// ANY chat until a fresh dispatch registered (the principal's own
-		// live incident: consumed one dispatch, then couldn't write to an
-		// unrelated group where the owner was waiting).
+		// T170 (ct-2026-09-29-2049): a CONSUMED dispatch (Done) has no voice
+		// over send_message — not even over its own chat — exactly like no
+		// dispatch at all (T64 above, T150 for other chats). It used to cap
+		// at 4 sends (T167) and then lock, which left an agent that had
+		// answered in a group unable to write there again while one with no
+		// dispatch could. The boss chose "quitar" over a bigger cap.
+		//
+		// A LIVE dispatch keeps its ritual: not Ready (never unlocked) locks
+		// its own chat until get_instructions -> unlock; Ready and not boss
+		// can't be redirected to another chat (anti-leakage). A never-
+		// unlocked dispatch on ANOTHER chat has no say over an unrelated one
+		// (T150).
 		sameChat := to == active.ChatJID
-		if !active.Ready {
+		switch {
+		case active.Done:
+		case !active.Ready:
 			if sameChat {
-				// T147 (ct-2026-09-07): "locked" alone used to mean either
-				// "never touched" OR "already consumed" — indistinguishable,
-				// and the second one is exactly what a stale caller hits
-				// after this SAME identity-checked Consume fix below. Say
-				// which.
-				if active.Done {
-					// T167 (ct-2026-09-17-1255): Consume already retired
-					// this dispatch on its FIRST send (unchanged — see
-					// gate.go's RecordSend doc), but the boss's own case
-					// (message, then a sticker) needs MORE than one send to
-					// land. Up to maxSendsPerDispatch total to THIS dispatch's
-					// own chat fall through instead of refusing; the (N+1)th
-					// still gets the same "already consumed" it always did.
-					if active.SendCount >= maxSendsPerDispatch {
-						return store.Chat{}, "locked: this dispatch was already consumed — call get_instructions for a new one"
-					}
-				} else {
-					return store.Chat{}, "locked: call get_instructions -> unlock -> remember/skip before send_message"
-				}
+				return store.Chat{}, "locked: call get_instructions -> unlock -> remember/skip before send_message"
 			}
-			// to != active.ChatJID: falls through to the checks below,
-			// exactly like the bound=false path — a stale dispatch
-			// elsewhere on this terminal has no say over an unrelated chat.
-		} else if active.Level != LevelBoss && !sameChat {
-			// ST-A security fix (ct-2026-07-11-0740): Ready is required for
-			// EVERY level, boss included — RegisterDispatch starts boss
-			// dispatches gateReady (skips the checkpoint by design) and
-			// Consume marks any dispatch gateDone (Ready=false) regardless
-			// of level, so a boss dispatch that already sent once can no
-			// longer send again to ITS OWN chat without a fresh dispatch
-			// (enforced by the sameChat branch above). This anti-leakage
-			// redirect check only applies while the dispatch is genuinely
-			// still active (Ready) — a caution/danger dispatch can't abuse
-			// its current live turn to message a third chat, but once that
-			// turn is over, it's no longer "in the middle of" anything.
+		case active.Level != LevelBoss && !sameChat:
 			return store.Chat{}, "refused: this dispatch is unlocked for " + active.ChatJID + ", not " + to + " — get_instructions for the right chat first"
 		}
 	}
@@ -438,7 +387,6 @@ func addSendTools(s *server.MCPServer, d Deps, gate *Gate, tracker *agentTracker
 					}
 					markDispatchChatIfDifferent(d, active, bound, to)
 					gate.Consume(termID, active.Nonce)
-					gate.RecordSend(termID, active.Nonce)
 				}
 				publishDraftChanged(d.Bus)
 				return mcp.NewToolResultText("held for confirmation (confirmation_mode=always) — awaiting owner approval"), nil
@@ -468,13 +416,7 @@ func addSendTools(s *server.MCPServer, d Deps, gate *Gate, tracker *agentTracker
 			// nonce now (gate.go), but there is nothing to identify when
 			// nothing was ever opened.
 			if bound {
-				// Consume still retires the dispatch on this very first
-				// call (InFlight -> false immediately, unchanged) — but
-				// T167 (ct-2026-09-17-1255) lets up to maxSendsPerDispatch
-				// MORE send_message/draft calls land on this same chat
-				// after that, tracked by RecordSend, not by this state.
 				gate.Consume(termID, active.Nonce)
-				gate.RecordSend(termID, active.Nonce)
 				// ct-2026-07-13-2243: mark handled only up to burstMaxTS —
 				// messages that arrived while the agent was composing stay
 				// pending and are re-dispatched (with debounce) on the next
@@ -544,7 +486,6 @@ func addSendTools(s *server.MCPServer, d Deps, gate *Gate, tracker *agentTracker
 				// WhatsApp. Metering happens once (if ever) at the real
 				// send in processOutbox.
 				gate.Consume(termID, active.Nonce)
-				gate.RecordSend(termID, active.Nonce)
 			}
 			publishDraftChanged(d.Bus)
 			return mcp.NewToolResultText("drafted, awaiting owner approval"), nil
