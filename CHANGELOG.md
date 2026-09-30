@@ -6,7 +6,7 @@ Se actualiza en cada deploy/build junto con el relanzamiento del gateway.
 
 ---
 
-## Sin publicar
+## 0.12.3 — 2026-09-30
 
 ### Fixed
 - **Un chat asignado a un agente, o un grupo que un agente crea, ahora queda
