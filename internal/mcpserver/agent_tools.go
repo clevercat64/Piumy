@@ -210,7 +210,7 @@ func addAgentTools(s *server.MCPServer, d Deps) {
 	// (T148's own contract: "no se toca"), not the authority lock removed
 	// here.
 	s.AddTool(mcp.NewTool("assign_chat_to_agent",
-		mcp.WithDescription("Manually route a chat's dispatch to one agent (writes agent_exclusive:<id>) and leave the chat active so the agent actually receives its messages (a chat switched off with ignored/blacklist stays inactive; the response says so), or clear the assignment back to the default fallback (omit agent_id or pass an empty string). The principal itself is never a valid assignment target — an unassigned chat already falls back to it."),
+		mcp.WithDescription("Manually route a chat's dispatch to one agent (writes agent_exclusive:<id>) and leave the chat active so the agent actually receives its messages (a blacklisted chat stays inactive and the response says so; an ignored one is attended too and the response notes it), or clear the assignment back to the default fallback (omit agent_id or pass an empty string). The principal itself is never a valid assignment target — an unassigned chat already falls back to it."),
 		mcp.WithString("chat_id", mcp.Required()),
 		mcp.WithString("agent_id", mcp.Description("The agent to assign to. Omit or pass \"\" to unassign."))),
 		func(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -234,11 +234,15 @@ func addAgentTools(s *server.MCPServer, d Deps) {
 			} else if !ok {
 				return mcp.NewToolResultError(fmt.Sprintf("unknown agent_id %q", agentID)), nil
 			}
+			prev, _, err := d.Store.GetChat(chatID)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("store: %v", err)), nil
+			}
 			if err := d.Store.SetStatus(chatID, store.AgentExclusiveStatus(agentID)); err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("store: %v", err)), nil
 			}
-			// SetStatus leaves an assigned chat attended unless the owner had
-			// it switched off — report what actually got stored.
+			// SetStatus leaves an assigned chat attended unless it is
+			// blacklisted — report what actually got stored.
 			chat, _, err := d.Store.GetChat(chatID)
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("store: %v", err)), nil
@@ -246,7 +250,9 @@ func addAgentTools(s *server.MCPServer, d Deps) {
 			active := chat.Active
 			result := map[string]any{"chat_id": chatID, "agent_id": agentID, "status": "assigned", "active": active}
 			if !active {
-				result["warning"] = "this chat is switched off (ignored/blacklist), so it stays inactive — the agent will get no dispatches; call set_chat_active to attend it"
+				result["warning"] = "this chat is blacklisted, so it stays inactive — the agent will get no dispatches; call set_chat_active to attend it"
+			} else if prev.Status == "ignored" {
+				result["note"] = "the chat was ignored; assigning it left it attended"
 			}
 			return jsonResult(result)
 		})

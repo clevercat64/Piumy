@@ -794,7 +794,13 @@ func TestAssignChatToAgentReportsActive(t *testing.T) {
 	if err := st.TouchChat("555000000004@c.us", "Dos", 1); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetStatus("555000000004@c.us", "ignored"); err != nil {
+	if err := st.SetStatus("555000000004@c.us", "blacklist"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.TouchChat("555000000006@c.us", "Seis", 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetStatus("555000000006@c.us", "ignored"); err != nil {
 		t.Fatal(err)
 	}
 	ctx, srv := buildAgentServer(t, st, nil)
@@ -813,10 +819,20 @@ func TestAssignChatToAgentReportsActive(t *testing.T) {
 		"chat_id": "555000000004@c.us", "agent_id": secondaryTerm,
 	})
 	if !strings.Contains(resp, `\"active\": false`) || !strings.Contains(resp, "warning") {
-		t.Errorf("assign of an ignored chat = %s, want active:false plus a warning", resp)
+		t.Errorf("assign of a blacklisted chat = %s, want active:false plus a warning", resp)
 	}
 	if c, _, _ := st.GetChat("555000000004@c.us"); c.Active {
-		t.Error("ignored chat became active after assign_chat_to_agent")
+		t.Error("blacklisted chat became active after assign_chat_to_agent")
+	}
+
+	resp = callTool(t, agentCtx(ctx, principalTerm), srv, "assign_chat_to_agent", map[string]any{
+		"chat_id": "555000000006@c.us", "agent_id": secondaryTerm,
+	})
+	if !strings.Contains(resp, `\"active\": true`) || !strings.Contains(resp, "was ignored") {
+		t.Errorf("assign of an ignored chat = %s, want active:true plus the note that it was ignored", resp)
+	}
+	if c, _, _ := st.GetChat("555000000006@c.us"); !c.Active {
+		t.Error("ignored chat not active after assign_chat_to_agent")
 	}
 }
 

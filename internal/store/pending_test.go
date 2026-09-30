@@ -828,24 +828,26 @@ func TestSetStatusAssignLeavesChatAttended(t *testing.T) {
 	}
 }
 
-// The owner's deliberate "off" (ignored/blacklist) is never switched on by an
-// assignment: it still lands, active stays as it was, the caller is told.
-func TestSetStatusAssignDoesNotTurnOnAnOffChat(t *testing.T) {
-	for _, off := range []string{"ignored", "blacklist"} {
+// T171 (Citrino's decision): assigning an IGNORED chat attends it — ignore is
+// the default of every group, an assignment is the newer explicit act. Only
+// BLACKLIST (the brake the owner chose on purpose) stays off: assigned as
+// always, active untouched.
+func TestSetStatusAssignAttendsIgnoredButNotBlacklist(t *testing.T) {
+	for status, wantActive := range map[string]bool{"ignored": true, "blacklist": false} {
 		s := openTestStore(t)
 		const chat = "555000000002@c.us"
 		if err := s.TouchChat(chat, "Contacto", 1); err != nil {
 			t.Fatal(err)
 		}
-		if err := s.SetStatus(chat, off); err != nil {
+		if err := s.SetStatus(chat, status); err != nil {
 			t.Fatal(err)
 		}
 		if err := s.SetStatus(chat, AgentExclusiveStatus("agent-x")); err != nil {
 			t.Fatal(err)
 		}
 		c, _, _ := s.GetChat(chat)
-		if c.Active || c.Status != AgentExclusiveStatus("agent-x") {
-			t.Errorf("%s chat after assigning = active %v status %q, want assigned but left inactive", off, c.Active, c.Status)
+		if c.Active != wantActive || c.Status != AgentExclusiveStatus("agent-x") {
+			t.Errorf("%s chat after assigning = active %v status %q, want assigned with active=%v", status, c.Active, c.Status, wantActive)
 		}
 	}
 }

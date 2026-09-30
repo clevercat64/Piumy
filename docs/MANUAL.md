@@ -6970,10 +6970,14 @@ desde T149 ct-2026-09-07-1730 — ver sus propias entradas más abajo)
   agente: todo parecía configurado y no pasaba nada.
   - **La regla vive en `(*Store) SetStatus` (`store/chat.go`) — efecto
     declarado, no cable escondido** (su doc-comment lo dice): si el estado
-    nuevo es `agent_exclusive:<id>` y el previo NO era `ignored`/`blacklist`
-    (`ChatIsOff`) → además `SetActive(jid, true)` (con su barrido de backlog
-    > 1 h). Si estaba apagado, asigna como siempre y `active` no se toca (no se
-    rechaza la asignación: sería un candado nuevo). Cualquier otro estado no
+    nuevo es `agent_exclusive:<id>` y el previo NO era `blacklist` → además
+    `SetActive(jid, true)` (con su barrido de backlog > 1 h). **`ignored`
+    también se atiende** (decisión de Citrino, 2026-09-30: `TouchChat` nace todo
+    grupo `ignored`, así que puede ser el default; asignar es un acto explícito
+    y más nuevo, y "asignado pero mudo" es el estado que se saca). Solo
+    `blacklist` (el freno que el dueño eligió a propósito, T65) se respeta:
+    asigna como siempre y `active` no se toca. No se rechaza la asignación:
+    sería un candado nuevo. Cualquier otro estado no
     toca `active`; desasignar (`new`) no desactiva. `confirmation_mode` no se
     toca. Los TRES caminos que asignan pasan por `SetStatus`:
     `assign_chat_to_agent` (MCP), `set_chat_status` con `agent_exclusive:<id>`
@@ -6982,19 +6986,16 @@ desde T149 ct-2026-09-07-1730 — ver sus propias entradas más abajo)
     asignación nueva y no se toca. `send_message` (T64) no se autoasigna: no
     hay camino. (Nota: `handleSetIgnored`, `admin.go`, no acepta
     `agent_exclusive`: es el cuarto `SetStatus` pero no asigna.)
-  - Respuestas: `assign_chat_to_agent` y el REST devuelven `"active"`; con un
-    chat apagado, MCP agrega `"warning"`.
+  - Respuestas: `assign_chat_to_agent` y el REST devuelven `"active"`; MCP
+    agrega `"warning"` si era `blacklist` (queda inactivo) o `"note"` ("the chat
+    was ignored; assigning it left it attended") si venía de `ignored`.
   - `create_group`: `seedCreatedGroup` deja el grupo `status=new` + `active=1`
     (`TouchChat` nace todo grupo `ignored` y `confirmation_mode=always`: sin
     esto `send_message` lo rechazaba). El modo de confirmación queda en `always`
     — lo que el agente escriba sale como borrador hasta que el dueño lo cambie.
     La respuesta trae `"active"` (el estado guardado, no un supuesto).
-  - **Límite conocido:** un grupo YA existente (sincronizado, `ignored` por
-    default) que se asigna cae en la rama "apagado": asigna y avisa, pero sigue
-    inactivo — no se distingue el `ignored` por default del elegido por el
-    dueño (una sola columna).
   - Tests: `TestSetStatusAssignLeavesChatAttended` (extremo a extremo con
-    `PendingDedicated`), `TestSetStatusAssignDoesNotTurnOnAnOffChat`
+    `PendingDedicated`), `TestSetStatusAssignAttendsIgnoredButNotBlacklist`
     (`store/pending_test.go`), `TestAssignChatToAgentReportsActive`,
     `TestSetChatStatusAgentExclusiveLeavesChatActive`
     (`agent_tools_test.go`), `TestCreateGroupLeavesTheGroupActive`, y la

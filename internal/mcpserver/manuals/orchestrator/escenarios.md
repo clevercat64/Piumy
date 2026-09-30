@@ -36,7 +36,7 @@ Alguien pide información o encarga algo; queda despachado a quien corresponde.
 
 **Pregunta:** "¿Todos los pedidos los atiende lo mismo, o según el tema va a alguien distinto?"
 
-**Deja puesto:** un chat puede quedar asignado a un agente específico (`assign_chat_to_agent`; asignar lo deja también activo, salvo que el dueño lo tenga apagado con ignorado/lista negra), o quedar en el reparto general. Si hay temas que van a personas distintas, cada agente atiende lo suyo y el resto queda fuera de su vista.
+**Deja puesto:** un chat puede quedar asignado a un agente específico (`assign_chat_to_agent`; asignar lo deja también activo, incluso si estaba ignorado; solo la lista negra se respeta), o quedar en el reparto general. Si hay temas que van a personas distintas, cada agente atiende lo suyo y el resto queda fuera de su vista.
 
 Lo que no se resuelve solo: el agente escala (`escalate`) y aparece en pendientes.
 

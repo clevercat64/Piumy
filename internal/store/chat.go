@@ -431,21 +431,25 @@ func (s *Store) SetArchived(jid string, archived bool) error {
 // the schema's active=0 "silence" default and PendingDedicated never handed
 // the agent a message. Every path that assigns goes through here (MCP
 // assign_chat_to_agent, MCP set_chat_status, POST /api/admin/agent-assign),
-// so the rule lives in this one place. If the chat was ignored/blacklist
-// beforehand (ChatIsOff) it is assigned as always but active is left as it
-// was — assigning never turns on what the owner switched off. Any other
+// so the rule lives in this one place. An IGNORED chat is attended too: ignore
+// is the default of every group (TouchChat), and an assignment is a newer,
+// explicit act — leaving it "assigned but mute" is the very state this rule
+// removes. Only BLACKLIST is respected (T65, the brake the owner chose on
+// purpose): it is assigned as always but active is left as it was. Any other
 // status leaves active alone, and unassigning ("new") does not deactivate
 // (removing routing is not silencing). confirmation_mode is never touched.
 func (s *Store) SetStatus(jid, status string) error {
 	jid = StripDeviceSuffix(jid)
 	_, assigning := AgentExclusiveID(status)
+	// only blacklist is respected: ignored can be the default (TouchChat births
+	// every group ignored), an assignment is a newer, explicit act.
 	wasOff := false
 	if assigning {
 		prev, existed, err := s.GetChat(jid)
 		if err != nil {
 			return err
 		}
-		wasOff = existed && ChatIsOff(prev.Status)
+		wasOff = existed && prev.Status == "blacklist"
 	}
 	if _, err := s.db.Exec(`INSERT INTO chats (jid, status) VALUES (?, ?)
 		ON CONFLICT(jid) DO UPDATE SET status = excluded.status`, jid, status); err != nil {
