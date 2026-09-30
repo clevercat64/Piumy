@@ -24,6 +24,10 @@ Se actualiza en cada deploy/build junto con el relanzamiento del gateway.
   está marcado como dueño, `create_group` ahora lo avisa en vez de callar.
 - El registro (`piumy.log`) anota cada rechazo o error de las herramientas,
   con la herramienta y el motivo (nunca el texto de los mensajes).
+- **Los manuales de los agentes dejaron de contradecir al gateway**: se
+  corrigieron 12 pasajes (el "hasta 4 mensajes", quién puede tocar el freno de
+  emergencia, qué se cambia solo desde el tablero, el vencimiento de un turno)
+  y las descripciones de `send_message` y `silent_act`.
 
 ---
 

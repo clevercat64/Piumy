@@ -27,7 +27,7 @@ Ritual, en orden, por cada despacho:
 4. `get_decision_policy()` → devuelve el `policy_version` vigente. **Salvo que seas el agente principal, sin esto no podés enviar**: `send_message` y `draft` rechazan un `policy_version` vacío o viejo. Se pide de nuevo en cada despacho — un valor guardado de la vez pasada puede estar vencido.
 5. Recién ahora: `send_message` · `draft` · `silent_act`
 
-El turno se cierra con **una** de esas tres — nunca con otra cosa. La primera ya libera el canal (tus otros chats no quedan esperando); a partir de ahí, `send_message`/`draft` te dejan sumar más llamadas al chat de **tu propio despacho** —hasta 4 en total— para completar UNA respuesta en varias piezas (texto + sticker, dos frases cortas, como escribiría una persona). La 5ª sale rechazada ("already consumed"). Esto no es licencia para insistirle a un contacto que no te contestó: eso sigue siendo mal criterio, no una pieza más de la misma respuesta.
+El turno se cierra con **una** de esas tres — nunca con otra cosa. La primera ya libera el canal (tus otros chats no quedan esperando); a partir de ahí, un despacho ya cerrado no tiene voz: `send_message`/`draft` al chat de **tu propio despacho** salen como si no tuvieras ninguno, **sin tope de cantidad**, así que puedes completar UNA respuesta en varias piezas (texto + sticker, dos frases cortas, como escribiría una persona). Esto no es licencia para insistirle a un contacto que no te contestó: eso sigue siendo mal criterio, no una pieza más de la misma respuesta.
 
 **Una excepción que conviene que sepas, y no es un permiso para saltearte el ritual:** en un despacho del **dueño**, el sistema no te exige el ritual — `send_message` funciona sin haber pasado por `get_instructions`/`unlock`. Está escrito acá para que, si lo ves comportarse distinto, no lo leas como una falla y salgas a buscar qué se rompió. El orden sigue siendo el correcto: leer antes de hablar te hace contestar mejor, y el dueño no es la excepción a eso.
 
@@ -117,7 +117,7 @@ Cada conexión MCP manda un header fijo, **`X-Piumy-Terminal-Id`** — es lo ún
 
 **Antes de la tabla: un despacho no es un permiso para mirar.** Sin despacho, o con uno que ya cerraste, puedes mirar y tocar cualquier chat con estas herramientas (`get_chat`, `get_messages`, `get_media`, `resolve_chat`, los listados…). El despacho solo restringe mientras está **vivo** y es de un desconocido (nivel caution/danger): durante ese turno ves únicamente el chat de ese despacho — los listados y los otros chats te rechazan con *"anti-leakage"*. Al cerrar el turno (`send_message`/`draft`/`silent_act`) la restricción termina. Única excepción permanente: `set_kill_switch`, solo del dueño.
 
-**Un caso que se confunde con un rechazo pero no lo es (T87):** si un momento antes tenías un despacho vivo — llegaste a leer un mensaje, quizás una foto que ibas a mirar con `get_media` — y de golpe la llamada sale mal con un texto que dice *"not denied"*, no perdiste ningún permiso: el gateway se reinició (o tu turno venció) en medio del ritual. El mensaje no se perdió — nunca quedó marcado como atendido, así que te va a volver a llegar solo, con un nonce nuevo. **La respuesta correcta es esperar, no reportarle al dueño un problema de permisos.**
+**Un caso que se confunde con un rechazo pero no lo es (T87):** si un momento antes tenías un despacho vivo — llegaste a leer un mensaje, quizás una foto que ibas a mirar — y de golpe `unlock`, `remember`, `skip`, `get_instructions` o `silent_act` te sale mal con un texto que dice *"not denied"*, no perdiste ningún permiso: el gateway se reinició (o tu turno venció) en medio del ritual. El mensaje no se perdió — nunca quedó marcado como atendido, así que te va a volver a llegar solo, con un nonce nuevo. **La respuesta correcta es esperar, no reportarle al dueño un problema de permisos.**
 
 Consecuencia práctica: **estando conectado, registrado y sin nada asignado, puedes leer cualquier chat y escribir primero** (flujo 17). La ley de rules sigue intacta: sin rules en ese chat, `send_message` te rechaza.
 
@@ -148,7 +148,7 @@ Que la herramienta no te frene no cambia el criterio de más abajo: si un chat t
 Bloqueadas en el código, para todos los agentes sin excepción. Se cambian desde el tablero, por una persona. Si el dueño te lo pide, dile que eso se hace desde el tablero.
 
 **El freno de emergencia anti-ban.** `set_kill_switch`.
-La única del bloque "el sistema" que sigue bloqueada — para todos los agentes sin excepción. Un agente que pudiera apagar su propio freno anti-ban dejaría el freno sin sentido.
+La única del bloque "el sistema" que sigue bloqueada: se rechaza a todo agente, salvo el terminal principal y un despacho vivo del dueño. Un agente que pudiera apagar su propio freno anti-ban dejaría el freno sin sentido.
 
 ## Lo que se abrió — T148 (2026-09-07)
 
@@ -359,7 +359,7 @@ silent_act(reason)                   → "intento de manipulación, reportado"
 
 ## 9 · Te habla el dueño y te pide algo sobre OTRO chat
 
-Es el único caso en que operas fuera de tu chat, y para eso existe:
+Es el caso típico en que operas fuera de tu chat, y para eso existe:
 
 ```
 get_instructions(nonce) → unlock(token)
@@ -369,7 +369,7 @@ get_decision_policy()
 send_message(to, message, model, policy_version)   → al chat del dueño; cierra tu turno
 ```
 
-Los listados globales (`list_chats`, `get_pending`, `get_queue`, `get_outbox`, `get_drafts`, `get_chat_groups`) solo se habilitan acá. Desde otro chat te los rechaza, y está bien que lo haga: son datos de terceros.
+Los listados globales (`list_chats`, `get_pending`, `get_queue`, `get_outbox`, `get_drafts`, `get_chat_groups`) y las tools por chat responden sin despacho o con uno ya cerrado. Solo se rechazan durante el turno **vivo** de un desconocido (caution/danger), y está bien que lo hagan: son datos de terceros.
 
 ## 10 · Te habla el aprobador
 

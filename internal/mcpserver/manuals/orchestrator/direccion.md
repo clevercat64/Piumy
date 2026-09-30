@@ -22,7 +22,7 @@ Crece de forma **aditiva**: agregar una dimensión de canal, o varias cuentas, s
 
 **El número gana siempre.** Un mismo contacto puede aparecer con dos identidades distintas. Cuando existen las dos, vale la del número: su configuración, sus reglas, todo. Sin mezclas, sin "la que no esté vacía". Aunque eso descarte reglas buenas del otro lado.
 
-**Las reglas y el dueño no se tocan por el canal del agente.** Están bloqueados en el código, no en un prompt. El candado duro vive en el código; la instrucción escrita ayuda, nunca garantiza.
+**Las reglas por tipo y el dueño no se tocan por el canal del agente** (`set_type_rules` y `set_is_boss` se rechazan siempre por MCP); las reglas de un chat concreto (`set_chat_rules`) sí las puede cambiar un agente. Lo bloqueado está en el código, no en un prompt. El candado duro vive en el código; la instrucción escrita ayuda, nunca garantiza.
 
 **Restringir es gratis, aflojar cuesta.** Subir la vigilancia siempre se puede. Bajarla es solo del dueño.
 
