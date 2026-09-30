@@ -234,10 +234,16 @@ func addAgentTools(s *server.MCPServer, d Deps) {
 			} else if !ok {
 				return mcp.NewToolResultError(fmt.Sprintf("unknown agent_id %q", agentID)), nil
 			}
-			active, err := d.Store.AssignChat(chatID, agentID)
+			if err := d.Store.SetStatus(chatID, store.AgentExclusiveStatus(agentID)); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("store: %v", err)), nil
+			}
+			// SetStatus leaves an assigned chat attended unless the owner had
+			// it switched off — report what actually got stored.
+			chat, _, err := d.Store.GetChat(chatID)
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("store: %v", err)), nil
 			}
+			active := chat.Active
 			result := map[string]any{"chat_id": chatID, "agent_id": agentID, "status": "assigned", "active": active}
 			if !active {
 				result["warning"] = "this chat is switched off (ignored/blacklist), so it stays inactive — the agent will get no dispatches; call set_chat_active to attend it"

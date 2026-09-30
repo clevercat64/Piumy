@@ -423,41 +423,38 @@ func (s *Store) SetArchived(jid string, archived bool) error {
 
 // SetStatus sets a chat's triage status (whitelist|blacklist|new|ignored|
 // agent_exclusive:<id>). Creates the chat if missing.
+//
+// SIDE EFFECT ON active (T171, ct-2026-09-30-0951 — deliberate, documented
+// here on purpose, not a hidden wire): assigning a chat (status
+// agent_exclusive:<id>) also leaves it ATTENDED (SetActive(true), with its
+// backlog sweep) — a chat the owner asked an agent to take used to stay at
+// the schema's active=0 "silence" default and PendingDedicated never handed
+// the agent a message. Every path that assigns goes through here (MCP
+// assign_chat_to_agent, MCP set_chat_status, POST /api/admin/agent-assign),
+// so the rule lives in this one place. If the chat was ignored/blacklist
+// beforehand (ChatIsOff) it is assigned as always but active is left as it
+// was — assigning never turns on what the owner switched off. Any other
+// status leaves active alone, and unassigning ("new") does not deactivate
+// (removing routing is not silencing). confirmation_mode is never touched.
 func (s *Store) SetStatus(jid, status string) error {
 	jid = StripDeviceSuffix(jid)
-	_, err := s.db.Exec(`INSERT INTO chats (jid, status) VALUES (?, ?)
-		ON CONFLICT(jid) DO UPDATE SET status = excluded.status`, jid, status)
-	return err
-}
-
-// AssignChat routes jid's dispatch exclusively to agentID AND leaves the chat
-// attended (active=true) — T171 (ct-2026-09-30-0951): a chat the owner asked
-// an agent to take, or a group an agent created on request, used to stay at
-// the schema's active=0 default ("silence", meant for contacts nobody asked
-// to attend), so PendingDedicated never handed the agent a single message.
-// The one place that rule lives: every path that assigns (MCP
-// assign_chat_to_agent, set_chat_status with agent_exclusive:<id>, the
-// dashboard's POST /api/admin/agent-assign) calls this. Unassigning does NOT
-// deactivate (removing routing is not silencing).
-//
-// A chat that was ignored/blacklist is the owner's deliberate "off" — the
-// assignment still lands (chats.status is one column, so it replaces the
-// ignored value, exactly as SetStatus always did) but active is left as it
-// was; the returned active tells the caller whether the chat is attended.
-// confirmation_mode is never touched.
-func (s *Store) AssignChat(jid, agentID string) (active bool, err error) {
-	jid = StripDeviceSuffix(jid)
-	prev, existed, err := s.GetChat(jid)
-	if err != nil {
-		return false, err
+	_, assigning := AgentExclusiveID(status)
+	wasOff := false
+	if assigning {
+		prev, existed, err := s.GetChat(jid)
+		if err != nil {
+			return err
+		}
+		wasOff = existed && ChatIsOff(prev.Status)
 	}
-	if err := s.SetStatus(jid, AgentExclusiveStatus(agentID)); err != nil {
-		return false, err
+	if _, err := s.db.Exec(`INSERT INTO chats (jid, status) VALUES (?, ?)
+		ON CONFLICT(jid) DO UPDATE SET status = excluded.status`, jid, status); err != nil {
+		return err
 	}
-	if existed && ChatIsOff(prev.Status) {
-		return prev.Active, nil
+	if assigning && !wasOff {
+		return s.SetActive(jid, true)
 	}
-	return true, s.SetActive(jid, true)
+	return nil
 }
 
 // ClaimChat attempts to claim jid for model, valid until now+ttl (avoid

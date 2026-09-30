@@ -6968,16 +6968,20 @@ desde T149 ct-2026-09-07-1730 — ver sus propias entradas más abajo)
   agente, o un grupo que un agente creó, nacía con `active=0` (el default del
   schema, "silencio") y `PendingDedicated` nunca le entregaba mensajes al
   agente: todo parecía configurado y no pasaba nada.
-  - `(*Store) AssignChat(jid, agentID) (active bool, err)` (`store/chat.go`):
-    la ÚNICA regla. Escribe `agent_exclusive:<id>` (`SetStatus`) y deja el chat
-    `active=true` (`SetActive`, con su barrido de backlog > 1 h). Si el chat
-    estaba `ignored`/`blacklist` (`ChatIsOff`) asigna igual pero NO lo prende y
-    devuelve su `active` previo. `confirmation_mode` no se toca. Desasignar no
-    desactiva. Los TRES caminos que asignan la llaman: `assign_chat_to_agent`
-    (MCP), `set_chat_status` con `agent_exclusive:<id>` (MCP) y
-    `POST /api/admin/agent-assign` (REST). `agents.go` (repuntar al cambiar el
-    principal) usa SQL crudo sobre chats YA asignados: no es una asignación
-    nueva y no se toca. `send_message` (T64) no se autoasigna: no hay camino.
+  - **La regla vive en `(*Store) SetStatus` (`store/chat.go`) — efecto
+    declarado, no cable escondido** (su doc-comment lo dice): si el estado
+    nuevo es `agent_exclusive:<id>` y el previo NO era `ignored`/`blacklist`
+    (`ChatIsOff`) → además `SetActive(jid, true)` (con su barrido de backlog
+    > 1 h). Si estaba apagado, asigna como siempre y `active` no se toca (no se
+    rechaza la asignación: sería un candado nuevo). Cualquier otro estado no
+    toca `active`; desasignar (`new`) no desactiva. `confirmation_mode` no se
+    toca. Los TRES caminos que asignan pasan por `SetStatus`:
+    `assign_chat_to_agent` (MCP), `set_chat_status` con `agent_exclusive:<id>`
+    (MCP) y `POST /api/admin/agent-assign` (REST). `agents.go` (repuntar al
+    cambiar el principal) usa SQL crudo sobre chats YA asignados: no es una
+    asignación nueva y no se toca. `send_message` (T64) no se autoasigna: no
+    hay camino. (Nota: `handleSetIgnored`, `admin.go`, no acepta
+    `agent_exclusive`: es el cuarto `SetStatus` pero no asigna.)
   - Respuestas: `assign_chat_to_agent` y el REST devuelven `"active"`; con un
     chat apagado, MCP agrega `"warning"`.
   - `create_group`: `seedCreatedGroup` deja el grupo `status=new` + `active=1`
@@ -6989,8 +6993,8 @@ desde T149 ct-2026-09-07-1730 — ver sus propias entradas más abajo)
     default) que se asigna cae en la rama "apagado": asigna y avisa, pero sigue
     inactivo — no se distingue el `ignored` por default del elegido por el
     dueño (una sola columna).
-  - Tests: `TestAssignChatLeavesChatAttended` (extremo a extremo con
-    `PendingDedicated`), `TestAssignChatDoesNotTurnOnAnOffChat`
+  - Tests: `TestSetStatusAssignLeavesChatAttended` (extremo a extremo con
+    `PendingDedicated`), `TestSetStatusAssignDoesNotTurnOnAnOffChat`
     (`store/pending_test.go`), `TestAssignChatToAgentReportsActive`,
     `TestSetChatStatusAgentExclusiveLeavesChatActive`
     (`agent_tools_test.go`), `TestCreateGroupLeavesTheGroupActive`, y la

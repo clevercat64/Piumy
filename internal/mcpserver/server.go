@@ -810,13 +810,7 @@ func New(ctx context.Context, d Deps) *server.MCPServer {
 			if !validChatStatus(status) {
 				return mcp.NewToolResultError("status must be whitelist|blacklist|new|ignored|agent_exclusive:<id>, got " + status), nil
 			}
-			// T171: agent_exclusive goes through AssignChat (the one place that
-			// also leaves the chat attended); the rest is a plain triage status.
-			if agentID, isAgentExclusive := store.AgentExclusiveID(status); isAgentExclusive {
-				if _, err := d.Store.AssignChat(jid, agentID); err != nil {
-					return mcp.NewToolResultError(err.Error()), nil
-				}
-			} else if err := d.Store.SetStatus(jid, status); err != nil {
+			if err := d.Store.SetStatus(jid, status); err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 			// M5 (ct-2026-07-22-1903): whitelist/blacklist/new/ignored are

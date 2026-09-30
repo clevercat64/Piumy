@@ -799,11 +799,11 @@ func TestMarkHandledBeforeForSenderRespectsTimestampBound(t *testing.T) {
 	}
 }
 
-// TestAssignChatLeavesChatAttended is T171 (ct-2026-09-30-0951): a chat the
+// TestSetStatusAssignLeavesChatAttended is T171 (ct-2026-09-30-0951): a chat the
 // owner assigns to an agent used to stay at active=0 and PendingDedicated never
 // handed the agent its messages. End to end: same unhandled message, invisible
 // before the assignment, pending after it.
-func TestAssignChatLeavesChatAttended(t *testing.T) {
+func TestSetStatusAssignLeavesChatAttended(t *testing.T) {
 	s := openTestStore(t)
 	const chat = "555000000001@c.us"
 	if err := s.TouchChat(chat, "Grupo", 1); err != nil {
@@ -816,25 +816,21 @@ func TestAssignChatLeavesChatAttended(t *testing.T) {
 		t.Fatalf("setup: unassigned inactive chat has %d pending, want 0", len(pending))
 	}
 
-	active, err := s.AssignChat(chat, "agent-x")
-	if err != nil {
+	if err := s.SetStatus(chat, AgentExclusiveStatus("agent-x")); err != nil {
 		t.Fatal(err)
-	}
-	if !active {
-		t.Error("AssignChat active = false, want true")
 	}
 	c, _, _ := s.GetChat(chat)
 	if !c.Active || c.Status != AgentExclusiveStatus("agent-x") {
-		t.Errorf("chat after AssignChat = active %v status %q, want active and agent_exclusive:agent-x", c.Active, c.Status)
+		t.Errorf("chat after assigning = active %v status %q, want active and agent_exclusive:agent-x", c.Active, c.Status)
 	}
 	if pending, _ := s.PendingDedicated(10); len(pending) != 1 {
-		t.Errorf("after AssignChat, %d pending, want 1 — the assigned agent must get the chat's messages", len(pending))
+		t.Errorf("after assigning, %d pending, want 1 — the assigned agent must get the chat's messages", len(pending))
 	}
 }
 
 // The owner's deliberate "off" (ignored/blacklist) is never switched on by an
 // assignment: it still lands, active stays as it was, the caller is told.
-func TestAssignChatDoesNotTurnOnAnOffChat(t *testing.T) {
+func TestSetStatusAssignDoesNotTurnOnAnOffChat(t *testing.T) {
 	for _, off := range []string{"ignored", "blacklist"} {
 		s := openTestStore(t)
 		const chat = "555000000002@c.us"
@@ -844,15 +840,12 @@ func TestAssignChatDoesNotTurnOnAnOffChat(t *testing.T) {
 		if err := s.SetStatus(chat, off); err != nil {
 			t.Fatal(err)
 		}
-		active, err := s.AssignChat(chat, "agent-x")
-		if err != nil {
+		if err := s.SetStatus(chat, AgentExclusiveStatus("agent-x")); err != nil {
 			t.Fatal(err)
 		}
-		if active {
-			t.Errorf("%s chat: AssignChat active = true, want false", off)
-		}
-		if c, _, _ := s.GetChat(chat); c.Active {
-			t.Errorf("%s chat: stored active = true after AssignChat, want it left off", off)
+		c, _, _ := s.GetChat(chat)
+		if c.Active || c.Status != AgentExclusiveStatus("agent-x") {
+			t.Errorf("%s chat after assigning = active %v status %q, want assigned but left inactive", off, c.Active, c.Status)
 		}
 	}
 }

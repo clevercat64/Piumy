@@ -1241,12 +1241,18 @@ func (d Deps) handleAssignChatToAgent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	active, err := d.Store.AssignChat(body.ChatID, body.AgentID)
+	if err := d.Store.SetStatus(body.ChatID, store.AgentExclusiveStatus(body.AgentID)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	// SetStatus leaves an assigned chat attended unless the owner had it
+	// switched off — report what actually got stored.
+	chat, _, err := d.Store.GetChat(body.ChatID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "assigned", "active": active})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "assigned", "active": chat.Active})
 }
 
 // handleCreateAgent registers an agent from the dashboard (ct-2026-07-29,

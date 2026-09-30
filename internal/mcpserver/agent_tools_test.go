@@ -821,7 +821,7 @@ func TestAssignChatToAgentReportsActive(t *testing.T) {
 }
 
 // T171: the third path that writes agent_exclusive:<id> — set_chat_status —
-// leaves the chat attended too, through the same Store.AssignChat.
+// leaves the chat attended too, through the same Store.SetStatus rule.
 func TestSetChatStatusAgentExclusiveLeavesChatActive(t *testing.T) {
 	st := openAgentDB(t)
 	if err := st.TouchChat("555000000005@c.us", "Tres", 1); err != nil {
