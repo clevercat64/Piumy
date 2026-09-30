@@ -1066,17 +1066,16 @@ func TestSendMessageThenStickerSameTurn(t *testing.T) {
 	}
 }
 
-// TestDraftAndSendMessageShareTheSameFourSendCap is T167 (ct-2026-09-17-1255,
-// boss verbatim: "quiero que lo quiten o aumenten a 4 mensajes"): draft
+// TestDraftAndSendMessageHaveNoSendCap is T167 (ct-2026-09-17-1255, boss
+// verbatim: "quiero que lo quiten o aumenten a 4 mensajes") as closed by T170
+// (ct-2026-09-29-2049): the cap is gone. draft
 // consumes the dispatch same as send_message (InFlight goes false on the
 // very first call, for a caution/danger dispatch same as boss, which is
 // "sin gate" end to end already) — but unlike before this contract, that
 // consumption isn't the end of the dispatch's own chat: send_message and
-// draft, in any mix, share ONE budget of maxSendsPerDispatch total calls to
-// it. Calls 2-4 here alternate send_message/draft on purpose, to prove the
-// counter is genuinely shared, not two separate ones; the 5th (whichever
-// tool) is refused.
-func TestDraftAndSendMessageShareTheSameFourSendCap(t *testing.T) {
+// draft, in any mix, keep landing (literal 5th and 6th call below, not a
+// production constant).
+func TestDraftAndSendMessageHaveNoSendCap(t *testing.T) {
 	gate := NewGate()
 	st, srv, ctx := serverWithGate(t, gate)
 	chat := "55500000103@c.us"
@@ -1110,17 +1109,12 @@ func TestDraftAndSendMessageShareTheSameFourSendCap(t *testing.T) {
 		{"draft", "drafted"},
 		{"send_message", "queued for sending"},
 	}
+	calls = append(calls, calls[0], calls[1])
 	for i, c := range calls {
 		out := callTool(t, termCtx, srv, c.tool, map[string]any{"to": chat, "message": "otra vez", "model": "m", "policy_version": policyVersion})
 		if !strings.Contains(out, c.want) {
-			t.Fatalf("%s #%d (call %d/%d overall) = %s, want %q — within the shared T167 cap", c.tool, i+2, i+2, maxSendsPerDispatch, out, c.want)
+			t.Fatalf("%s call #%d after consume = %s, want %q", c.tool, i+2, out, c.want)
 		}
-	}
-
-	// The 5th call, either tool, is past the shared budget.
-	over := callTool(t, termCtx, srv, "draft", map[string]any{"to": chat, "message": "una mas", "model": "m", "policy_version": policyVersion})
-	if !strings.Contains(over, "locked:") {
-		t.Errorf("draft past the shared T167 cap = %s, want it locked", over)
 	}
 }
 
@@ -1688,12 +1682,12 @@ func TestSendMessageWithoutDispatchNeverMarksPendingMessagesHandled(t *testing.T
 	}
 }
 
-// TestSendMessageLockedDistinguishesAlreadyConsumedFromNeverTouched is T147
+// TestSendMessageNeverTouchedLocksButConsumedDoesNot is T147
 // item 4: "locked" used to mean either "never touched" or "already
 // consumed" — indistinguishable, exactly the ambiguity that let a
 // wrongfully-consumed dispatch look identical to a normal one still waiting
 // on get_instructions.
-func TestSendMessageLockedDistinguishesAlreadyConsumedFromNeverTouched(t *testing.T) {
+func TestSendMessageNeverTouchedLocksButConsumedDoesNot(t *testing.T) {
 	gate := NewGate()
 	st, srv, ctx := serverWithGate(t, gate)
 	chat := "555000000031@c.us"
@@ -1725,26 +1719,16 @@ func TestSendMessageLockedDistinguishesAlreadyConsumedFromNeverTouched(t *testin
 		"to": chat, "message": "hola", "model": "m", "policy_version": policyVersion,
 	})
 
-	// T167 (ct-2026-09-17-1255): calls 2-4 to this SAME (now-consumed)
-	// dispatch's own chat are within the budget, not "already consumed" —
-	// spend it here so the LAST call (the 5th overall) is the one that
-	// finally hits the real "already consumed" wording this test is about.
-	for i := 2; i <= maxSendsPerDispatch; i++ {
-		mid := callTool(t, termCtx, srv, "send_message", map[string]any{
+	// T170 (ct-2026-09-29-2049): once consumed, the dispatch has no voice —
+	// every further send to its own chat lands like one with no dispatch (a
+	// literal 5 calls, no cap). Only the NEVER-touched case above still locks.
+	for i := 2; i <= 6; i++ {
+		out := callTool(t, termCtx, srv, "send_message", map[string]any{
 			"to": chat, "message": "otra vez", "model": "m", "policy_version": policyVersion,
 		})
-		if !strings.Contains(mid, "queued for sending") {
-			t.Fatalf("send_message call #%d (within the T167 cap) = %s, want it to succeed", i, mid)
+		if !strings.Contains(out, "queued for sending") {
+			t.Fatalf("send_message call #%d after consume = %s, want it to succeed", i, out)
 		}
-	}
-
-	// Same terminal, same (now-consumed) dispatch, budget exhausted — this
-	// one must say WHY it's locked, not repeat the never-touched wording.
-	out2 := callTool(t, termCtx, srv, "send_message", map[string]any{
-		"to": chat, "message": "otra vez", "model": "m", "policy_version": policyVersion,
-	})
-	if !strings.Contains(out2, "already consumed") {
-		t.Errorf("send_message past the T167 cap = %s, want it to say so explicitly, not the never-touched wording", out2)
 	}
 }
 
@@ -1762,7 +1746,7 @@ func TestSendMessageLockedDistinguishesAlreadyConsumedFromNeverTouched(t *testin
 // to ANY chat, hit the wall. T64's own principle ("iniciar sin despacho",
 // flow 17) must hold even with a stale consumed dispatch sitting on the
 // terminal — that dispatch's own chat is a different question, and stays
-// locked (see TestSendMessageLockedDistinguishesAlreadyConsumedFromNeverTouched
+// locked (see TestSendMessageNeverTouchedLocksButConsumedDoesNot
 // above, unchanged).
 
 // TestSendMessageToADifferentChatSucceedsAfterConsumedDispatch is the

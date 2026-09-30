@@ -4,9 +4,10 @@
 // chat. A boss-level dispatch (an explicit dispatch with Level ==
 // LevelBoss, never the absence of one — F4b) is unrestricted by design.
 //
-// Default DENY (F4b): a terminal with NO active dispatch is denied every
-// gated tool below — this replaces F4a's fail-open "no dispatch =
-// unrestricted". Tools with no chat concept at all (get_status,
+// T170 (supersedes F4b's default DENY; Citrino confirmed C1 on
+// 2026-09-29): a terminal with NO live dispatch — none, or one already
+// consumed — is denied nothing but set_kill_switch; gating only holds
+// while a caution/danger dispatch is alive. Tools with no chat concept at all (get_status,
 // get_decision_policy, the 4 gate tools) were never part of this gating
 // and stay open regardless — requiring a dispatch just to read the queue
 // depth would gate harmless reads for no anti-leakage benefit.
@@ -211,24 +212,29 @@ func levelGateMiddleware(gate *Gate, principalID string) server.ToolHandlerMiddl
 			}
 
 			termID := terminalIDFromContext(ctx)
+			// T170 (ct-2026-09-29-2049, boss verbatim: "tienes muchos candados
+			// en piumy"): a dispatch that is not ALIVE has no voice. No dispatch
+			// at all, or one already consumed (Done), is the same as an agent
+			// that was never dispatched — and that agent may already WRITE
+			// anywhere (T64, T150). Refusing it the READ of the very group it
+			// just created only forced it to ask the owner to write first. The
+			// anti-leakage rules below exist for the turn of a stranger, so
+			// they hold only while that turn is live. The one exception is
+			// set_kill_switch: the anti-ban brake the boss asked to keep, which
+			// only a live boss dispatch may touch.
 			active, ok := gate.Active(termID)
-			if !ok {
-				// T87: this exact message is what the boss hit trying
-				// get_media after a mid-dispatch restart — see
-				// noDispatchMessage's doc.
-				return mcp.NewToolResultError(gate.noDispatchMessage(termID, "levelGateMiddleware:"+name, "refused: no active dispatch for this terminal (default DENY) — call get_instructions first")), nil
+			if !ok || active.Done {
+				if bossOnlyTools[name] {
+					return mcp.NewToolResultError("refused: " + name + " is boss-only"), nil
+				}
+				return next(ctx, req)
 			}
 			if active.Level == LevelBoss {
-				// ST-A security fix (ct-2026-07-11-0740): a done (consumed)
-				// dispatch must not keep granting the boss bypass — before
-				// this, Level==Boss alone skipped every check below forever,
-				// even after the dispatch that earned it was long consumed
-				// (Consume marks state gateDone, never evicts byTerminal).
-				// Ready now tracks "usable" for boss too (RegisterDispatch
-				// starts boss dispatches gateReady; Consume ends them
-				// gateDone), so this only bypasses gating while still valid.
+				// ST-A (ct-2026-07-11-0740): the boss bypass only holds
+				// while the dispatch is usable (Ready). A consumed one never
+				// reaches here (Done returns above, without the bypass).
 				if !active.Ready {
-					return mcp.NewToolResultError("locked: this dispatch was already consumed — call get_instructions for a new one first"), nil
+					return mcp.NewToolResultError("locked: this dispatch has not completed get_instructions -> unlock -> remember/skip yet"), nil
 				}
 				return next(ctx, req)
 			}

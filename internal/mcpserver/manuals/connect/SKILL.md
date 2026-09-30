@@ -109,24 +109,19 @@ Si estás dentro de CleverCoder, no edites el `.mcp.json` a mano (se regenera): 
 
 ## Lo que tienes que tener claro, además de los pasos
 
-### Conectado no es habilitado: sin un despacho activo no puedes MIRAR casi nada
+### Sin despacho puedes mirar y escribir; el despacho solo pesa mientras atiendes uno
 
-Apenas te conectas, la mayoría de las herramientas de chat te van a responder esto:
+Conectado y registrado, sin nada asignado, ya puedes **mirar** (`get_chat`, `get_messages`, `get_media`, `list_chats`…) y **escribir** (`send_message`/`draft`, `send_to_boss`) — no hace falta que llegue ningún mensaje antes. Un agente que crea un grupo puede leer lo que le contestan ahí mismo.
 
-```
-refused: no active dispatch for this terminal (default DENY) — call get_instructions first
-```
+Un despacho solo cambia las cosas **mientras está vivo** (te llegó un mensaje y aún no lo cerraste con `send_message`/`draft`/`silent_act`):
 
-**Eso no es una falla de tu conexión: es el sistema funcionando.** `get_chat`, `get_messages`, `get_media` y el resto de las herramientas de la tabla "Lo que SÍ tocas" (`piumy-operator`) exigen un despacho real antes de dejarte mirar un chat puntual — 28 de las 55 herramientas del gateway funcionan así.
+- Si es de un desconocido (nivel caution/danger), durante ese turno te quedas acotado a ESE chat: no ves los demás chats ni los listados (anti-filtración). Al cerrar el turno, esa restricción termina sola.
+- Antes de contestar ese mensaje corres el ritual `get_instructions` → `unlock` → `remember`/`skip`. Es la lectura de las reglas del chat, no un permiso.
+- `set_kill_switch` es la única herramienta que solo el dueño (un despacho vivo de él) puede tocar: es el freno anti-baneo.
 
-**Eso no quiere decir que no puedas hablar primero.** `send_message`/`draft` sí dejan iniciar sin ningún despacho cuando tenés motivo — ver el flujo 17 del manual del operador, "Iniciar tú, sin despacho" (el dueño te encargó un número, por ejemplo). Y `send_to_boss` existe justo para avisarle algo al dueño sin que te haya escrito nada. Vas a ciegas (sin despacho tampoco podés mirar el chat antes con `get_chat`/`get_messages`), pero podés escribir.
+Si algo te rechaza, lee el texto: dice qué regla aplica. `get_status` responde siempre y sirve para diagnosticar tu conexión — mira `agent_connected` y `agents`; si también falla, entonces sí es la conexión: vuelve al paso 3 (clave) y al paso 5 (identificador).
 
-Cómo distinguir una cosa de la otra sin perder tiempo:
-
-- `get_status` **sí responde sin despacho** — no es la única (27 de las 55 herramientas no lo piden, entre ellas `send_message`/`draft`/`silent_act`/`send_to_boss`), pero es la que sirve para diagnosticar tu conexión: si te contesta, estás bien conectado — mira `agent_connected` y `agents`. Si te contesta y las de chat te rechazan, no toques nada más: solo estás esperando trabajo (o iniciá vos, si tenés motivo — flujo 17).
-- Si `get_status` también falla, entonces sí es la conexión — vuelve al paso 3 (clave) y al paso 5 (identificador).
-
-**Un despacho no se puede fabricar.** Nace de un mensaje real entrante de WhatsApp. El `capi-ping` del paso 6 comprueba el camino pero **no habilita**: su nonce no se registra en el gate, a propósito, para que un agente no pueda autoautorizarse. Si necesitas probar que puedes responder a un mensaje concreto (no iniciar vos), pídele al dueño que le escriba al número — no busques la vuelta.
+**Un despacho no se puede fabricar.** Nace de un mensaje real entrante de WhatsApp. El `capi-ping` del paso 6 comprueba el camino pero **no habilita ni hace falta que habilite**: su nonce no se registra en el gate, a propósito, para que un agente no pueda autoautorizarse. Para leer o escribir no lo necesitas.
 
 ### Ignorado o en blacklist: el dueño apagó ese chat a propósito
 

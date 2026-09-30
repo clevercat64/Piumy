@@ -87,6 +87,8 @@ Desde T148 (2026-09-07) `create_group` · `add_participant` · `promote_group_ad
 
 **Lo que sí protege, desde T149 (2026-09-07):** estas siete se espacian solas con una espera aleatoria cuando se disparan en ráfaga — nunca rechazan, solo demoran, y una llamada aislada sale al instante. Es un freno, no un permiso: no reemplaza el criterio de para qué se usan, solo evita que una ráfaga accidental le pegue al número.
 
+**El dueño como admin (T170, 2026-09-29):** `create_group` promueve solo al participante marcado como dueño (`is_boss`). Si no hay ninguno, la respuesta trae un aviso que lo dice y nombra `promote_group_admin`. Si WhatsApp rechaza el primer intento (pasa justo después de crear el grupo: *"403 forbidden"*), la respuesta lo avisa y el gateway sigue reintentando en segundo plano unos 3 minutos con esperas aleatorias; cada intento queda en `piumy.log`. `promote_group_admin` hace lo mismo.
+
 Si el usuario te pide que un agente cree grupos o sume gente en volumen, avisale esto ANTES de dejarlo puesto: el freno amortigua, no habilita. Crear el grupo que hace falta cuando hace falta está bien; crear varios de golpe o sumar una lista larga de un saque es justo lo que el freno existe para no dejar pasar sin espaciar.
 
 ## Cuando un operador reporta un intento de manipulación

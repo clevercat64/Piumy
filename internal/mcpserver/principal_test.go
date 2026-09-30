@@ -151,15 +151,14 @@ func TestPrincipalCanEnumerateWithoutDispatch(t *testing.T) {
 	}
 }
 
-// TestNonPrincipalStillGatedWithoutDispatch: terminal NO principal sin
-// dispatch → herramientas de enumeración/chat-scoped (levelgate.go's own
-// default-DENY middleware, un gate SEPARADO del que T64 tocó) → "default
-// DENY" (gating intacto). send_message ya NO vive acá — desde T64
+// TestNonPrincipalCanReadWithoutDispatch: terminal NO principal sin
+// dispatch → herramientas de enumeración/chat-scoped responden (T170,
+// ct-2026-09-29-2049: sin despacho vivo no hay candado; antes "default
+// DENY"). send_message ya NO vive acá — desde T64
 // (ct-2026-08-11-1627) su gate de iniciación es otro (ver
 // TestNonPrincipalCanInitiateWithoutDispatch abajo).
-func TestNonPrincipalStillGatedWithoutDispatch(t *testing.T) {
+func TestNonPrincipalCanReadWithoutDispatch(t *testing.T) {
 	gate := NewGate()
-	gate.startedAt = time.Now().Add(-2 * dispatchStaleAfter) // T87: hard-reject path, not the young-gate one
 	st, srv, ctx := serverWithPrincipalAndGate(t, gate)
 	chat := "55500000092@c.us"
 	if err := st.TouchChat(chat, "C", 1); err != nil {
@@ -176,8 +175,8 @@ func TestNonPrincipalStillGatedWithoutDispatch(t *testing.T) {
 	}
 	for _, c := range cases {
 		out := callTool(t, otherCtx, srv, c.tool, c.args)
-		if !strings.Contains(out, "default DENY") && !strings.Contains(out, "locked") && !strings.Contains(out, "refused") {
-			t.Errorf("non-principal sin dispatch: %s = %s, want it denied", c.tool, out)
+		if strings.Contains(out, "refused") {
+			t.Errorf("non-principal sin dispatch: %s = %s, want it answered (T170)", c.tool, out)
 		}
 	}
 }

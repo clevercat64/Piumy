@@ -115,13 +115,11 @@ Cada conexión MCP manda un header fijo, **`X-Piumy-Terminal-Id`** — es lo ún
 
 ## Lo que SÍ tocas
 
-**Antes de la tabla, lo que más confunde al empezar: mirar o actuar sobre UN CHAT puntual pide un despacho activo.** `get_chat`, `get_messages`, `get_media` y `resolve_chat` te van a rechazar con *"no active dispatch for this terminal (default DENY)"* si no estás atendiendo uno — igual que el resto de esta tabla y los listados globales: la GRAN MAYORÍA de las herramientas del gateway funcionan así. Las de grupos/perfil de WhatsApp y las de administración del plantel de agentes son la excepción desde T148 (ver más abajo): no piden despacho en absoluto, ni siquiera uno activo. Un puñado de excepciones no lo necesita — entre ellas `send_message`/`draft`/`silent_act`/`send_to_boss`/`get_status` — porque no tienen un chat puntual que proteger, o porque existen justamente para el momento en que todavía no hay ningún despacho. No es que te falten permisos ni que tu identidad esté mal: es que **el punto de partida para mirar o tocar un chat es un despacho**, y un despacho nace de un mensaje real que alguien te escribió.
+**Antes de la tabla: un despacho no es un permiso para mirar.** Sin despacho, o con uno que ya cerraste, puedes mirar y tocar cualquier chat con estas herramientas (`get_chat`, `get_messages`, `get_media`, `resolve_chat`, los listados…). El despacho solo restringe mientras está **vivo** y es de un desconocido (nivel caution/danger): durante ese turno ves únicamente el chat de ese despacho — los listados y los otros chats te rechazan con *"anti-leakage"*. Al cerrar el turno (`send_message`/`draft`/`silent_act`) la restricción termina. Única excepción permanente: `set_kill_switch`, solo del dueño.
 
-**Un caso distinto, que se confunde con ese mismo rechazo pero NO lo es (T87):** si un momento antes SÍ tenías un despacho activo — llegaste a leer un mensaje, quizás una foto que ibas a mirar con `get_media` — y de golpe la misma llamada te sale mal, fijate bien el texto. Si dice *"not denied"* en vez de sonar a rechazo, no perdiste ningún permiso: el gateway se reinició (o tu turno venció) justo mientras estabas en el medio del ritual. El mensaje no se perdió — nunca quedó marcado como atendido, así que te va a volver a llegar solo, con un nonce nuevo. **La respuesta correcta es esperar, no reportarle al dueño un problema de permisos** — sería justo lo contrario de lo que pasó.
+**Un caso que se confunde con un rechazo pero no lo es (T87):** si un momento antes tenías un despacho vivo — llegaste a leer un mensaje, quizás una foto que ibas a mirar con `get_media` — y de golpe la llamada sale mal con un texto que dice *"not denied"*, no perdiste ningún permiso: el gateway se reinició (o tu turno venció) en medio del ritual. El mensaje no se perdió — nunca quedó marcado como atendido, así que te va a volver a llegar solo, con un nonce nuevo. **La respuesta correcta es esperar, no reportarle al dueño un problema de permisos.**
 
-**`send_message`/`draft` son la excepción** (ver flujo 17, "iniciar tú"): podés escribirle primero a un chat sin ningún despacho — pero sin despacho tampoco podés mirarlo antes con `get_chat`/`get_messages`/`resolve_chat`. Vas a ciegas salvo lo que ya sepas de otra forma; la ley de rules sigue intacta (sin rules en ese chat, igual te rechaza).
-
-Consecuencia práctica, y no es obvia: **estando conectado, registrado y sin nada asignado, no podés mirar el contenido de ningún chat — y eso es lo esperado, no una falla.** Si te pasa, no busques qué configuraste mal: esperá a que llegue trabajo, o iniciá vos mismo si tenés motivo (flujo 17).
+Consecuencia práctica: **estando conectado, registrado y sin nada asignado, puedes leer cualquier chat y escribir primero** (flujo 17). La ley de rules sigue intacta: sin rules en ese chat, `send_message` te rechaza.
 
 | Para | Herramientas |
 |---|---|
@@ -489,7 +487,7 @@ Sin `get_instructions`/`unlock`/`remember`/`skip` — ese ritual es para un desp
 
 **Riesgo de baneo, no de código — tuyo.** WhatsApp banea números que escriben en frío a muchos contactos seguidos, sin que te hayan escrito antes. El sistema no te va a frenar por volumen acá — es una decisión del dueño, no una restricción de la herramienta. Escribile primero a **uno**, no a una lista entera de un tirón; si el dueño te dio varios números, espaciá los primeros contactos en vez de mandarlos todos en la misma ráfaga.
 
-`resolve_chat`/`get_chat` no te van a servir para mirar el chat ANTES de escribir (piden despacho, ver arriba) — vas con lo que ya sabés del pedido, no con lo que podés consultar primero.
+Antes de escribir puedes mirar el chat con `get_chat`/`get_messages`/`resolve_chat`: sin despacho no hay restricción de lectura.
 
 ## 18 · Vas a mandar una foto
 

@@ -6,6 +6,26 @@ Se actualiza en cada deploy/build junto con el relanzamiento del gateway.
 
 ---
 
+## Sin publicar
+
+### Changed
+- **Un agente ya no necesita que le escribas para leer un grupo.** Antes, un
+  agente que creaba un grupo podía escribir ahí pero no leer las respuestas
+  hasta que tú escribieras. Ahora, sin un mensaje en curso, puede leer y
+  escribir en cualquier chat. Mientras atiende a un desconocido sigue viendo
+  solo ese chat, y el freno de emergencia (`set_kill_switch`) sigue siendo solo
+  tuyo.
+- **Se quitó el tope de 4 mensajes por conversación atendida**: después de
+  contestar, el agente puede seguir escribiendo en ese chat.
+- **Hacerte admin de un grupo nuevo es más robusto.** Si WhatsApp rechaza el
+  primer intento, el gateway sigue reintentando unos 3 minutos en segundo
+  plano (con esperas al azar) y lo deja en el registro. Si en el grupo nadie
+  está marcado como dueño, `create_group` ahora lo avisa en vez de callar.
+- El registro (`piumy.log`) anota cada rechazo o error de las herramientas,
+  con la herramienta y el motivo (nunca el texto de los mensajes).
+
+---
+
 ## 0.12.1 — 2026-09-23
 
 ### Added

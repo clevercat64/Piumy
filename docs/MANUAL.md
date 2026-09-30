@@ -6828,12 +6828,15 @@ desde T149 ct-2026-09-07-1730 — ver sus propias entradas más abajo)
   `TestUnlockAndSkipIdempotentOnDoubleCall`,
   `TestUnlockAndSkipErrorDistinctlyAfterConsume` (`gate_test.go`).
 - `(*Gate) Active(terminalID) (ActiveDispatch, bool)` — `false` = sin
-  dispatch → **DENY** en las tools gateadas (default DENY, F4b — antes,
-  F4a, esto caía a irrestricto; gap cerrado). `ActiveDispatch{ChatJID, Level, Ready, BurstMaxTS, Sender, Nonce, Done, SendCount}`:
+  dispatch. **Desde T170 (ct-2026-09-29-2049) eso ya no niega nada**: sin
+  despacho vivo (ninguno, o uno `Done`) las tools gateadas pasan, salvo
+  `set_kill_switch` (era "default DENY", F4b; ver la entrada T170 más abajo).
+  `ActiveDispatch{ChatJID, Level, Ready, BurstMaxTS, Sender, Nonce, Done}`
+  (`SendCount` se borró en T170):
   `BurstMaxTS` (ct-2026-07-13-2243) es el TS del último msg del burst registrado — `send_message`/`draft`
   lo usan en `MarkHandledBefore` para no marcar mensajes que el agente nunca recibió.
   `Sender` (T108, ct-2026-09-01-1413) es el hablante de grupo, `""` en 1:1 — ver `RegisterDispatch`.
-  `Nonce`/`Done` (T147, ct-2026-09-07) — ver más abajo. `SendCount` (T167, ct-2026-09-17-1255) — ver más abajo.
+  `Nonce`/`Done` (T147, ct-2026-09-07) — ver más abajo.
   `Level == boss` → sin restricción de chat/checkpoint, pero solo viene de un dispatch
   `level=boss` EXPLÍCITO, nunca de la ausencia de dispatch, y **desde
   ST-A (ct-2026-07-11-0740) también exige `Ready`** — ver el fix de
@@ -6906,7 +6909,7 @@ desde T149 ct-2026-09-07-1730 — ver sus propias entradas más abajo)
      `TestSendMessageWithoutDispatchNeverMarksPendingMessagesHandled`,
      `TestSendMessageLockedDistinguishesAlreadyConsumedFromNeverTouched`
      (`send_test.go`).
-- **T167 (ct-2026-09-17-1255) — hasta 4 envíos por despacho al chat propio,
+- **T167 (ct-2026-09-17-1255) — hasta 4 envíos por despacho al chat propio** (**reemplazado por T170, entrada de abajo: el tope, `maxSendsPerDispatch`, `RecordSend` y `SendCount` ya no existen; se conserva como historia**),
   boss verbatim: "quiero que lo quiten o aumenten a 4 mensajes" (caso:
   mandar un mensaje y después un sticker).** `Consume` NO se tocó — sigue
   cerrando el turno (`gateDone`, `InFlight` → `false`) en el PRIMER
@@ -6961,6 +6964,49 @@ desde T149 ct-2026-09-07-1730 — ver sus propias entradas más abajo)
     `TestGateBossConsumedDispatchNoLongerGrantsPrivileges` (ST-A extendida:
     2°-4° pasan, 5° sigue denegado — el residuo de privilegio sigue acotado,
     ya no en cero) (`send_test.go`/`gate_test.go`).
+- **T170 (ct-2026-09-29-2049) — sacar los candados que traban a un agente en
+  un grupo.** Boss verbatim: *"un agente creó un grupo y no me pudo habilitar
+  como admin ahí, y otro agente me pidió que le hable para contestarme en el
+  grupo, tienes muchos candados en piumy"*. Regla nueva: **un despacho que no
+  está vivo no tiene voz.**
+  - `levelGateMiddleware` (`levelgate.go`): sin despacho, o con uno `Done`, la
+    tool pasa (antes: "default DENY" / "locked: consumed"). La restricción
+    anti-filtración (enumeración y chat ajeno negados) rige solo mientras un
+    despacho caution/danger está VIVO. `set_kill_switch` sigue boss-only: con
+    despacho no vivo responde `refused: set_kill_switch is boss-only`.
+  - `validateSend` (`send.go`): un despacho `Done` no tiene voz sobre
+    `send_message`/`draft` a su propio chat — se trata como sin despacho (T64).
+    **Se borran** `maxSendsPerDispatch`, `(*Gate) RecordSend`,
+    `ActiveDispatch.SendCount` y `dispatch.sends`.
+  - **Se conserva**: el ritual `get_instructions` → `unlock` → `remember`/`skip`
+    y `policy_version` para un despacho VIVO aún no desbloqueado; `silent_act`.
+  - `group_tools.go`: `create_group` avisa (warning) cuando ningún
+    participante es `is_boss` y nombra `promote_group_admin` (antes: silencio).
+    La promoción (`promoteFirstTry`, usada por `create_group` y
+    `promote_group_admin`) hace UN intento en línea; si falla, responde ya
+    ("sigo reintentando en segundo plano") y una goroutine con contexto propio
+    (`retryPromote`) reintenta con `promoteRetryWindow` aleatoria (20-40 s)
+    hasta `promoteRetryBudget` (3 min), logueando cada intento y el resultado.
+    Motivo (evidencia literal): *"info query returned status 403: forbidden"*
+    en los 3 intentos rápidos; `maxPromoteAttempts` se borró.
+  - `errorlog.go` (nuevo): `errorLogMiddleware`, primero en `s.Use`, deja una
+    línea en `piumy.log` por cada resultado de error de cualquier tool
+    (`mcpserver: tool <nombre> terminal=<id> error: <motivo>`): cubre rechazos
+    de levelGate/`validateSend` y errores de las tools de grupo. Nunca
+    argumentos ni contenido de mensajes; motivo truncado a 300 runas.
+  - Skills `connect`/`operator`/`orchestrator`: sin el candado ni el "pídele
+    al dueño que te escriba"; orchestrator explica el admin del dueño.
+  - Techos: el reintento en segundo plano vive en memoria (un reinicio lo
+    pierde); no hay reintento si el error no es del intento inicial de WhatsApp.
+  - Tests: `TestGateNoDispatchCanReadButNotKillSwitch`,
+    `TestConsumedCautionDispatchCanEnumerate`,
+    `TestLiveCautionDispatchStillDeniesOtherChat`,
+    `TestNonPrincipalCanReadWithoutDispatch`,
+    `TestDraftAndSendMessageHaveNoSendCap`,
+    `TestSendMessageNeverTouchedLocksButConsumedDoesNot`,
+    `TestCreateGroupDoesNotPromoteNonBossParticipants`,
+    `TestPromoteGroupAdminFailureKeepsRetryingInBackground`,
+    `TestRefusedToolCallIsLogged`.
 - **ST-A — escalada de privilegios permanente (ct-2026-07-11-0740, CRITICAL,
   hallado en auditoría de Amatista):** `Consume` marca `gateDone` pero deja
   la entrada en `byTerminal` — `Active` seguía devolviendo `Level=boss`

@@ -74,13 +74,16 @@ func unlockToken(t *testing.T, out string) string {
 	return instr.Token
 }
 
-func TestGateDefaultDenyWithNoDispatch(t *testing.T) {
+// TestGateNoDispatchCanReadButNotKillSwitch (T170, ct-2026-09-29-2049;
+// replaces the F4b default-DENY test): a terminal with no dispatch may read
+// any chat and enumerate — an agent that just created a group must be able
+// to read the answers — but set_kill_switch stays boss-only.
+func TestGateNoDispatchCanReadButNotKillSwitch(t *testing.T) {
 	gate := NewGate()
 	// T87: a Gate this young reads "no dispatch" as "probably a restart",
 	// not a hard reject (see TestGateNewlyStartedGetsRestartMessageNotDeny)
 	// — this test wants the OLD, unambiguous hard-reject path, so it ages
 	// the gate past staleAfter first.
-	gate.startedAt = time.Now().Add(-2 * dispatchStaleAfter)
 	st, srv, ctx := serverWithGate(t, gate)
 	chat := "55500000045@c.us"
 	if err := st.TouchChat(chat, "C", 1); err != nil {
@@ -102,43 +105,19 @@ func TestGateDefaultDenyWithNoDispatch(t *testing.T) {
 		t.Errorf("send_message with no dispatch registered = %s, want queued for sending", out)
 	}
 
-	// A gated (chat-scoped) tool: also denied.
-	if out := callTool(t, termCtx, srv, "get_chat", map[string]any{"chat_id": chat}); !strings.Contains(out, "default DENY") {
-		t.Errorf("get_chat with no dispatch = %s, want default DENY", out)
+	// A chat-scoped tool and an enumeration tool now pass.
+	if out := callTool(t, termCtx, srv, "get_messages", map[string]any{"chat_id": chat}); strings.Contains(out, "refused") {
+		t.Errorf("get_messages with no dispatch = %s, want it to answer", out)
 	}
-	// An enumeration tool: also denied.
-	if out := callTool(t, termCtx, srv, "list_chats", map[string]any{}); !strings.Contains(out, "default DENY") {
-		t.Errorf("list_chats with no dispatch = %s, want default DENY", out)
+	if out := callTool(t, termCtx, srv, "list_chats", map[string]any{}); strings.Contains(out, "refused") {
+		t.Errorf("list_chats with no dispatch = %s, want it to answer", out)
+	}
+	if out := callTool(t, termCtx, srv, "set_kill_switch", map[string]any{"kill": true}); !strings.Contains(out, "boss-only") {
+		t.Errorf("set_kill_switch with no dispatch = %s, want refused boss-only", out)
 	}
 	// An UNGATED tool (no chat concept): still open, never required a dispatch.
 	if out := callTool(t, termCtx, srv, "get_status", map[string]any{}); strings.Contains(out, "DENY") {
 		t.Errorf("get_status with no dispatch = %s, want it unaffected (never gated)", out)
-	}
-}
-
-// TestGateNewlyStartedGetsRestartMessageNotDeny is T87's core positive case
-// (criterio de listo: "un nonce contra un Gate recién creado recibe el
-// mensaje nuevo") — companion to TestGateDefaultDenyWithNoDispatch above,
-// which proves the OTHER case (aged gate, same conditions, still hard
-// denies). A fresh NewGate() with nothing registered at all — the real bug
-// the boss hit was exactly this shape: the gateway restarts, the maps are
-// empty, and the very next gated call from an agent that had a legitimate
-// dispatch a moment ago reads as a security refusal instead of "wait".
-func TestGateNewlyStartedGetsRestartMessageNotDeny(t *testing.T) {
-	gate := NewGate() // startedAt == now, deliberately NOT aged
-	st, srv, ctx := serverWithGate(t, gate)
-	chat := "55500000046@c.us"
-	if err := st.TouchChat(chat, "C", 1); err != nil {
-		t.Fatal(err)
-	}
-	termCtx := withTerminalID(ctx, "term-freshly-restarted")
-
-	out := callTool(t, termCtx, srv, "get_chat", map[string]any{"chat_id": chat})
-	if strings.Contains(out, "default DENY") {
-		t.Errorf("get_chat against a freshly-started gate = %s, want the T87 restart message, not default DENY", out)
-	}
-	if !strings.Contains(out, "not denied") || !strings.Contains(out, "redispatched") {
-		t.Errorf("get_chat against a freshly-started gate = %s, want it to explain the dispatch will come back", out)
 	}
 }
 
@@ -450,15 +429,11 @@ func TestGateRememberWritesMemoryAndContext(t *testing.T) {
 // SAME terminal, SAME (already-consumed) dispatch, no new registration at
 // all.
 //
-// T167 (ct-2026-09-17-1255) narrowed, not removed, the guarantee this test
-// checks: a consumed dispatch's residual window is no longer ZERO extra
-// sends, it's maxSendsPerDispatch total — but still bounded (not "forever"),
-// and still scoped to this exact chat (see
-// TestSendMessageLockedDistinguishesAlreadyConsumedFromNeverTouched and
-// TestSendMessageToADifferentChatSucceedsAfterConsumedDispatch, send_test.go,
-// for the send_message-specific coverage of both limits). What this test
-// still must prove: the window ends somewhere, and boss-only ADMIN tools
-// (set_is_boss below) never widen with it.
+// T170 (ct-2026-09-29-2049) removed the send cap T167 had put on this
+// window: a consumed dispatch has no voice, so send_message behaves exactly
+// as with no dispatch (T64) and never locks. What this test still must
+// prove: the privileged tools stay closed — set_is_boss below and
+// set_kill_switch never widen with it.
 func TestGateBossConsumedDispatchNoLongerGrantsPrivileges(t *testing.T) {
 	gate := NewGate()
 	st, srv, ctx := serverWithGate(t, gate)
@@ -484,25 +459,22 @@ func TestGateBossConsumedDispatchNoLongerGrantsPrivileges(t *testing.T) {
 		t.Fatalf("setup: Active after consume = %+v, ok=%v, want bound with Ready=false", active, ok)
 	}
 
-	// T167: calls 2-4, still with no new dispatch, land within the shared
-	// budget — the residual window is bounded, not zero.
-	for i := 2; i <= maxSendsPerDispatch; i++ {
+	// T170: no cap — call 5 and 6 with no new dispatch land like any send
+	// from a terminal with no dispatch (literal 6, not a production constant).
+	for i := 2; i <= 6; i++ {
 		out := callTool(t, termCtx, srv, "send_message", map[string]any{
 			"to": bossChat, "message": "otra vez, sin nuevo dispatch", "model": "m", "policy_version": policyVersion,
 		})
 		if !strings.Contains(out, "queued for sending") {
-			t.Fatalf("send #%d after boss consume, no new dispatch = %s, want it within the T167 cap", i, out)
+			t.Fatalf("send #%d after boss consume, no new dispatch = %s, want it to pass (no cap, T170)", i, out)
 		}
 	}
 
-	// The vulnerability this test guards: past maxSendsPerDispatch, a
-	// FURTHER send with no new dispatch must be denied — the window is
-	// bounded, never infinite, regardless of the residual Level=boss.
-	overCap := callTool(t, termCtx, srv, "send_message", map[string]any{
-		"to": bossChat, "message": "una mas, ya deberia estar cerrado", "model": "m", "policy_version": policyVersion,
-	})
-	if !strings.Contains(overCap, "locked:") {
-		t.Errorf("send_message past the T167 cap after boss consume, no new dispatch = %s, want locked/denied", overCap)
+	// set_kill_switch stays boss-only: a consumed boss dispatch is NOT a
+	// live one.
+	kill := callTool(t, termCtx, srv, "set_kill_switch", map[string]any{"kill": true})
+	if !strings.Contains(kill, "boss-only") {
+		t.Errorf("set_kill_switch after boss consume = %s, want refused boss-only", kill)
 	}
 
 	// set_is_boss (T150, ct-2026-09-07-1839): this used to assert "locked:"

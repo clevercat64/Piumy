@@ -518,7 +518,7 @@ func New(ctx context.Context, d Deps) *server.MCPServer {
 	// of RegisterDispatch being called — see Gate.Sweep's doc for why a
 	// wedged terminal otherwise never gets swept at all.
 	go gate.Sweep(ctx)
-	s.Use(floodGuardMiddleware(guard), levelGateMiddleware(gate, d.PrincipalTerminalID))
+	s.Use(errorLogMiddleware(), floodGuardMiddleware(guard), levelGateMiddleware(gate, d.PrincipalTerminalID))
 
 	claimTTLDefault := d.ClaimTTLDefault
 	if claimTTLDefault <= 0 {
