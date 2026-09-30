@@ -430,6 +430,36 @@ func (s *Store) SetStatus(jid, status string) error {
 	return err
 }
 
+// AssignChat routes jid's dispatch exclusively to agentID AND leaves the chat
+// attended (active=true) — T171 (ct-2026-09-30-0951): a chat the owner asked
+// an agent to take, or a group an agent created on request, used to stay at
+// the schema's active=0 default ("silence", meant for contacts nobody asked
+// to attend), so PendingDedicated never handed the agent a single message.
+// The one place that rule lives: every path that assigns (MCP
+// assign_chat_to_agent, set_chat_status with agent_exclusive:<id>, the
+// dashboard's POST /api/admin/agent-assign) calls this. Unassigning does NOT
+// deactivate (removing routing is not silencing).
+//
+// A chat that was ignored/blacklist is the owner's deliberate "off" — the
+// assignment still lands (chats.status is one column, so it replaces the
+// ignored value, exactly as SetStatus always did) but active is left as it
+// was; the returned active tells the caller whether the chat is attended.
+// confirmation_mode is never touched.
+func (s *Store) AssignChat(jid, agentID string) (active bool, err error) {
+	jid = StripDeviceSuffix(jid)
+	prev, existed, err := s.GetChat(jid)
+	if err != nil {
+		return false, err
+	}
+	if err := s.SetStatus(jid, AgentExclusiveStatus(agentID)); err != nil {
+		return false, err
+	}
+	if existed && ChatIsOff(prev.Status) {
+		return prev.Active, nil
+	}
+	return true, s.SetActive(jid, true)
+}
+
 // ClaimChat attempts to claim jid for model, valid until now+ttl (avoid
 // double-attention between multiple MCP agents/models working the same
 // queue). Succeeds (true) if the chat is unclaimed, already claimed by this

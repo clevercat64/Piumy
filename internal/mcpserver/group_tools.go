@@ -108,6 +108,17 @@ func seedCreatedGroup(d Deps, info *types.GroupInfo) []string {
 	if err := d.Store.TouchChat(jid, info.Name, now); err != nil {
 		warnings = append(warnings, fmt.Sprintf("could not save the group's name: %v", err))
 	}
+	// T171 (ct-2026-09-30-0951): a group an agent created on request is
+	// attended from birth. TouchChat births every group "ignored" (the default
+	// for groups nobody asked to attend) and active=0 — with either, nobody
+	// would ever be dispatched its messages and send_message would refuse it.
+	// This group is not one of those: the owner asked for it. confirmation_mode
+	// stays as TouchChat set it — "en la modalidad que se configure".
+	if err := d.Store.SetStatus(jid, "new"); err != nil {
+		warnings = append(warnings, fmt.Sprintf("could not clear the group's default ignored status: %v — call set_chat_status", err))
+	} else if err := d.Store.SetActive(jid, true); err != nil {
+		warnings = append(warnings, fmt.Sprintf("could not mark the group as attended (active): %v — call set_chat_active", err))
+	}
 	for _, p := range info.Participants {
 		member := canonicalParticipantJID(p)
 		if err := d.Store.UpsertGroupMember(jid, member.String(), p.DisplayName, now); err != nil {
@@ -256,6 +267,16 @@ func (p *groupActionPacer) pace(ctx context.Context) {
 	p.firedAt = time.Now()
 }
 
+// groupIsActive reports the group's real stored state, so the response never
+// claims "active" the store didn't actually keep.
+func groupIsActive(d Deps, info *types.GroupInfo) bool {
+	if d.Store == nil {
+		return false
+	}
+	c, ok, err := d.Store.GetChat(info.JID.String())
+	return err == nil && ok && c.Active
+}
+
 func addGroupTools(s *server.MCPServer, d Deps, tracker *agentTracker) {
 	pacer := &groupActionPacer{}
 
@@ -289,13 +310,11 @@ func addGroupTools(s *server.MCPServer, d Deps, tracker *agentTracker) {
 			// write would be worse than the problem this contract fixes.
 			warnings := seedCreatedGroup(d, info)
 			warnings = append(warnings, promoteBossParticipants(ctx, d, info)...)
-			if len(warnings) == 0 {
-				return jsonResult(info)
-			}
 			return jsonResult(struct {
 				*types.GroupInfo
-				Warnings []string `json:"warnings"`
-			}{info, warnings})
+				Active   bool     `json:"active"`
+				Warnings []string `json:"warnings,omitempty"`
+			}{info, groupIsActive(d, info), warnings})
 		})
 
 	// ── add_participant ──────────────────────────────────────────────────

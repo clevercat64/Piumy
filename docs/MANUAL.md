@@ -6964,6 +6964,37 @@ desde T149 ct-2026-09-07-1730 — ver sus propias entradas más abajo)
     `TestGateBossConsumedDispatchNoLongerGrantsPrivileges` (ST-A extendida:
     2°-4° pasan, 5° sigue denegado — el residuo de privilegio sigue acotado,
     ya no en cero) (`send_test.go`/`gate_test.go`).
+- **T171 (ct-2026-09-30-0951) — asignado = atendido.** Un chat asignado a un
+  agente, o un grupo que un agente creó, nacía con `active=0` (el default del
+  schema, "silencio") y `PendingDedicated` nunca le entregaba mensajes al
+  agente: todo parecía configurado y no pasaba nada.
+  - `(*Store) AssignChat(jid, agentID) (active bool, err)` (`store/chat.go`):
+    la ÚNICA regla. Escribe `agent_exclusive:<id>` (`SetStatus`) y deja el chat
+    `active=true` (`SetActive`, con su barrido de backlog > 1 h). Si el chat
+    estaba `ignored`/`blacklist` (`ChatIsOff`) asigna igual pero NO lo prende y
+    devuelve su `active` previo. `confirmation_mode` no se toca. Desasignar no
+    desactiva. Los TRES caminos que asignan la llaman: `assign_chat_to_agent`
+    (MCP), `set_chat_status` con `agent_exclusive:<id>` (MCP) y
+    `POST /api/admin/agent-assign` (REST). `agents.go` (repuntar al cambiar el
+    principal) usa SQL crudo sobre chats YA asignados: no es una asignación
+    nueva y no se toca. `send_message` (T64) no se autoasigna: no hay camino.
+  - Respuestas: `assign_chat_to_agent` y el REST devuelven `"active"`; con un
+    chat apagado, MCP agrega `"warning"`.
+  - `create_group`: `seedCreatedGroup` deja el grupo `status=new` + `active=1`
+    (`TouchChat` nace todo grupo `ignored` y `confirmation_mode=always`: sin
+    esto `send_message` lo rechazaba). El modo de confirmación queda en `always`
+    — lo que el agente escriba sale como borrador hasta que el dueño lo cambie.
+    La respuesta trae `"active"` (el estado guardado, no un supuesto).
+  - **Límite conocido:** un grupo YA existente (sincronizado, `ignored` por
+    default) que se asigna cae en la rama "apagado": asigna y avisa, pero sigue
+    inactivo — no se distingue el `ignored` por default del elegido por el
+    dueño (una sola columna).
+  - Tests: `TestAssignChatLeavesChatAttended` (extremo a extremo con
+    `PendingDedicated`), `TestAssignChatDoesNotTurnOnAnOffChat`
+    (`store/pending_test.go`), `TestAssignChatToAgentReportsActive`,
+    `TestSetChatStatusAgentExclusiveLeavesChatActive`
+    (`agent_tools_test.go`), `TestCreateGroupLeavesTheGroupActive`, y la
+    aserción de `active` en el test REST de asignación.
 - **T170 (ct-2026-09-29-2049) — sacar los candados que traban a un agente en
   un grupo.** Boss verbatim: *"un agente creó un grupo y no me pudo habilitar
   como admin ahí, y otro agente me pidió que le hable para contestarme en el

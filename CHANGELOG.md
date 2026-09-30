@@ -6,6 +6,19 @@ Se actualiza en cada deploy/build junto con el relanzamiento del gateway.
 
 ---
 
+## Sin publicar
+
+### Fixed
+- **Un chat asignado a un agente, o un grupo que un agente crea, ahora queda
+  atendido.** Antes quedaban en silencio: aunque todo pareciera configurado, el
+  agente nunca recibía los mensajes hasta que alguien activara el chat a mano.
+  Asignar (desde el tablero o por el agente) deja el chat activo; un grupo
+  creado por un agente nace activo. Si el chat lo apagaste tú (ignorado o lista
+  negra), la asignación se guarda pero el chat sigue apagado y se avisa. El modo
+  de confirmación no cambia: si el chat pide aprobación, sigue pidiéndola.
+
+---
+
 ## 0.12.2 — 2026-09-29
 
 ### Changed

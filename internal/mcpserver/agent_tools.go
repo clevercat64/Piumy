@@ -210,7 +210,7 @@ func addAgentTools(s *server.MCPServer, d Deps) {
 	// (T148's own contract: "no se toca"), not the authority lock removed
 	// here.
 	s.AddTool(mcp.NewTool("assign_chat_to_agent",
-		mcp.WithDescription("Manually route a chat's dispatch to one agent (writes agent_exclusive:<id>), or clear the assignment back to the default fallback (omit agent_id or pass an empty string). The principal itself is never a valid assignment target — an unassigned chat already falls back to it."),
+		mcp.WithDescription("Manually route a chat's dispatch to one agent (writes agent_exclusive:<id>) and leave the chat active so the agent actually receives its messages (a chat switched off with ignored/blacklist stays inactive; the response says so), or clear the assignment back to the default fallback (omit agent_id or pass an empty string). The principal itself is never a valid assignment target — an unassigned chat already falls back to it."),
 		mcp.WithString("chat_id", mcp.Required()),
 		mcp.WithString("agent_id", mcp.Description("The agent to assign to. Omit or pass \"\" to unassign."))),
 		func(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -234,10 +234,15 @@ func addAgentTools(s *server.MCPServer, d Deps) {
 			} else if !ok {
 				return mcp.NewToolResultError(fmt.Sprintf("unknown agent_id %q", agentID)), nil
 			}
-			if err := d.Store.SetStatus(chatID, store.AgentExclusiveStatus(agentID)); err != nil {
+			active, err := d.Store.AssignChat(chatID, agentID)
+			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("store: %v", err)), nil
 			}
-			return mcp.NewToolResultText(fmt.Sprintf(`{"chat_id":%q,"agent_id":%q,"status":"assigned"}`, chatID, agentID)), nil
+			result := map[string]any{"chat_id": chatID, "agent_id": agentID, "status": "assigned", "active": active}
+			if !active {
+				result["warning"] = "this chat is switched off (ignored/blacklist), so it stays inactive — the agent will get no dispatches; call set_chat_active to attend it"
+			}
+			return jsonResult(result)
 		})
 
 	// ── delete_agent ─────────────────────────────────────────────────────

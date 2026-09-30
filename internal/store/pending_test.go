@@ -1,6 +1,9 @@
 package store
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // TestMarkHandledBeforeBounded verifies ct-2026-07-13-2105: MarkHandledBefore
 // marks messages with ts<=tsResp handled but leaves later messages untouched.
@@ -793,5 +796,63 @@ func TestMarkHandledBeforeForSenderRespectsTimestampBound(t *testing.T) {
 	}
 	if len(pending) != 1 || pending[0].ID != "m2" {
 		t.Fatalf("got %+v, want m2 (ts=300 > bound 200) still pending", pending)
+	}
+}
+
+// TestAssignChatLeavesChatAttended is T171 (ct-2026-09-30-0951): a chat the
+// owner assigns to an agent used to stay at active=0 and PendingDedicated never
+// handed the agent its messages. End to end: same unhandled message, invisible
+// before the assignment, pending after it.
+func TestAssignChatLeavesChatAttended(t *testing.T) {
+	s := openTestStore(t)
+	const chat = "555000000001@c.us"
+	if err := s.TouchChat(chat, "Grupo", 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddMessage(Message{ChatJID: chat, ID: "m1", FromMe: false, Text: "hola", TS: time.Now().Unix()}); err != nil {
+		t.Fatal(err)
+	}
+	if pending, _ := s.PendingDedicated(10); len(pending) != 0 {
+		t.Fatalf("setup: unassigned inactive chat has %d pending, want 0", len(pending))
+	}
+
+	active, err := s.AssignChat(chat, "agent-x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !active {
+		t.Error("AssignChat active = false, want true")
+	}
+	c, _, _ := s.GetChat(chat)
+	if !c.Active || c.Status != AgentExclusiveStatus("agent-x") {
+		t.Errorf("chat after AssignChat = active %v status %q, want active and agent_exclusive:agent-x", c.Active, c.Status)
+	}
+	if pending, _ := s.PendingDedicated(10); len(pending) != 1 {
+		t.Errorf("after AssignChat, %d pending, want 1 — the assigned agent must get the chat's messages", len(pending))
+	}
+}
+
+// The owner's deliberate "off" (ignored/blacklist) is never switched on by an
+// assignment: it still lands, active stays as it was, the caller is told.
+func TestAssignChatDoesNotTurnOnAnOffChat(t *testing.T) {
+	for _, off := range []string{"ignored", "blacklist"} {
+		s := openTestStore(t)
+		const chat = "555000000002@c.us"
+		if err := s.TouchChat(chat, "Contacto", 1); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SetStatus(chat, off); err != nil {
+			t.Fatal(err)
+		}
+		active, err := s.AssignChat(chat, "agent-x")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if active {
+			t.Errorf("%s chat: AssignChat active = true, want false", off)
+		}
+		if c, _, _ := s.GetChat(chat); c.Active {
+			t.Errorf("%s chat: stored active = true after AssignChat, want it left off", off)
+		}
 	}
 }

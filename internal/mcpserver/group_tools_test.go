@@ -1288,3 +1288,25 @@ func TestPromoteGroupAdminFailureKeepsRetryingInBackground(t *testing.T) {
 	}
 	waitFor(t, func() bool { return fgp.calls() == 2 }, "the background retry")
 }
+
+// T171 (ct-2026-09-30-0951): a group an agent creates is attended from birth,
+// and the response says so.
+func TestCreateGroupLeavesTheGroupActive(t *testing.T) {
+	fgp := &fakeGroupProfile{
+		createGroupJID:          types.NewJID("555001", "g.us"),
+		createGroupParticipants: []types.GroupParticipant{{JID: types.NewJID("555000000088", "s.whatsapp.net")}},
+	}
+	st, ctx, srv := serverWithGroupProfileAndStore(t, fgp)
+
+	out := callTool(t, ctx, srv, "create_group", map[string]any{
+		"name": "Grupo", "participants": []string{"555000000088@s.whatsapp.net"},
+	})
+
+	c, ok, err := st.GetChat("555001@g.us")
+	if err != nil || !ok || !c.Active {
+		t.Errorf("group chat after create_group = %+v ok=%v err=%v, want active", c, ok, err)
+	}
+	if !strings.Contains(out, `\"active\": true`) {
+		t.Errorf("create_group response = %s, want active:true", out)
+	}
+}

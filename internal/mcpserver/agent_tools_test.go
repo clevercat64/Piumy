@@ -780,3 +780,62 @@ func TestAgentToolsAreNotBossOnly(t *testing.T) {
 		}
 	}
 }
+
+// T171 (ct-2026-09-30-0951): assigning leaves the chat attended and says so;
+// a chat the owner switched off stays off and the response warns.
+func TestAssignChatToAgentReportsActive(t *testing.T) {
+	st := openAgentDB(t)
+	if err := st.UpsertAgent(store.Agent{AgentID: secondaryTerm, Role: "secondary"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.TouchChat("555000000003@c.us", "Uno", 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.TouchChat("555000000004@c.us", "Dos", 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetStatus("555000000004@c.us", "ignored"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, srv := buildAgentServer(t, st, nil)
+
+	resp := callTool(t, agentCtx(ctx, principalTerm), srv, "assign_chat_to_agent", map[string]any{
+		"chat_id": "555000000003@c.us", "agent_id": secondaryTerm,
+	})
+	if !strings.Contains(resp, `\"active\": true`) {
+		t.Errorf("assign response = %s, want active:true", resp)
+	}
+	if c, _, _ := st.GetChat("555000000003@c.us"); !c.Active {
+		t.Error("chat not active after assign_chat_to_agent")
+	}
+
+	resp = callTool(t, agentCtx(ctx, principalTerm), srv, "assign_chat_to_agent", map[string]any{
+		"chat_id": "555000000004@c.us", "agent_id": secondaryTerm,
+	})
+	if !strings.Contains(resp, `\"active\": false`) || !strings.Contains(resp, "warning") {
+		t.Errorf("assign of an ignored chat = %s, want active:false plus a warning", resp)
+	}
+	if c, _, _ := st.GetChat("555000000004@c.us"); c.Active {
+		t.Error("ignored chat became active after assign_chat_to_agent")
+	}
+}
+
+// T171: the third path that writes agent_exclusive:<id> — set_chat_status —
+// leaves the chat attended too, through the same Store.AssignChat.
+func TestSetChatStatusAgentExclusiveLeavesChatActive(t *testing.T) {
+	st := openAgentDB(t)
+	if err := st.TouchChat("555000000005@c.us", "Tres", 1); err != nil {
+		t.Fatal(err)
+	}
+	ctx, srv := buildAgentServer(t, st, nil)
+
+	resp := callTool(t, agentCtx(ctx, principalTerm), srv, "set_chat_status", map[string]any{
+		"chat_id": "555000000005@c.us", "status": "agent_exclusive:" + secondaryTerm,
+	})
+	if strings.Contains(resp, `"isError":true`) {
+		t.Fatalf("set_chat_status agent_exclusive failed: %s", resp)
+	}
+	if c, _, _ := st.GetChat("555000000005@c.us"); !c.Active {
+		t.Error("chat not active after set_chat_status agent_exclusive")
+	}
+}

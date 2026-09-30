@@ -186,6 +186,10 @@ func TestAssignChatToAgentEndpoint(t *testing.T) {
 	if err != nil || c.Status != "agent_exclusive:term-a" {
 		t.Errorf("Status = %q, err=%v, want agent_exclusive:term-a", c.Status, err)
 	}
+	// T171: the dashboard's assignment leaves the chat attended too.
+	if !c.Active {
+		t.Error("chat not active after POST /api/admin/agent-assign, want it attended")
+	}
 }
 
 func TestAssignChatToAgentEndpointUnassign(t *testing.T) {
