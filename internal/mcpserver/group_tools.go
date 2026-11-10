@@ -62,8 +62,8 @@ type GroupProfile interface {
 	PromoteParticipants(ctx context.Context, groupJID string, participantJIDs []string) ([]types.GroupParticipant, error)
 	SetGroupPhoto(ctx context.Context, groupJID string, jpeg []byte) (string, error)
 	// SetProfilePhoto changes the host number's OWN profile photo (T111,
-	// ct-2026-09-01-1442) — the own JID is resolved inside the adapter, the
-	// caller never supplies one. nil jpeg removes the photo.
+	// ct-2026-09-01-1442) — the adapter addresses the own account itself, the
+	// caller never supplies a JID. nil jpeg removes the photo.
 	SetProfilePhoto(ctx context.Context, jpeg []byte) (string, error)
 	SetGroupDescription(ctx context.Context, groupJID, description string) error
 	SetProfileStatus(ctx context.Context, status string) error

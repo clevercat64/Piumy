@@ -144,11 +144,14 @@ func TestSetGroupPhotoRejectsOversizedImageBeforeParsingJID(t *testing.T) {
 	}
 }
 
-// ── T111 — SetProfilePhoto reuses SetGroupPhoto against the OWN JID ────────
+// ── T111/T115 — SetProfilePhoto: the own account, IQ without target ────────
 
 // TestSetProfilePhotoRefusesWithoutOwnJID: no client.Store.ID (not paired
 // yet) must error cleanly, not panic — same nil-safe convention as the rest
-// of this package.
+// of this package. What this file can NOT assert is the T115 fix itself (the
+// IQ carries no `target`): Adapter holds a concrete *wmeow.Client with no
+// seam to see the stanza, and comparing against our own types.EmptyJID would
+// measure the code against itself. That part is proven by the owner's smoke.
 func TestSetProfilePhotoRefusesWithoutOwnJID(t *testing.T) {
 	a := &Adapter{client: newTestWmeowClient(t)}
 	_, err := a.SetProfilePhoto(context.Background(), []byte("whatever"))

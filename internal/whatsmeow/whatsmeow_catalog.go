@@ -347,18 +347,30 @@ func (a *Adapter) SetGroupPhoto(ctx context.Context, groupJID string, jpeg []byt
 }
 
 // SetProfilePhoto changes the host number's OWN profile photo (T111,
-// ct-2026-09-01-1442) — SetGroupPhoto's underlying IQ isn't group-specific
-// despite its name (verified against the vendored library before coding):
-// the recipient is just a parameter, and the own JID makes it a profile
-// photo instead of a group icon. Reuses SetGroupPhoto verbatim, passing the
-// own JID as the string it already expects — no separate ParseJID, no
-// duplicated size/error handling. nil jpeg removes the photo (whatsmeow's
-// own contract, free with the same call).
+// ct-2026-09-01-1442; target fixed in T115, ct-2026-09-01-1948).
+//
+// It rides on the same w:profile:picture IQ as SetGroupPhoto, but with NO
+// `target` attribute — passing the own JID there (what T111 did) is the
+// mistake: the IQ goes out and WhatsApp never answers, the 75 s "info query
+// timed out" measured in T115. whatsmeow emits `target` only when Target is
+// non-empty (request.go, `!query.Target.IsEmpty()`), so types.EmptyJID is how
+// to say "me". Every reference client omits it for the own account: Baileys
+// (updateProfilePicture, src/Socket/chats.ts), whatsapp-rust
+// (SetProfilePictureSpec::set_own, wacore/src/iq/contacts.rs) and Amarula's
+// port of Baileys (profile/ops.ex), which documents that sending the own JID
+// "makes the server never reply". None of them sends a `preview` node either
+// — one <picture type="image"> is enough.
+//
+// nil jpeg removes the photo (whatsmeow's own contract).
 func (a *Adapter) SetProfilePhoto(ctx context.Context, jpeg []byte) (string, error) {
 	if a.client.Store.ID == nil {
 		return "", fmt.Errorf("whatsmeow: no logueado, sin JID propio")
 	}
-	return a.SetGroupPhoto(ctx, a.client.Store.ID.ToNonAD().String(), jpeg)
+	if err := checkPhotoSize(jpeg); err != nil {
+		return "", fmt.Errorf("whatsmeow: %w", err)
+	}
+	id, err := a.client.SetGroupPhoto(ctx, types.EmptyJID, jpeg)
+	return id, wrapSetPhotoError(err, jpeg)
 }
 
 func (a *Adapter) SetGroupDescription(ctx context.Context, groupJID, description string) error {

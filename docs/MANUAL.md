@@ -5661,7 +5661,8 @@ desde T149 ct-2026-09-07-1730 — ver sus propias entradas más abajo)
   error): whatsmeow no tiene API para cambiar la foto de perfil propia.
   **T111 (ct-2026-09-01-1442) encontró esta premisa falsa** —
   `client.SetGroupPhoto` no es específica de grupos (el destinatario es un
-  parámetro; con el JID propio cambia la foto de perfil de la cuenta). La
+  parámetro; sin destinatario —`types.EmptyJID`, NO el JID propio, ver
+  T115— cambia la foto de perfil de la cuenta). La
   capacidad existe ahora bajo un nombre NUEVO, `set_profile_photo` — ver la
   entrada T111 más abajo. `set_profile_pic`, el nombre puntual que esta
   frase describe, sigue sin existir — nada lo revivió.
@@ -5683,11 +5684,31 @@ desde T149 ct-2026-09-07-1730 — ver sus propias entradas más abajo)
     (`whatsmeow_catalog.go`) — NO reimplementa nada: `client.SetGroupPhoto`
     no es específica de grupos pese al nombre (verificado contra
     `group.go:330` antes de codear — el destinatario es un parámetro,
-    `Target: jid` dentro del IQ `w:profile:picture`); reusa
-    `Adapter.SetGroupPhoto` verbatim, pasándole
-    `a.client.Store.ID.ToNonAD().String()` como el `groupJID` que esa
-    función ya espera. `nil` de `Store.ID` (no pareado) → error explícito,
-    antes de intentar nada.
+    `Target: jid` dentro del IQ `w:profile:picture`); llama a esa misma
+    función de whatsmeow con `types.EmptyJID` como destinatario, con el mismo
+    `checkPhotoSize`/`wrapSetPhotoError` que `SetGroupPhoto`. `nil` de
+    `Store.ID` (no pareado) → error explícito, antes de intentar nada.
+    **Corregido en T115 (ct-2026-09-01-1948).** T111 le pasaba
+    `a.client.Store.ID.ToNonAD().String()` a `Adapter.SetGroupPhoto`, o sea
+    `target=<JID propio>` en el IQ: WhatsApp no rechazaba, no contestaba
+    (HTTP 500 `info query timed out` a los 75,04 s, medido dos veces por
+    Citrino). El mecanismo y el resto del camino andaban —`set_group_icon`
+    sobre un grupo real respondió en 0,7 s— así que el problema era el
+    destinatario. La foto propia va SIN atributo `target`: lo emite whatsmeow
+    solo si `!Target.IsEmpty()` (`request.go:130`), y `EmptyJID` es vacío
+    (`types/jid.go`). Referencias, las tres lo omiten para la cuenta propia:
+    Baileys (`updateProfilePicture`, `src/Socket/chats.ts`), whatsapp-rust
+    (`SetProfilePictureSpec::set_own`, `wacore/src/iq/contacts.rs`, con un
+    test que afirma "Own picture should not have target") y el port Amarula
+    de Baileys (`profile/ops.ex`: con el JID propio "the server never
+    replies"). Ninguna manda un nodo `preview`: alcanza un solo
+    `<picture type="image">` (hipótesis descartada). Upstream de whatsmeow
+    (main, 2026-11-10) no trae API propia de foto de perfil ni un commit que
+    toque este IQ, así que NO se actualizó la librería. **Pendiente de
+    confirmar contra el servidor real**: la verificación fue por código y
+    por convergencia de tres clientes; no se probó en vivo. La prueba es el
+    smoke del boss. Sin test del atributo: `Adapter` guarda un
+    `*wmeow.Client` concreto, sin costura para ver el stanza.
   - **`checkPhotoSize`/`profilePhotoMaxBytes`** (`whatsmeow_catalog.go`) —
     el IQ que lleva la foto la embebe CRUDA dentro del stanza (a diferencia
     de `SendImage`, que sube a un CDN y manda solo una referencia), así que
@@ -6269,8 +6290,9 @@ desde T149 ct-2026-09-07-1730 — ver sus propias entradas más abajo)
        propio real, antes de confiar en que ambas identifican la misma
        fila del store.
      - **`invalidateOwnAvatarCache`** (nueva, `restapi/admin.go`) —
-       pedido aparte de Citrino, resuelto ahora aunque hoy nunca se
-       dispare (la escritura de foto falla, T115): tras un
+       pedido aparte de Citrino, resuelto ahora aunque cuando se escribió
+       nunca se disparaba (la escritura de foto fallaba, T115 —ya
+       corregido en `SetProfilePhoto`, a confirmar con el smoke del boss): tras un
        `SetProfilePhoto` exitoso, fuerza `NextCheckAt=0` en la fila del
        jid propio (leída primero con `GetAvatar` para preservar
        `PictureID`/`Path`/`FetchedAt` — un `UpsertAvatar` directo con
