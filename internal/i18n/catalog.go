@@ -250,6 +250,16 @@ var esCatalog = map[string]string{
 	"time.ago_seconds": "hace {n}s",
 	"time.ago_minutes": "hace {n}m",
 
+	// #fresh (T172a, ct-2026-11-10-2000) — hace cuánto llegó el último dato
+	// por el SSE, y el aviso de que dejó de llegar. {ago} viaja armado con
+	// las tres claves de arriba, igual que en "sync.summary": el tiempo se
+	// traduce en un solo lugar. "live.signal_lost" dice TAMBIÉN que se está
+	// reconectando porque eso es lo que de verdad pasa (el watchdog ya
+	// reintenta solo): sin esa mitad, el aviso parecería pedir un F5, que
+	// es justo lo que el dueño no quiere.
+	"live.updated_ago": "actualizado {ago}",
+	"live.signal_lost": "sin señal, reconectando…",
+
 	"qr.expired":    "Código expirado",
 	"qr.expires_in": "Expira en {n}s",
 
@@ -645,6 +655,8 @@ var enCatalog = map[string]string{
 	"time.now":             "now",
 	"time.ago_seconds":     "{n}s ago",
 	"time.ago_minutes":     "{n}m ago",
+	"live.updated_ago":     "updated {ago}",
+	"live.signal_lost":     "no signal, reconnecting…",
 
 	"qr.expired":    "Code expired",
 	"qr.expires_in": "Expires in {n}s",

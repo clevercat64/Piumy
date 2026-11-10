@@ -48,7 +48,17 @@
                vacío+oculto no cambia nada del tablero de hoy. -->
           <span class="brand-account hidden" id="brandaccount"></span>
         </div>
-        <span class="live"><span class="pulse"></span> alive · <span id="moodlabel">idle</span> · <span class="badge" id="status">—</span></span>
+        <!-- #fresh (T172a, ct-2026-11-10-2000): hace cuánto llegó el último
+             dato, o el aviso de que la señal se cortó. Nace VACÍO y lo
+             llena renderFreshness() (app.js) con la hora del último
+             MENSAJE que mandó el servidor por el SSE — no la del último
+             intento de conexión, que es otra cosa y diría "actualizado"
+             cuando en realidad nadie habló. Vacío hasta ese primer mensaje
+             a propósito (sin EventSource no hay nada que contar, y un
+             "hace 0s" fijo sería mentira); el "·" separador lo pone el CSS y desaparece
+             solo cuando el span está vacío. Sin data-i18n: no tiene texto
+             estático, todo lo que muestra sale de t() en runtime. -->
+        <span class="live"><span class="pulse"></span> alive · <span id="moodlabel">idle</span> · <span class="badge" id="status">—</span><span class="fresh" id="fresh"></span></span>
       </div>
 
       <!-- alarma: contraseña de fábrica (T9, ct-2026-08-05-1137) — el

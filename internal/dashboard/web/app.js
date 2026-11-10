@@ -420,6 +420,16 @@
     document.title = "Piumy Gateway — " + account;
   }
 
+  // statNumber (T172a, ct-2026-11-10-2000): una cifra del estado, o "—" si
+  // el campo no vino. Vale para las tres (cola, enviados, agentes) y para
+  // cualquier otra que se sume: lo que decide es si HAY número, no cuál es.
+  // 0 es un dato tan válido como 7 y se muestra tal cual; null, undefined o
+  // un campo que el backend dejó de mandar NO son cero. Number.isFinite
+  // descarta de paso NaN e Infinity, que en pantalla serían ruido.
+  function statNumber(v) {
+    return Number.isFinite(v) ? String(v) : "—";
+  }
+
   function loadStatus() {
     return api("/api/status").then(function (s) {
       state.lastStatus = s;
@@ -464,9 +474,15 @@
         syncEl.textContent = "—";
         syncEl.style.color = "";
       }
-      document.getElementById("statqueue").textContent = s.queue || 0;
-      document.getElementById("statsent").textContent = s.sent || 0;
-      document.getElementById("statagents").textContent = s.agents || 0;
+      // T172a (ct-2026-11-10-2000): statNumber, no `s.queue || 0`. Con el
+      // `||` un campo que NO VINO (backend mudo, respuesta recortada, un
+      // rename del lado Go) se veía idéntico a un cero real: "0 en cola"
+      // cuando la verdad es "no sé cuántos hay". Son dos estados distintos
+      // y la pantalla tiene que distinguirlos — un cero de verdad sigue
+      // saliendo 0, lo ausente sale "—", como ya hace #badgesync.
+      document.getElementById("statqueue").textContent = statNumber(s.queue);
+      document.getElementById("statsent").textContent = statNumber(s.sent);
+      document.getElementById("statagents").textContent = statNumber(s.agents);
       // T9 (ct-2026-08-05-1137): factory_password ya viene resuelto del
       // servidor (bcrypt contra el hash guardado) — acá solo mostramos u
       // ocultamos, nunca comparamos ni vemos una contraseña. Corre en
@@ -2864,6 +2880,19 @@
 
   var eventSource = null;
   var lastSSEActivityAt = 0;
+  // lastSSEMessageAt (T172a, ct-2026-11-10-2000): el reloj del RENGLÓN de
+  // frescura, separado del de arriba a propósito. lastSSEActivityAt es "lo
+  // último que hicimos con la conexión" y se pone también al CREAR el
+  // EventSource y en onopen — útil para el watchdog (que pregunta "¿hay que
+  // reintentar?"), inservible para la pantalla: en una caída de verdad el
+  // watchdog reconecta cada ~46s, y un renglón alimentado de ahí volvería a
+  // decir "actualizado ahora" sin que hubiera llegado un solo byte de
+  // datos. Esto se mueve SÓLO en onmessage, que es el único momento en que
+  // el servidor habló de verdad (el latido de 20s cuenta: es el servidor
+  // diciendo "sigo acá"). Comparten SSE_STALE_MS, eso sí — el umbral del
+  // aviso y el de la reconexión tienen que ser el mismo número o la
+  // pantalla y el mecanismo cuentan historias distintas.
+  var lastSSEMessageAt = 0;
   var sseReconnectDelayMs = 1000;
   var SSE_RECONNECT_DELAY_MAX_MS = 30000;
   // SSE_STALE_MS: más del doble del heartbeat del backend (20s) — un
@@ -2895,6 +2924,45 @@
     }, 10000);
   }
 
+  // renderFreshness (T172a, ct-2026-11-10-2000): el renglón que dice hace
+  // cuánto llegó el último dato — el dueño, verbatim vía Citrino: "quiero
+  // que piumy sea preciso". El auto-refresco por SSE ya existía desde
+  // ct-2026-07-24-0527; lo que faltaba era MOSTRARLO: hasta acá
+  // lastSSEActivityAt sólo servía para que el watchdog reconectara, nunca
+  // llegaba a la pantalla, así que un tablero vivo y uno congelado se veían
+  // exactamente igual.
+  //
+  // Usa el MISMO SSE_STALE_MS que el watchdog (ver lastSSEMessageAt arriba
+  // para por qué el reloj sí es otro): el umbral del aviso y el de la
+  // reconexión tienen que coincidir. No toca nada, sólo pinta lo que el SSE
+  // ya sabe — cuando la reconexión del watchdog prende y el servidor vuelve
+  // a hablar, onmessage mueve el reloj y el aviso se apaga solo, sin F5
+  // (regla de producto del dueño, 2026-07-29).
+  //
+  // Vacío mientras no haya llegado el primer mensaje: antes de eso (los ≤20s
+  // que tarda el primer latido del backend, o siempre si el navegador no
+  // soporta EventSource y connectEvents lo traga) no hay nada que contar, y
+  // un "hace 0s" sería una mentira cómoda.
+  function renderFreshness() {
+    var el = document.getElementById("fresh");
+    if (!el) return;
+    if (!lastSSEMessageAt) { el.textContent = ""; el.classList.remove("stale"); return; }
+    var ms = Date.now() - lastSSEMessageAt;
+    if (ms > SSE_STALE_MS) {
+      el.textContent = t("live.signal_lost");
+      el.classList.add("stale");
+      return;
+    }
+    // Mismos tres tramos que #badgesync ya usa para su "ago" — una sola
+    // forma de decir un tiempo en todo el tablero.
+    var sec = Math.round(ms / 1000);
+    var ago = sec < 5 ? t("time.now")
+      : sec < 60 ? t("time.ago_seconds", { n: sec })
+      : t("time.ago_minutes", { n: Math.round(sec / 60) });
+    el.textContent = t("live.updated_ago", { ago: ago });
+    el.classList.remove("stale");
+  }
+
   function connectEvents() {
     if (eventSource) { eventSource.close(); }
     try {
@@ -2910,6 +2978,8 @@
       };
       eventSource.onmessage = function (ev) {
         lastSSEActivityAt = Date.now();
+        lastSSEMessageAt = lastSSEActivityAt; // T172a: llegó un dato de verdad
+        renderFreshness();                    // sin esperar al tick del segundo
         var data = null;
         try { data = JSON.parse(ev.data); } catch (e) {}
         // heartbeat (ct-2026-07-24-0527): solo sostiene lastSSEActivityAt
@@ -3316,4 +3386,7 @@
   setInterval(function () { loadPendingDrafts().catch(function () {}); }, 15000);
   setInterval(function () { loadAgents().catch(function () {}); }, 15000);
   armSSEWatchdog();
+  // T172a: un tick por segundo para el renglón de frescura. Es sólo pintar
+  // texto que ya está en memoria — ni un fetch más que antes.
+  setInterval(renderFreshness, 1000);
 })();
