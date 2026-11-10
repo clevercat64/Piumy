@@ -10422,7 +10422,8 @@ es un paso aparte, conjunto con el boss (no en `main.go`).
 - **Cross-platform (ct-2026-07-19-1414):** `./build-all.sh` en la raíz compila
   los 6 targets (windows/linux-amd64/linux-arm64/linux-armv7/darwin-arm64/darwin-amd64,
   todos `CGO_ENABLED=0`) a `dist/` — solo Windows lleva `-ldflags -H=windowsgui`
-  (la bandeja), el resto corre headless vía el stub `tray_other.go`.
+  (la bandeja), el resto corre headless vía el stub `tray_other.go`. Los 5
+  de Linux y macOS salen empaquetados (T113, abajo); el de Windows, como setup.
   - **El setup de Windows también sale de `build-all.sh`** (release 0.12.1,
     `ct-2026-09-23-2154`): al final, tras los 6 binarios, corre
     `ISCC.exe installer/windows/piumy.iss` → `dist/Piumy-Setup-<VERSION>.exe`
@@ -10456,6 +10457,98 @@ es un paso aparte, conjunto con el boss (no en `main.go`).
     `PIUMY_MCP_KEY` de prueba; la URL sale de `agent-connect.json`, en
     `<datos>\secrets\`). `innoextract` no sirve para abrir el setup: medido
     con el de 0.12.1, "Could not determine setup data version".
+  - **Paquetes de Linux y macOS (T113, ct-2026-09-01-1820).** `package()`
+    (`build-all.sh`) corre justo tras compilar —antes del corte "Inno Setup
+    solo en Windows", por eso Linux y Mac también lo arman— y deja UN archivo
+    por plataforma: `dist/Piumy-<VERSION>-<sistema>-<arq>.tar.gz` (`linux-amd64`,
+    `linux-arm64`, `linux-armv7`, `darwin-arm64`, `darwin-amd64`), con una
+    carpeta del mismo nombre adentro: `piumy-gateway` (el binario, MOVIDO desde
+    `dist/`: no queda uno suelto que se pueda subir por error), `install.sh`
+    (de `installer/posix/`) y `eula.txt` (la de `installer/windows/`: una sola
+    copia en el repo). Windows no pasa por ahí: su paquete es el setup.
+    `build()` no se tocó: los binarios siguen `CGO_ENABLED=0`. Medido en una
+    copia aislada (`git archive` + estos archivos, nunca el `dist/`
+    compartido): exit 0, 5 `.tar.gz` + el setup, y `go version -m` sobre cada
+    binario empaquetado dice `CGO_ENABLED=0` y el `GOOS`/`GOARCH` del nombre.
+    **Limitación medida**: armado en Windows, el binario queda `-rw-r--r--` en
+    el `.tar.gz` (`chmod` no se respeta en NTFS para un archivo sin extensión;
+    `install.sh` sí sale `rwx` por su `#!`). No rompe nada porque `install.sh`
+    le pone 755 al copiarlo; solo afecta a quien lo ejecute sin instalar. Armado
+    en Linux/Mac el modo sale bien. Fuera de alcance, anotado y no construido:
+    publicar en GitHub en cada versión, y paquetes nativos (.deb, .rpm, .dmg,
+    Homebrew).
+  - **`installer/posix/install.sh`** — el equivalente de `piumy.iss` para
+    Linux y macOS. Un solo script POSIX (`sh install.sh`), sin administrador
+    (se niega a correr como root: los datos irían a la carpeta de root). Lo
+    que decide, y por qué:
+    - **Programa y datos juntos en `config.baseDir`**
+      (`~/.local/share/piumy`; `~/Library/Application Support/Piumy`), igual
+      que Windows (`DefaultDirName={localappdata}\Piumy`). No es estilo:
+      `config.ApplyFileDefaults` lee `piumy-config.json` JUNTO AL BINARIO, y
+      programa y datos en la misma carpeta es lo único que respeta a la vez esa
+      lectura y `DataDir()`. Linux NO respeta `XDG_DATA_HOME` porque el binario
+      tampoco (usa `~/.local/share/piumy` a secas); el script repite las dos
+      rutas con un comentario "tienen que seguir igual que datadir.go".
+    - **`piumy-config.json` con solo las 3 claves** (MCP 16 bytes, REST 24,
+      respaldo 32, hex de `/dev/urandom`: los largos de Windows), sin rutas: el
+      binario ya pone sus datos bajo `<datos>/secrets`; escribirlas duplicaría
+      esa decisión.
+    - **Idempotente y sin pisar** (`inspect_existing_install`, espeja
+      `ResolveKeys`/`FinalizeKeys`): si `piumy-config.json` existe nunca se
+      reescribe; si no se leen las 3 claves, aborta ANTES de tocar nada
+      (generar otras dejaría ilegibles los respaldos cifrados con las de
+      hoy). `secrets/` ni se crea ni se toca (el binario crea lo suyo; solo se
+      crea `logs/`, que launchd necesita antes de arrancar). El
+      programa se copia a `.new` y se renombra (un proceso viejo sigue con su
+      inodo), y `cmp` lo compara contra el del paquete (`ExeWasReplaced`).
+      Un Piumy lanzado a mano, fuera del servicio, no se detecta: sigue con el
+      viejo hasta que se cierre. Fuera de Windows no hay guardia de instancia
+      única (`singleinstance_other.go` es no-op).
+    - **Clave del tablero solo en instalación nueva** (`passHash` es
+      seed-only): `PIUMY_DASHBOARD_PASSWORD`, o se pide en terminal (mín. 4,
+      con confirmación), o —sin terminal ni variable— queda la de fábrica con
+      un aviso (la decisión del boss para el instalador de Windows). Viaja en
+      el entorno del gestor de servicios (`systemctl --user set-environment` /
+      `launchctl setenv`) solo durante el primer arranque y se retira, también
+      por `trap EXIT`; nunca va a disco. El correo de recuperación no se pide:
+      se pone después desde el tablero (`POST /api/admin/recovery-email`).
+    - **Arranque**: `~/.config/systemd/user/piumy.service`
+      (`Restart=on-failure`) en Linux; `~/Library/LaunchAgents/app.piumy.gateway.plist`
+      (`RunAtLoad`, `KeepAlive` solo ante fallo) en macOS; se reescriben enteros
+      en cada corrida (no guardan claves). Windows lo ofrece como opción sin
+      marcar; acá es el único modo de correr, porque no hay bandeja ni acceso
+      directo. Sin systemd el script se detiene antes de cambiar nada.
+    - **Comprobación**: sondea el tablero (cualquier respuesta HTTP) hasta 20 s
+      y, si no contesta, falla con la ruta de los logs
+      (`<datos>/logs/piumy.log`, y `journalctl` o `logs/launchd.log`).
+    - **Condiciones**: muestra `eula.txt` y pide aceptación solo con terminal;
+      desatendido acepta, como `/VERYSILENT`. Desinstalar no es un modo del
+      script: son comandos en el README, y NUNCA borran los datos (igual que
+      la desinstalación silenciosa de Windows).
+  - **Cómo se prueba** (`installer/posix/install_test.sh`; a mano, `go test` no
+    lo corre; `SHELL_UNDER_TEST=dash sh install_test.sh` elige el shell): un
+    HOME temporal por caso, con `systemctl`/`launchctl`/`uname`/`curl`
+    simulados que registran cómo los llamó el instalador. 49 comprobaciones,
+    verdes con `dash` y con `bash` ejecutando `install.sh`: instalación nueva
+    (largos de las claves, orden `daemon-reload → enable → set-environment →
+    restart → unset-environment`, la clave del tablero ausente de todo
+    archivo), actualización (claves, `whatsmeow.db` y `piumy.db` idénticos byte
+    a byte tras dos corridas más), claves dudosas (aborta sin cambiar nada),
+    copia corrupta, puerto cambiado a mano, macOS con ruta con espacio, sistema
+    no soportado y root. **Se verificó que el arnés detecta fallas**
+    (sabotaje, no solo "pasa"): 6 roturas hechas a propósito a copias de
+    `install.sh` —reescribir siempre las claves, escribir la clave del
+    tablero a disco, no validar las claves, no detener el servicio, no
+    verificar la copia, truncar `whatsmeow.db`— y cada una hizo fallar al
+    menos un caso; la de "no verificar la copia" pasaba sin que ninguno
+    fallara y por eso se agregó el caso de la copia corrupta. Los permisos 600
+    no se miden en Windows (NTFS no respeta `chmod`; el arnés lo detecta con
+    un archivo canario y lo dice, en vez de medir el sistema de archivos).
+    **Sin probar** (necesita una máquina real): que systemd y launchd acepten
+    los archivos de servicio que escribe, `launchctl bootstrap`/`kickstart`, el
+    `xattr` de cuarentena, `od`/`sed` de BSD, las preguntas interactivas (EULA
+    y clave: piden terminal) y el arranque del binario real. `shellcheck` no
+    estaba disponible: no se corrió.
 
 - Orden de construcción: `acquireAppMutex` (T21, no-op fuera de Windows) →
   `config.ApplyFileDefaults` (T11, ct-2026-08-05-1214 — rellena los

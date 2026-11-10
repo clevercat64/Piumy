@@ -34,6 +34,32 @@ build linux   arm   "7" ""              piumy-gateway-linux-armv7
 build darwin  arm64 ""  ""              piumy-gateway-darwin-arm64
 build darwin  amd64 ""  ""              piumy-gateway-darwin-amd64
 
+# --- Paquetes de Linux y macOS — ct-2026-09-01-1820 (T113) -------------------
+# Un archivo por plataforma, listo para publicar: el binario + install.sh +
+# eula.txt (la del setup de Windows: una sola copia en el repo). El binario
+# suelto de dist/ se mueve adentro, así queda UN archivo por plataforma y no
+# hay dos cosas parecidas para subir por error. Windows no pasa por acá: su
+# paquete es el setup de más abajo.
+package() {
+	local bin=$1 platform=$2
+	local name="Piumy-$VERSION-$platform" stage=dist/stage
+	echo "empaquetando $name..."
+	rm -rf "$stage"
+	mkdir -p "$stage/$name"
+	mv "dist/$bin" "$stage/$name/piumy-gateway"
+	cp installer/posix/install.sh "$stage/$name/install.sh"
+	cp installer/windows/eula.txt "$stage/$name/eula.txt"
+	chmod 755 "$stage/$name/piumy-gateway" "$stage/$name/install.sh"
+	tar -czf "dist/$name.tar.gz" -C "$stage" "$name"
+	rm -rf "$stage"
+}
+
+package piumy-gateway-linux-amd64  linux-amd64
+package piumy-gateway-linux-arm64  linux-arm64
+package piumy-gateway-linux-armv7  linux-armv7
+package piumy-gateway-darwin-arm64 darwin-arm64
+package piumy-gateway-darwin-amd64 darwin-amd64
+
 # --- Setup de Windows (Inno Setup) — ct-2026-09-23-2154 ----------------------
 # Empaqueta dist/piumy-gateway-windows-amd64.exe (armado arriba) y lee el
 # version.iss generado arriba. ISCC.exe es un programa de Windows: en

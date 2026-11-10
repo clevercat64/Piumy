@@ -19,26 +19,26 @@ Sigue los seis pasos en orden. No inventes un atajo: cada uno existe porque el a
 
 ### 1. ¿Piumy está instalado?
 
-**Dónde se instala Piumy, en Windows:**
+**Dónde se instala Piumy:**
 
-| Qué | Dónde |
-|---|---|
-| El programa | `%LOCALAPPDATA%\Piumy\Piumy.exe` |
-| Su configuración | `%LOCALAPPDATA%\Piumy\piumy-config.json` |
-| Sus datos y claves | `%LOCALAPPDATA%\Piumy\secrets\` |
-| Acceso directo | Menú inicio → `Piumy` |
+| Qué | Windows | Linux | macOS |
+|---|---|---|---|
+| El programa | `%LOCALAPPDATA%\Piumy\Piumy.exe` | `~/.local/share/piumy/piumy-gateway` | `~/Library/Application Support/Piumy/piumy-gateway` |
+| Su configuración | `%LOCALAPPDATA%\Piumy\piumy-config.json` | `~/.local/share/piumy/piumy-config.json` | `~/Library/Application Support/Piumy/piumy-config.json` |
+| Sus datos y claves | `%LOCALAPPDATA%\Piumy\secrets\` | `~/.local/share/piumy/secrets/` | `~/Library/Application Support/Piumy/secrets/` |
+| Cómo arranca | Menú inicio → `Piumy` | servicio de usuario `piumy` (systemd) | agente `app.piumy.gateway` (launchd) |
 
-Si esa carpeta no existe, no hay nada corriendo. **El instalador se descarga de `https://github.com/clevercat64/Piumy/releases/latest`** — un único `.exe`, se instala con doble clic y no pide nada más. Hoy solo existe instalador para Windows.
+Si esa carpeta no existe, no hay nada corriendo. **El instalador se descarga de `https://github.com/clevercat64/Piumy/releases/latest`**. En Windows es un único `.exe`: se instala con doble clic y no pide nada más. En Linux y macOS es un `.tar.gz` por plataforma (`Piumy-<versión>-<sistema>-<arquitectura>.tar.gz`) con un `install.sh` adentro. **Ese instalador de Linux y macOS todavía no se probó en una máquina real**: si falla, no lo des por roto del producto, díselo al dueño.
 
-Si el programa está pero no responde, arráncalo desde el menú inicio o ejecutando `%LOCALAPPDATA%\Piumy\Piumy.exe`. Es una aplicación de bandeja: al arrancar no abre ventana, se queda como ícono al lado del reloj.
+Si el programa está pero no responde: en Windows, arráncalo desde el menú inicio o ejecutando `%LOCALAPPDATA%\Piumy\Piumy.exe`. Es una aplicación de bandeja: al arrancar no abre ventana, se queda como ícono al lado del reloj. En Linux no hay ícono ni ventana: `systemctl --user start piumy`. En macOS tampoco (el comando equivalente no se probó): `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.piumy.gateway.plist`.
 
 ### 2. ¿Está corriendo?
 
-Los dos puertos que declara `agent-connect.json` (`mcp_url`, `rest_url` — paso 3) tienen que responder. Si no, lánzalo desde la carpeta de instalación (el acceso directo, o `Piumy.exe` a mano).
+Los dos puertos que declara `agent-connect.json` (`mcp_url`, `rest_url` — paso 3) tienen que responder. Si no, lánzalo desde la carpeta de instalación (en Windows el acceso directo, o `Piumy.exe` a mano; en Linux y macOS, el comando del paso 1).
 
 ### 3. Lee `agent-connect.json`
 
-Vive en la carpeta de datos de la instalación, junto a `status.json` — en una instalación estándar de Windows, `%LOCALAPPDATA%\Piumy\secrets\agent-connect.json`. El archivo se reescribe entero en cada arranque del gateway — pero la clave que trae adentro normalmente **no cambia**: el instalador la genera una sola vez, y reinstalar sobre una instalación existente la conserva (aborta antes que pisarla con una nueva). No es una promesa de que nunca vaya a cambiar — ante un 401 con una clave que te venía andando, releé este archivo y reintenta una vez antes de suponer otra cosa; no hace falta reabrir el cliente.
+Vive en la carpeta de datos de la instalación, junto a `status.json` — en una instalación estándar de Windows, `%LOCALAPPDATA%\Piumy\secrets\agent-connect.json`; en Linux, `~/.local/share/piumy/secrets/agent-connect.json`; en macOS, `~/Library/Application Support/Piumy/secrets/agent-connect.json`. El archivo se reescribe entero en cada arranque del gateway — pero la clave que trae adentro normalmente **no cambia**: el instalador la genera una sola vez, y reinstalar sobre una instalación existente la conserva (aborta antes que pisarla con una nueva). No es una promesa de que nunca vaya a cambiar — ante un 401 con una clave que te venía andando, releé este archivo y reintenta una vez antes de suponer otra cosa; no hace falta reabrir el cliente.
 
 ```json
 {
