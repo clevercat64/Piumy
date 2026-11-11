@@ -6,6 +6,36 @@ Se actualiza en cada deploy/build junto con el relanzamiento del gateway.
 
 ---
 
+## 0.13.0 — 2026-11-11
+
+### Added
+- **Piumy se actualiza solo.** Cada 6 a 12 horas mira si hay una versión
+  nueva; si la hay, la baja, comprueba que viene firmada por nosotros y la
+  instala cuando no hay mensajes en curso. Viene encendido. Las instalaciones
+  anteriores no traen el actualizador: se actualizan a mano esta vez, y desde
+  esta versión las siguientes llegan solas. Por ahora se apaga por MCP
+  (`set_config`, clave `auto_update`); el interruptor del tablero llega en la
+  próxima versión.
+- **Pestaña Clientes en el tablero**, con lo que CleverCoder informa de cada
+  cliente. Un cliente es un grupo: su estado, la cuota de la semana, los
+  mínimos del mes, las últimas 12 semanas en un gráfico y quién es su agente
+  principal. Sin CleverCoder en el equipo, la pestaña lo dice y queda vacía.
+- **Toda la configuración ajustable, por MCP.** `get_config` muestra cada
+  ajuste con su valor y `set_config` lo cambia. También se puede elegir el
+  agente principal, cambiar el router y conectar o desconectar WhatsApp. Las
+  pausas y los límites contra el baneo se ven, pero no se cambian.
+
+### Changed
+- **El MCP de Piumy tiene dos puertas**, con la misma clave:
+  `/mcp/operator` para atender chats y `/mcp/manager` para configurar.
+  `/mcp` sigue sirviendo todas las herramientas, así que los agentes ya
+  conectados no tienen que cambiar nada.
+- **Sin candados de autoridad por MCP.** Un agente puede marcar a alguien
+  como boss, aprobar borradores y cambiar niveles y reglas. Se queda solo el
+  freno de emergencia contra el baneo.
+
+---
+
 ## 0.12.5 — 2026-11-10
 
 ### Changed
