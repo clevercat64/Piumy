@@ -9,7 +9,7 @@ package whatsmeow
 // version: whatsmeow migrates its own session DB in container.Upgrade (see
 // New), and those migrations have no way back. If one fails, or the previous
 // version has to be reinstalled, the session is gone and the owner has to
-// scan the QR again — which, with the owner abroad, is not a small cost.
+// scan the QR again — which is not a small cost, and needs the phone at hand.
 //
 // So: before letting the library migrate, copy the DB. The copy is only
 // taken when a migration is actually about to happen, and if it cannot be

@@ -208,8 +208,8 @@ func (u *Updater) apply() applyResult {
 	// before the installer runs, and if that fails the install does NOT
 	// happen. Boss: «piumy se tiene que auto actualizar y auto instalar sin
 	// perder la sesion de whatsapp» — a postponed update costs one more
-	// look; a lost session costs a QR re-scan, which with the owner abroad
-	// is not a small thing.
+	// look; a lost session costs a QR re-scan, which is not a small thing:
+	// it needs the phone at hand.
 	//
 	// Here and not in gateBlock, deliberately: that one is documented as
 	// "every reason not to install right now, cheapest first" and runs on
