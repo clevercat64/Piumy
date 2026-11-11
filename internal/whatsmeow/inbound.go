@@ -212,6 +212,17 @@ func (a *Adapter) handleDisconnect(reason string, kill bool, mood string, down s
 // returns "" on purpose: the dashboard then shows its generic
 // "disconnected", which is the truth (it is down and we do not know why)
 // rather than a motive nobody measured.
+//
+// Which codes actually reach this function (T200, ct-2026-11-11-1441,
+// measured by feeding real <failure> nodes through the library's own
+// handler — see failurenode_test.go): only 409, plus the codes whatsmeow
+// does not recognise. It sorts 401/403/406 into events.LoggedOut, 402 into
+// events.TemporaryBan and 405 into events.ClientOutdated, each with its own
+// case in handleEvent and its own kill-switch decision, so the three cases
+// below that name those codes are UNREACHABLE today. They stay mapped as
+// defence in depth: if an update ever moved a known code into this bucket,
+// the motive shown would still be the right one — and failurenode_test.go
+// fails, to say the kill switch now depends on this function.
 func connectFailureReason(r events.ConnectFailureReason) state.WADownReason {
 	switch r {
 	case events.ConnectFailureLoggedOut:
