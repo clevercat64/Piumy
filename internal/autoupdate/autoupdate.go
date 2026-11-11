@@ -38,6 +38,11 @@ const (
 	BlockedOtherInstance = "other_instance" // another Piumy.exe is running: the installer would kill it
 	BlockedBusy          = "busy"           // messages pending, or a dispatch in flight
 	BlockedNoKey         = "no_key"         // no release public key built in: nothing can be verified
+	// BlockedNoSessionBackup (T193 parte B, ct-2026-11-11-1039): the
+	// WhatsApp session could not be backed up, so the installer is not
+	// launched. Losing that session costs the owner a QR re-scan; waiting
+	// for the next look costs nothing.
+	BlockedNoSessionBackup = "no_session_backup"
 )
 
 // Config is what main.go hands over; everything else is decided here.
@@ -86,6 +91,26 @@ type Updater struct {
 	mu        sync.Mutex // guards the KV read-modify-write, blocked and lastError
 	blocked   string
 	lastError string
+
+	// sessionBackup takes an immediate backup of the WhatsApp session right
+	// before the installer runs (T193 parte B), wired by SetSessionBackup.
+	// Not in Config because the Backuper is built LATER than the Updater in
+	// main.go — same reason pusher.SetState/SetDrift exist. nil means
+	// nobody wired one, which is not a reason to refuse an update: see
+	// SetSessionBackup.
+	sessionBackup func() error
+}
+
+// SetSessionBackup wires the pre-install backup of the WhatsApp session
+// (T193 parte B, ct-2026-11-11-1039). Called once at boot, before Run, so
+// it needs no lock — the same convention pusher.SetState follows.
+//
+// What fn should return: nil when there is nothing to do (the owner has no
+// backup key configured, so the periodic backup is off too — that is their
+// decision, not a failure), and an error only when a backup was attempted
+// and did not land. An error stops the install; see apply.
+func (u *Updater) SetSessionBackup(fn func() error) {
+	u.sessionBackup = fn
 }
 
 // New builds an Updater for this machine. It does nothing until Run.
@@ -179,6 +204,23 @@ func (u *Updater) apply() applyResult {
 		u.fail(ready.Version, "lo guardado ya no se puede verificar: "+err.Error())
 		return applyDropped
 	}
+	// T193 parte B (ct-2026-11-11-1039): the session gets backed up right
+	// before the installer runs, and if that fails the install does NOT
+	// happen. Boss: «piumy se tiene que auto actualizar y auto instalar sin
+	// perder la sesion de whatsapp» — a postponed update costs one more
+	// look; a lost session costs a QR re-scan, which with the owner abroad
+	// is not a small thing.
+	//
+	// Here and not in gateBlock, deliberately: that one is documented as
+	// "every reason not to install right now, cheapest first" and runs on
+	// EVERY tick, so an encrypted copy of the session DB would be taken
+	// over and over for an update that may still be hours away. This runs
+	// once per real install attempt, after the package has been verified.
+	if err := u.sessionBackupBeforeInstall(); err != nil {
+		log.Printf("autoupdate: no se instala %s — no se pudo respaldar la sesión de WhatsApp: %v", ready.Version, err)
+		u.setBlocked(BlockedNoSessionBackup)
+		return applyBlocked
+	}
 	u.update(func(s *State) { s.Pending = ready.Version })
 	plan := Plan{
 		Version: ready.Version,
@@ -197,6 +239,19 @@ func (u *Updater) apply() applyResult {
 		u.cfg.Stop()
 	}
 	return applyDone
+}
+
+// sessionBackupBeforeInstall runs the wired backup, if there is one. No
+// backup wired (or one that decides there is nothing to do) is NOT a
+// failure: the owner without a backup key has already chosen to run
+// without one, and refusing to ever update them again would be a product
+// decision nobody made. A backup that was attempted and failed IS a
+// failure, and stops the install.
+func (u *Updater) sessionBackupBeforeInstall() error {
+	if u.sessionBackup == nil {
+		return nil
+	}
+	return u.sessionBackup()
 }
 
 // staticBlock is what can never change while this process lives.

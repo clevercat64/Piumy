@@ -201,3 +201,33 @@ func rotatePremigrationCopies(dbPath string, keep int) error {
 	}
 	return firstErr
 }
+
+// SessionSnapshot copies the WhatsApp session DB right now, with the same
+// mechanism, naming and rotation as the pre-migration copy above, and
+// returns where it left it.
+//
+// This is what the updater calls before launching the installer (T193
+// parte B): the installer replaces the binary, and the version it installs
+// will migrate this DB on its first boot — so the copy belongs BEFORE the
+// installer runs, not after. It deliberately does NOT go through
+// sessionbackup.Backuper: that one is encrypted, periodic, and points at
+// piumy's OWN store.db, not at this file (its package doc says so). Using
+// it here would have frozen the updater over a copy of the wrong database
+// while telling the owner it was protecting their WhatsApp session.
+//
+// No key, no configuration, nothing to turn on: this copy always runs.
+func (a *Adapter) SessionSnapshot(ctx context.Context) (string, error) {
+	if a.dbPath == "" {
+		return "", errors.New("whatsmeow: no hay base de sesión que copiar")
+	}
+	// The schema is at the target version here: New only returns an Adapter
+	// after container.Upgrade succeeded.
+	dest := premigrationName(a.dbPath, targetSchemaVersion(), time.Now())
+	if err := premigrationSnapshot(ctx, a.dbPath, dest); err != nil {
+		return "", fmt.Errorf("whatsmeow: copia de la sesión: %w", err)
+	}
+	if err := rotatePremigrationCopies(a.dbPath, premigrationKeep(a.store)); err != nil {
+		log.Printf("whatsmeow: no se pudieron rotar las copias de la sesión: %v", err)
+	}
+	return dest, nil
+}

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -78,4 +81,58 @@ func TestUpdateIdleIsOnlyAQuietMoment(t *testing.T) {
 			t.Errorf("idle = %q after the dispatch ended, want a quiet moment", got)
 		}
 	})
+}
+
+// fakeSnapshotter es la sesión de WhatsApp vista por el cableado: devuelve
+// la ruta que se le diga, o el error que se le diga.
+type fakeSnapshotter struct {
+	path  string
+	err   error
+	calls int
+}
+
+func (f *fakeSnapshotter) SessionSnapshot(context.Context) (string, error) {
+	f.calls++
+	return f.path, f.err
+}
+
+// TestSessionBackupBeforeUpdateDoesNotTrustAWrittenCopy (T193 parte B): el
+// freno del actualizador no se conforma con que la copia diga que se
+// escribió — el archivo tiene que estar y tener algo adentro. Un respaldo
+// que nadie mira es el que aparece vacío el día que hace falta.
+func TestSessionBackupBeforeUpdateDoesNotTrustAWrittenCopy(t *testing.T) {
+	dir := t.TempDir()
+
+	good := filepath.Join(dir, "copia-buena")
+	if err := os.WriteFile(good, []byte("contenido"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	empty := filepath.Join(dir, "copia-vacia")
+	if err := os.WriteFile(empty, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		fake    *fakeSnapshotter
+		wantErr bool
+	}{
+		{"la copia está y tiene contenido", &fakeSnapshotter{path: good}, false},
+		{"la copia falló", &fakeSnapshotter{err: errors.New("disco lleno")}, true},
+		{"dijo que escribió pero no está", &fakeSnapshotter{path: filepath.Join(dir, "no-existe")}, true},
+		{"la copia quedó vacía", &fakeSnapshotter{path: empty}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := sessionBackupBeforeUpdate(context.Background(), tc.fake)()
+			if tc.wantErr && err == nil {
+				t.Error("debería frenar la actualización y no frenó")
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("no debería frenar: %v", err)
+			}
+			if tc.fake.calls != 1 {
+				t.Errorf("debería pedir la copia 1 vez, pidió %d", tc.fake.calls)
+			}
+		})
+	}
 }

@@ -339,3 +339,75 @@ func TestNewClosesTheSessionFileOnEveryFailurePath(t *testing.T) {
 		}
 	})
 }
+
+// TestSessionSnapshotCopiesTheWhatsAppSessionNotAnotherDatabase es el test
+// del defecto real que tuvo la primera versión de T193 parte B: el freno
+// del actualizador se cableó al Backuper de sessionbackup, que apunta al
+// store PROPIO de Piumy (piumy.db), no a la base de whatsmeow — habría
+// frenado las actualizaciones por una copia del archivo equivocado mientras
+// le decía al dueño que le protegía la sesión de WhatsApp.
+//
+// Por eso acá hay un SEÑUELO: una segunda base en la misma carpeta, como en
+// la instalación real. Copiar la equivocada deja de ser un error invisible.
+func TestSessionSnapshotCopiesTheWhatsAppSessionNotAnotherDatabase(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	// La sesión de WhatsApp: la base con el dispositivo pareado.
+	dbPath := filepath.Join(dir, "whatsmeow.db")
+	seedFakeDeviceWithJID(t, dbPath, "555000003.0:15@s.whatsapp.net")
+
+	// El señuelo, al lado: otra base SQLite que NO es la sesión.
+	decoy := filepath.Join(dir, "piumy.db")
+	decoyDB, err := sql.Open("sqlite", "file:"+decoy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := decoyDB.ExecContext(ctx, "CREATE TABLE chats (id TEXT)"); err != nil {
+		t.Fatal(err)
+	}
+	decoyDB.Close()
+
+	a, err := New(ctx, Config{DBPath: dbPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(a.Stop)
+
+	dest, err := a.SessionSnapshot(ctx)
+	if err != nil {
+		t.Fatalf("SessionSnapshot: %v", err)
+	}
+	if _, err := os.Stat(dest); err != nil {
+		t.Fatalf("la copia no quedó escrita: %v", err)
+	}
+	// Queda junto a la base de la sesión, no junto al señuelo.
+	if !strings.HasPrefix(dest, dbPath) {
+		t.Errorf("la copia debería quedar junto a %q, quedó en %q", dbPath, dest)
+	}
+
+	// Y la prueba que de verdad distingue una base de la otra: la copia
+	// tiene DENTRO el dispositivo pareado. El señuelo no podría pasarla.
+	copyDB, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(1)", dest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer copyDB.Close()
+	copyDB.SetMaxOpenConns(1)
+	container := sqlstore.NewWithDB(copyDB, "sqlite", waLog.Noop)
+	device, err := container.GetFirstDevice(ctx)
+	if err != nil {
+		t.Fatalf("la copia no abre como store de whatsmeow — ¿se copió la base equivocada?: %v", err)
+	}
+	if device.ID == nil {
+		t.Fatal("la copia no trae el dispositivo pareado: no es la sesión de WhatsApp")
+	}
+
+	// CONTROL: el señuelo sigue intacto y SIN copias propias al lado.
+	if _, err := os.Stat(decoy); err != nil {
+		t.Errorf("el señuelo debería seguir ahí: %v", err)
+	}
+	if decoyCopies, _ := filepath.Glob(premigrationGlob(decoy)); len(decoyCopies) != 0 {
+		t.Errorf("se copió la base equivocada: %v", decoyCopies)
+	}
+}

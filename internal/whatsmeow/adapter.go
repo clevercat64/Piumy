@@ -157,6 +157,10 @@ type Adapter struct {
 	// catches any site that still expects the old fixed field.
 	clientPtr atomic.Pointer[wmeow.Client]
 	container *sqlstore.Container
+	// dbPath is whatsmeow's OWN session DB (cfg.DBPath) — the file that
+	// holds the pairing. Kept so SessionSnapshot can copy it on demand;
+	// see premigration.go.
+	dbPath string
 
 	inbound chan gateway.Inbound
 	// qrOut is a single, long-lived channel created in New, written by
@@ -548,6 +552,7 @@ func New(ctx context.Context, cfg Config) (*Adapter, error) {
 	}
 	a := &Adapter{
 		container:            container,
+		dbPath:               cfg.DBPath,
 		inbound:              make(chan gateway.Inbound, inboundBuffer),
 		qrOut:                make(chan string, 4),
 		store:                cfg.Store,

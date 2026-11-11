@@ -8,11 +8,20 @@
 // that refuses unless the service is confirmed stopped (see lock.go).
 //
 // Ported from Piumy, where this backed up whatsmeow's own session DB (device
-// pairing). piumy-gateway has no whatsmeow session — open-wa manages its own
-// session externally — so SessionDBPath here points at piumy-gateway's OWN
-// store.db (chats/messages/memory/rules) instead: the mechanism is generic
-// (SessionDBPath is just a path, SnapshotSQLite works on any SQLite file),
-// and store.db is arguably more worth protecting than a pairing token. See
+// pairing). The line that used to be here — "piumy-gateway has no whatsmeow
+// session, open-wa manages its own session externally" — was true before the
+// pivot to whatsmeow (ST-E, ct-2026-07-11-1444) and is FALSE today: this
+// process embeds whatsmeow and owns its session DB at cfg.WADBPath.
+//
+// What is still true, and matters: SessionDBPath here points at
+// piumy-gateway's OWN store.db (chats/messages/memory/rules), NOT at the
+// whatsmeow session. The mechanism is generic (SessionDBPath is just a
+// path, SnapshotSQLite works on any SQLite file), and store.db is the
+// bigger thing to lose. The WhatsApp session has its own, separate copies:
+// internal/whatsmeow/premigration.go takes one before a schema migration
+// and one before the updater installs a new version — unencrypted, beside
+// the DB, no key needed. Anyone wiring "back up the session" to this
+// package would be copying the wrong file. See
 // docs/F1C-GUARD-BACKUP-BRIDGE-AUTOREPLY.md.
 package sessionbackup
 

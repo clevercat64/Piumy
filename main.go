@@ -658,6 +658,12 @@ func main() {
 		Interval:      cfg.BackupInterval,
 	})
 
+	// T193 parte B (ct-2026-11-11-1039): el actualizador copia la sesión de
+	// WhatsApp antes de lanzar el instalador, y si no puede, no actualiza.
+	// Va acá, después del Backuper y antes de updater.Run, y NO pasa por ese
+	// Backuper: ver sessionBackupBeforeUpdate en autoupdate_wire.go.
+	updater.SetSessionBackup(sessionBackupBeforeUpdate(ctx, gw))
+
 	// First-time login: whatsmeow.Adapter.QRChannel emits pairing codes
 	// until the owner scans one (or the session is already paired, in
 	// which case it emits nothing and closes immediately). Must be called
