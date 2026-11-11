@@ -315,10 +315,23 @@ func (c *CleverInjector) postMessage(endpoint, token string, key []byte, from, p
 		return fmt.Errorf("clever_injector: message status %d", resp.StatusCode)
 	}
 	var out struct {
-		OK bool `json:"ok"`
+		OK       bool   `json:"ok"`
+		Paused   bool   `json:"paused"`
+		Client   string `json:"client"`
+		ReopenAt string `json:"reopen_at"`
+		Text     string `json:"text"`
+		PayURL   string `json:"pay_url"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || !out.OK {
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return fmt.Errorf("clever_injector: message response not ok: %w", err)
+	}
+	// T175: a paused client gets a 200 (a 404 would make us retry) with
+	// nothing injected — before the OK check, whatever "ok" says.
+	if out.Paused {
+		return &PausedError{Client: out.Client, ReopenAt: out.ReopenAt, Text: out.Text, PayURL: out.PayURL}
+	}
+	if !out.OK {
+		return fmt.Errorf("clever_injector: message response not ok")
 	}
 	return nil
 }

@@ -8198,6 +8198,39 @@ propio que describen se sacó en T28, ver `docs/T28-DIAGRAMA-CAPI-SIN-CIFRADO.md
   6–9 h del tipo y tape un corte real. `SetDrift(*Reporter)` cablea; sin él, o
   con el interruptor apagado, los enganches no hacen ni la contabilidad.
 
+- **T175 (ct-2026-11-10-2019) — cliente pausado por CleverCoder: se contesta,
+  no se calla (`pause.go`).** Un cliente de CleverCoder es un chat de grupo.
+  Si su cuentakilómetros lo pausó, el `200` de `/message` trae
+  `{ok, paused, client, reopen_at, text, pay_url}` y no se inyecta nada.
+  - `*PausedError{Client, ReopenAt, Text, PayURL}` — botón exportado: el
+    `error` que devuelve `CleverInjector.Inject` en ese caso (`errors.As`).
+    La interfaz `Injector` no cambió: una pausa es «no se entregó, por
+    diseño de CleverCoder», no un corte de canal.
+  - `dispatch` lo recibe antes de la rama de errores: cancela el despacho
+    (el terminal no queda en vuelo), marca el canal como recuperado (CleverCoder
+    contestó) y llama `answerPausedClient`. No gasta el presupuesto de
+    redespacho ni manda recibo de lectura (ningún agente leyó el mensaje).
+  - `answerPausedClient` manda `Text` al chat por `store.Enqueue` (outbox →
+    governor: el camino normal, el anti-ban no se salta) y **cierra el burst**
+    (`MarkHandledBefore[ForSender]`) para que el barrido no lo re-despache en
+    bucle. **Un aviso por pausa y por chat**, persistido en KV
+    (`capipush.pause_notice:<chat>` = el `reopen_at` ya avisado; `-` si
+    CleverCoder no lo dijo): otro mensaje de la misma pausa se cierra en
+    silencio, también tras un reinicio. Un `reopen_at` distinto es una pausa
+    nueva. Un despacho que SÍ llega a un agente borra el marcador
+    (`clearPauseNotice`): «Reabrir ahora» y agotarse de nuevo la misma semana
+    da el mismo `reopen_at`, y sin el borrado esa segunda pausa quedaría callada.
+  - `Text` vacío (CleverCoder anterior a T175, cuyo `200` no trae el texto):
+    **no se inventa ninguno**; se loguea una vez por pausa y el turno se cierra
+    igual. `PayURL` se agrega solo si el texto no lo trae (el texto por defecto
+    de CleverCoder ya lleva el enlace dentro).
+  - Límite conocido: el cuerpo del `200` no va sellado (el AES-GCM cubre solo
+    el pedido), así que `Text` llega sin autenticar. Diseño y diagrama en
+    `docs/T175-PAUSED-CLIENT.md`.
+  - `quota_exceeded` / `quota_reset`: **no llegan a Piumy**. CleverCoder los manda
+    con `CapiClient` al destino `piumy`, que exige una antena cAPI de entrada;
+    Piumy solo abre MCP y REST. Ver el doc de arriba.
+
 ---
 
 ## driftreport — `internal/driftreport`

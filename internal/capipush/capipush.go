@@ -1372,6 +1372,15 @@ func (p *Pusher) dispatch(chatJID, sender string, burst []store.Message) error {
 	// until the channel comes back — the boss's own requirement ("tiene que
 	// ser resilente si se corta 48 horas").
 	if err := p.injectorFor(terminalID).Inject(terminalID, from, payload); err != nil {
+		// T175 (ct-2026-11-10-2019): CleverCoder answered, the client is
+		// paused and nothing reached an agent — not a delivery failure, so
+		// no channel-down bookkeeping and no redispatch budget spent.
+		var paused *PausedError
+		if errors.As(err, &paused) {
+			p.gate.CancelDispatch(nonce, terminalID)
+			p.recordChannelRecovered(terminalID)
+			return p.answerPausedClient(chatJID, sender, burst, paused)
+		}
 		// T32 (ct-2026-08-06-1109): terminal_gone is the one PERMANENT
 		// handshake failure (protocol §2, ct-2026-08-06-0221) — the injector
 		// already discarded its own credential (CleverInjector.markDead), so
@@ -1408,6 +1417,7 @@ func (p *Pusher) dispatch(chatJID, sender string, burst []store.Message) error {
 		return nil
 	}
 	p.recordChannelRecovered(terminalID)
+	p.clearPauseNotice(chatJID)
 	p.redispatchCount[anchor] = attempt + 1
 	p.lastDispatchAt[anchor] = time.Now()
 
