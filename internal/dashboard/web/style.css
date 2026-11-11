@@ -2,10 +2,38 @@
    aprobado .clevercoder/dashboard-mockup.html + Piumy/coderoot/web/index.html.
    Los selectores por id/clase que app.js crea (dot, smbtn, cname, csub, ...)
    se mantienen igual a propósito — solo cambian los valores, no los hooks. */
+/* T172b tramo 1 (ct-2026-11-10-2101) — el boss eligió el demo "Ventana"
+   (.clevercoder/dashboard-demo-1-ventana.html): el tablero deja de ser una
+   pantalla de terminal y pasa a ser una ventana de aplicación. Los NOMBRES
+   de los tokens no cambian — los usan 170 reglas de este archivo y no hay
+   razón para tocarlas: cambia lo que valen. Dos juegos, claro por defecto y
+   oscuro por preferencia del sistema; antes el tablero era oscuro siempre.
+   --phos y --amber se usan como TEXTO en 20 reglas (hover, pestaña activa,
+   insignias): por eso en claro valen un verde y un ámbar oscuros, no los
+   vivos del fósforo, que sobre blanco daban 2,3:1 y no se leían. El punto
+   de color de un semáforo se banca ese tono; una palabra no. */
 :root {
-  --bg: #070b0a; --bg2: #0b1210; --panel: #0e1613; --border: #1b2a25;
-  --green: #25d366; --phos: #59ffa6; --dim: #4f7a64; --text: #cdead9;
-  --amber: #ffb454; --white: #eaf7ef; --red: #ff6b6b;
+  color-scheme: light dark;
+  --bg: #eceef2;      /* el escritorio, detrás de la ventana */
+  --bg2: #ffffff;     /* la superficie de la ventana */
+  --panel: #ffffff;   /* tarjetas */
+  --border: rgba(60,60,67,.16);
+  --green: #157f41;   /* acción: fondo de botón, con texto blanco encima */
+  --phos: #178c4c;    /* acento: texto, borde, estado activo */
+  --dim: #5c6472;     /* texto secundario */
+  --text: #1c1c1e;
+  --amber: #a86400; --white: #0f1113; --red: #c9342c;
+  /* Tokens nuevos del marco. Existen para que los colores que estaban
+     escritos a mano (los resplandores de fósforo, los rellenos
+     rgba(255,255,255,.02), el verde #04140b del texto sobre los botones)
+     cambien con el tema en vez de quedar clavados en el oscuro. */
+  --fill: rgba(60,60,67,.05);      /* relleno sutil: barras, botones quietos */
+  --fill-2: rgba(60,60,67,.10);    /* el mismo, un paso más marcado */
+  --tint: rgba(21,127,65,.08);     /* fila seleccionada, hover con color */
+  --ring: rgba(21,127,65,.35);     /* foco */
+  --on-accent: #ffffff;            /* texto encima de --green/--phos */
+  --shadow: 0 1px 1px rgba(16,24,40,.06), 0 24px 60px -18px rgba(16,24,40,.28);
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Code", "Fira Code", Menlo, Consolas, "DejaVu Sans Mono", monospace;
   /* T80 (ct-2026-08-27-2205, boss: "está muy angosto") — 900px fijo alcanzaba
      con 3 columnas en la tabla de Conversaciones; hoy son 4 (Agente, T56, se
@@ -16,41 +44,57 @@
      desparramar el tablero al infinito. */
   --maxw: 1280px;
 }
+/* El mismo tablero, de noche. Sólo valores: ninguna regla de abajo sabe que
+   existe este bloque. Acá --phos SÍ puede ser el verde vivo de antes, que
+   sobre un fondo oscuro se lee sin problema. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b0b0d; --bg2: #1c1c1e; --panel: #1c1c1e;
+    --border: rgba(235,240,255,.13);
+    --green: #30d158; --phos: #3ddc6f; --dim: #9aa1ad; --text: #f2f2f7;
+    --amber: #ffb340; --white: #ffffff; --red: #ff453a;
+    --fill: rgba(235,240,255,.06);
+    --fill-2: rgba(235,240,255,.12);
+    --tint: rgba(48,209,88,.14);
+    --ring: rgba(48,209,88,.45);
+    --on-accent: #04140b;
+    --shadow: 0 1px 1px rgba(0,0,0,.5), 0 30px 70px -20px rgba(0,0,0,.7);
+  }
+}
 * { box-sizing: border-box; }
 
+/* T172b tramo 1: el cuerpo es el escritorio donde apoya la ventana. Se
+   fueron las scanlines y la viñeta del CRT (body::before/::after, borradas,
+   no comentadas) y los dos resplandores verdes del fondo: eran la estética
+   que el dueño llamó "no profesional". La tipografía pasa a la del sistema
+   — en Mac la SF, en Windows la Segoe — y el monoespaciado queda sólo donde
+   dice algo: números, JIDs y la carita. */
 body {
   margin: 0; background: var(--bg); color: var(--text);
-  font-family: var(--mono); font-size: 16px; line-height: 1.65;
+  font-family: var(--sans); font-size: 15px; line-height: 1.55;
   -webkit-font-smoothing: antialiased; overflow-x: hidden;
-  background-image:
-    radial-gradient(1200px 600px at 50% -10%, rgba(37,211,102,.10), transparent 70%),
-    radial-gradient(900px 500px at 100% 110%, rgba(37,211,102,.05), transparent 70%);
-  padding: 26px 14px 60px;
+  padding: 22px 16px 28px;
 }
-/* CRT scanlines + vignette sutiles, estáticas (sin parpadeo) */
-body::before {
-  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
-  background: repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0, rgba(0,0,0,.16) 1px, transparent 2px, transparent 3px);
-  mix-blend-mode: multiply; opacity: .5;
-}
-body::after {
-  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 9998;
-  background: radial-gradient(120% 90% at 50% 40%, transparent 60%, rgba(0,0,0,.55) 100%);
-}
-:focus-visible { outline: 2px solid var(--phos); outline-offset: 3px; border-radius: 2px; }
+:focus-visible { outline: 2px solid var(--phos); outline-offset: 2px; border-radius: 6px; }
 
 /* ── marco terminal ─────────────────────────────────────────────────── */
+/* .term / .titlebar / .screen: desde T172b tramo 1 son SÓLO el marco de los
+   modales (7 en index.html) y del login. La página ya no los usa — el
+   tablero vive en .app/.side/.main, acá abajo. Se quedan con los nombres y
+   con .screen y su padding, que los modales ya usan adentro; lo que cambia
+   es el aspecto: sin degradado, sin el anillo negro ni el resplandor verde
+   del CRT. */
 .term {
   max-width: var(--maxw); margin: 0 auto 20px;
-  border: 1px solid var(--border); border-radius: 10px;
-  background: linear-gradient(180deg, var(--panel), var(--bg2));
-  box-shadow: 0 0 0 1px rgba(0,0,0,.4), 0 30px 80px -30px rgba(37,211,102,.18), inset 0 1px 0 rgba(255,255,255,.03);
+  border: 1px solid var(--border); border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
   overflow: hidden;
 }
 .titlebar {
   display: flex; align-items: center; gap: 8px;
   padding: 9px 14px; border-bottom: 1px solid var(--border);
-  background: rgba(255,255,255,.02); font-size: 12.5px; color: var(--dim);
+  background: var(--fill); font-size: 12.5px; color: var(--dim);
 }
 .mdot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
 .mdot.r { background: #ff5f57; } .mdot.y { background: #febc2e; } .mdot.g { background: #28c840; }
@@ -91,25 +135,66 @@ body::after {
    a los lados) y el padding propio lo devuelve adentro: la barra llega a los
    tres bordes y el contenido no queda pegado al filo. El ancho total no
    cambia, asi que no aparece scroll horizontal. */
+/* ── la ventana (T172b tramo 1) ──────────────────────────────────────────
+   Una sola rejilla: barra lateral fija a la izquierda, columna de contenido
+   a la derecha con su propia franja superior pegajosa. Reemplaza al
+   .term>.screen que envolvía la página entera.
+   La barra lateral hospeda las MISMAS pestañas de antes (.tabs/.tab-btn,
+   mudadas tal cual desde la tarjeta de Conversaciones): app.js las toma con
+   querySelectorAll(".tab-btn"), sin importar dónde estén, así que mudarlas
+   no le pide nada a app.js. */
+.app {
+  max-width: var(--maxw); margin: 0 auto;
+  display: grid; grid-template-columns: 228px minmax(0, 1fr);
+  min-height: calc(100vh - 50px);
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 14px; box-shadow: var(--shadow); overflow: hidden;
+}
+.side {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 14px 10px 12px; background: var(--fill);
+  border-right: 1px solid var(--border);
+}
+.main { display: flex; flex-direction: column; min-width: 0; }
 .topbar {
-  display: flex; align-items: center; justify-content: flex-start;
+  position: sticky; top: 0; z-index: 30;
+  display: flex; align-items: center; justify-content: flex-end;
   flex-wrap: wrap; gap: 12px;
-  margin: -14px -26px 10px; padding: 8px 26px;
+  padding: 11px 24px; border-bottom: 1px solid var(--border);
+  background: var(--bg2);
 }
+/* El contenido. Hereda el mismo respiro que tenía .screen, para que las
+   tarjetas de adentro no se enteren del cambio de marco. */
+.content { padding: 18px 24px 34px; }
+
+/* La versión angosta de la ventana vive al final de las reglas del lateral
+   (buscá "pantalla angosta" más abajo): tiene que ir DESPUÉS de las que
+   apilan las pestañas, o pierde por orden de aparición aunque el ancho
+   coincida. Medido: acá arriba no hacía efecto ninguno. */
+
 .brand {
-  display: flex; align-items: center; gap: 8px; padding: 4px 10px;
-  border: 1px solid var(--border); border-radius: 20px; background: rgba(255,255,255,.02);
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 8px 14px; border: 0; background: none;
 }
-.brand-name { font-family: var(--mono); font-weight: 700; font-size: clamp(14px, 3vw, 18px); color: var(--phos); letter-spacing: .02em; text-shadow: 0 0 6px rgba(89,255,166,.3); }
+.brand-name { font-weight: 600; font-size: 15px; color: var(--text); letter-spacing: -.01em; }
+/* "pequeña y simple" (el dueño). .face.xs venía de clamp(24px, 6vw, 30px),
+   pensado para una barra ancha; en una columna de 228px esos ojos de 30px
+   se comen la cabecera. Medida fija acá: el lateral no cambia de ancho, así
+   que no hay nada que escalar. El parpadeo y el bob siguen igual. */
+.side .face { font-size: 18px; letter-spacing: .02em; }
 /* .brand-account (S3, ct-2026-09-20-1202): el acento de cuenta, mismo color
    que la bandeja — color viene INLINE por JS (loadStatus, app.js) desde
    s.account_color, nunca hardcodeado acá (la paleta vive en internal/config,
    una sola vez). border usa currentColor a propósito: un solo style.color
    puesto por JS pinta texto Y borde juntos, sin duplicar la propiedad. */
 .brand-account { font-family: var(--mono); font-weight: 600; font-size: 11px; padding: 2px 8px; border: 1px solid currentColor; border-radius: 10px; }
+/* La carita se queda — el dueño, verbatim: "la carita (como en la web) si
+   me gusta, pequeña y simple". Lo que se va es el fósforo: los dos
+   resplandores la hacían parte del CRT. Queda el verde plano, el tamaño de
+   siempre y el parpadeo/bob que anima app.js, igual que en piumy.app. */
 .face {
   font-size: clamp(52px, 12vw, 88px); line-height: 1; letter-spacing: .06em;
-  color: var(--phos); text-shadow: 0 0 10px rgba(89,255,166,.5), 0 0 34px rgba(37,211,102,.28);
+  color: var(--phos);
   display: flex; align-items: center; gap: .06em; user-select: none;
   animation: bob 5.5s ease-in-out infinite;
 }
@@ -124,7 +209,7 @@ body::after {
 .eye.blink { position: relative; color: transparent; text-shadow: none; }
 .eye.blink::after {
   content: ""; position: absolute; left: 8%; right: 8%; top: 46%; height: .12em;
-  background: var(--phos); border-radius: 2px; box-shadow: 0 0 8px rgba(89,255,166,.6);
+  background: var(--phos); border-radius: 2px;
 }
 .live { font-size: 11px; color: var(--dim); letter-spacing: .14em; text-transform: uppercase; display: inline-flex; align-items: center; gap: 7px; }
 /* #status entra dentro de .live (mismo renglón que "alive · <mood>", "·"
@@ -159,7 +244,7 @@ body::after {
   .live .fresh { width: 100%; }
   .live .fresh::before { content: none; }
 }
-.pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 1.6s ease-in-out infinite; }
+.pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity: .35; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.15); } }
 
 /* ── hero: carita + identidad + acciones ─────────────────────────────── */
@@ -208,12 +293,12 @@ body::after {
 .btn {
   display: inline-flex; align-items: center; gap: 9px; padding: 11px 20px; border-radius: 8px;
   font-size: 14px; font-weight: 600; border: 1px solid var(--border); letter-spacing: .01em;
-  font-family: var(--mono); cursor: pointer; color: var(--text); background: rgba(255,255,255,.02);
+  font-family: var(--mono); cursor: pointer; color: var(--text); background: var(--fill);
 }
 .btn.sm { padding: 7px 13px; font-size: 12.5px; }
 .btn.block { width: 100%; justify-content: center; }
-.btn.pri { background: var(--green); color: #04140b; border-color: var(--green); }
-.btn.pri:hover { background: var(--phos); box-shadow: 0 0 24px rgba(37,211,102,.4); }
+.btn.pri { background: var(--green); color: var(--on-accent); border-color: var(--green); }
+.btn.pri:hover { background: var(--phos); box-shadow: none; }
 .btn.gho:hover { color: var(--phos); border-color: var(--phos); }
 /* D4 (ct-2026-07-22-2100): acción destructiva — "Partir de 0" */
 .btn.danger { background: transparent; color: var(--red); border-color: var(--red); }
@@ -224,8 +309,8 @@ body::after {
    glyph, mismo lenguaje visual, cero ícono nuevo. Activo = mismo tratamiento
    que .smbtn.active/.tab-btn.active: relleno fosforescente, no solo texto,
    para que sea obvio de un vistazo que está prendido antes de salir en vivo. */
-#privacybtn.active { background: var(--phos); color: #04140b; border-color: var(--phos); }
-#privacybtn.active .eye.blink::after { background: #04140b; box-shadow: none; }
+#privacybtn.active { background: var(--phos); color: var(--on-accent); border-color: var(--phos); }
+#privacybtn.active .eye.blink::after { background: var(--on-accent); box-shadow: none; }
 
 .mini-stats { text-align: center; color: var(--dim); font-size: 13px; letter-spacing: .02em; }
 .mini-stats b { color: var(--phos); font-weight: 600; }
@@ -268,7 +353,7 @@ body::after {
   background: var(--bg2); color: var(--dim); border: 1px solid var(--border); border-radius: 6px;
   padding: 6px 12px; font-size: 12px; font-family: var(--mono); cursor: pointer;
 }
-.segmented button.active { background: var(--green); color: #04140b; border-color: var(--green); }
+.segmented button.active { background: var(--green); color: var(--on-accent); border-color: var(--green); }
 #applysort { margin-left: auto; }
 
 /* ── conversaciones ───────────────────────────────────────────────────── */
@@ -281,7 +366,7 @@ body::after {
   background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
   padding: 10px 14px; margin: 14px 0;
 }
-.search:focus { outline: none; border-color: var(--phos); box-shadow: 0 0 0 1px rgba(89,255,166,.25); }
+.search:focus { outline: none; border-color: var(--phos); box-shadow: 0 0 0 3px var(--ring); }
 .search::placeholder { color: var(--dim); }
 
 /* ── defaults por origen (M5, ct-2026-07-22-1903) ─────────────────────── */
@@ -304,18 +389,68 @@ body::after {
 .origindefault-row .smbtn { margin-top: 6px; }
 
 /* ── tabs: chats / grupos / contactos (S1h shell, portado del mockup) ──── */
-.tabs-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 14px;
-  margin-top: 16px; border-bottom: 1px solid var(--border);
-}
+/* .tabs-head se borró en T172b tramo 1: era el contenedor de las pestañas
+   dentro de la tarjeta, y las pestañas se mudaron a la barra lateral. Sin
+   marcado que lo use, la regla no hacía nada. */
 .tabs { display: flex; gap: 2px; }
 .tab-btn {
-  font-family: var(--mono); background: transparent; border: none; color: var(--dim);
-  font-size: 12px; letter-spacing: .14em; text-transform: uppercase; font-weight: 600;
+  background: transparent; border: none; color: var(--dim);
+  font-family: var(--sans); font-size: 14px; font-weight: 500;
   padding: 10px 16px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
 }
 .tab-btn:hover { color: var(--text); }
 .tab-btn.active { color: var(--phos); border-bottom-color: var(--phos); }
+
+/* ── las mismas pestañas, de pie en la barra lateral (T172b tramo 1) ─────
+   Mismos botones, mismas clases, mismo data-tab: lo único que cambia es que
+   se apilan y se marcan con un relleno en vez de un subrayado. El subrayado
+   de arriba sigue vivo para cualquier otro .tabs que quede fuera del
+   lateral, así que esto no borra nada, agrega el caso vertical. */
+.side .tabs { flex-direction: column; gap: 1px; }
+.side .tab-btn {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  text-align: left; padding: 7px 10px; border-bottom: 0; margin-bottom: 0;
+  border-radius: 7px; font-size: 13.5px; color: var(--text);
+}
+.side .tab-btn:hover { background: var(--fill-2); }
+.side .tab-btn.active { background: var(--tint); color: var(--phos); font-weight: 600; }
+/* El candado de #adminpanel vale también para el lateral: sin WhatsApp
+   vinculado no hay nada que navegar. Se resuelve mirando el estado que
+   app.js ya pone en #adminpanel, sin pedirle una línea más (:has() está en
+   todos los navegadores que corren este tablero; donde no esté, las
+   pestañas se ven pero conmutan paneles de un bloque oculto, que es
+   inofensivo). */
+.app:has(#adminpanel.hidden) .side .tabs { display: none; }
+.side-title {
+  padding: 10px 10px 4px; font-size: 11.5px; color: var(--dim);
+}
+.app:has(#adminpanel.hidden) .side-title { display: none; }
+
+/* En pantalla angosta la ventana deja de ser una ventana: ocupa todo y la
+   barra lateral se acuesta arriba, con las pestañas en una fila que se
+   arrastra — el mismo comportamiento del demo que eligió el boss. Va acá,
+   después de las reglas que apilan las pestañas, para ganarles por orden. */
+@media (max-width: 900px) {
+  body { padding: 0; }
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+    border: 0; border-radius: 0; box-shadow: none; min-height: 100vh;
+  }
+  .side {
+    border-right: 0; border-bottom: 1px solid var(--border);
+    padding: 10px 12px 0; gap: 0;
+  }
+  .brand { padding: 2px 2px 10px; }
+  .side-title { display: none; }
+  .side .tabs {
+    flex-direction: row; gap: 4px; overflow-x: auto; padding-bottom: 8px;
+    scrollbar-width: none;
+  }
+  .side .tabs::-webkit-scrollbar { display: none; }
+  .side .tab-btn { width: auto; white-space: nowrap; padding: 6px 11px; }
+  .topbar { padding: 10px 14px; }
+  .content { padding: 14px 14px 26px; }
+}
 
 .tab-panel { display: none; margin-top: 14px; }
 .tab-panel.active { display: block; }
@@ -324,7 +459,7 @@ body::after {
      ct-2026-08-05-123257: "el contador... sobre el botón", no debajo) ──── */
 .tabbadge {
   display: inline-block; margin-left: 6px; min-width: 16px; padding: 1px 6px;
-  border-radius: 999px; background: var(--phos); color: #04140b;
+  border-radius: 999px; background: var(--phos); color: var(--on-accent);
   font-size: 10.5px; font-weight: 700; letter-spacing: 0; text-align: center;
   vertical-align: 1px;
 }
@@ -367,7 +502,7 @@ thead th {
 }
 tbody tr { border-bottom: 1px solid var(--border); }
 tbody tr:last-child { border-bottom: none; }
-tbody tr.selected { background: rgba(89,255,166,.06); }
+tbody tr.selected { background: var(--tint); }
 tbody td { padding: 12px; vertical-align: middle; color: var(--text); }
 tbody tr td:first-child { cursor: pointer; }
 
@@ -422,8 +557,8 @@ tbody tr td:first-child { cursor: pointer; }
   color: var(--amber); flex-shrink: 0;
 }
 .indicator .idot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-.indicator.auto .idot { background: var(--phos); box-shadow: 0 0 6px rgba(89,255,166,.5); }
-.indicator.confirm .idot { background: var(--amber); box-shadow: 0 0 6px rgba(255,180,84,.5); }
+.indicator.auto .idot { background: var(--phos); }
+.indicator.confirm .idot { background: var(--amber); }
 /* unattended (gris-tenue) vs ignored (gris-apagado) — tienen que distinguirse
    a simple vista (pedido explícito del subcontrato): unattended usa un gris
    más claro/visible (todavía "presente"), ignored uno más oscuro/apagado
@@ -468,7 +603,7 @@ tbody tr td:first-child { cursor: pointer; }
 .approverbtn svg { flex-shrink: 0; }
 .approverbtn:hover { border-color: var(--amber); }
 .approverbtn.active {
-  background: var(--amber); border-color: var(--amber); color: #1a1200; font-weight: 600;
+  background: var(--amber); border-color: var(--amber); color: var(--on-accent); font-weight: 600;
 }
 .approverbtn.active:hover { opacity: .85; }
 
@@ -496,7 +631,7 @@ td.list-sub::before { content: none; } /* sin data-label — no heredar el ::bef
   padding: 4px 10px; font-size: 12px; font-family: var(--mono); cursor: pointer; white-space: nowrap;
 }
 .smbtn:hover { color: var(--phos); border-color: var(--phos); }
-.smbtn.active { background: var(--green); color: #04140b; border-color: var(--green); }
+.smbtn.active { background: var(--green); color: var(--on-accent); border-color: var(--green); }
 
 /* ── celda "Agente" (T56, ct-2026-08-10-201641) — mismo look que
    .levelcell/.levelselect, reusado tal cual (el <select> ya tiene el
@@ -636,7 +771,7 @@ td.list-sub::before { content: none; } /* sin data-label — no heredar el ::bef
   font-size: 12.5px; cursor: pointer; border-bottom: 1px solid var(--border);
 }
 .agentsearch-result:last-child { border-bottom: none; }
-.agentsearch-result:hover { background: rgba(89,255,166,.08); }
+.agentsearch-result:hover { background: var(--tint); }
 
 /* Punto de corte subido de 640 a 900 en T80 (boss: "está muy angosto") —
    la tabla de Conversaciones tiene 4 columnas reales (avatar+nombre+preview,
@@ -757,7 +892,7 @@ td.list-sub::before { content: none; } /* sin data-label — no heredar el ::bef
   width: 100%; font-family: var(--mono); font-size: 14px; color: var(--text);
   background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
 }
-.inp:focus { outline: none; border-color: var(--phos); box-shadow: 0 0 0 1px rgba(89,255,166,.25); }
+.inp:focus { outline: none; border-color: var(--phos); box-shadow: 0 0 0 3px var(--ring); }
 .inp::placeholder { color: var(--dim); }
 textarea.inp { resize: vertical; min-height: 150px; line-height: 1.55; font-family: var(--mono); }
 /* Los tres del modal de edicion son los mas largos de todos: ahí vive el

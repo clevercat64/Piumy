@@ -10,8 +10,18 @@
 </head>
 <body>
 
-  <div class="term">
-    <div class="screen">
+  <!-- T172b tramo 1 (ct-2026-11-10-2101): el tablero pasa de "pantalla de
+       terminal" a VENTANA de aplicación — el boss eligió el demo 1,
+       .clevercoder/dashboard-demo-1-ventana.html. Antes esto era
+       .term > .screen envolviendo todo; esas dos clases siguen existiendo,
+       pero ahora son sólo el marco de los modales. Acá manda .app: barra
+       lateral fija + columna de contenido.
+       Ningún id ni clase que app.js busque cambió de nombre: la carita
+       (#face), el ánimo (#moodlabel), el estado (#status), la frescura
+       (#fresh), la cuenta (#brandaccount) y las pestañas (.tab-btn) son los
+       mismos elementos, movidos de lugar. -->
+  <div class="app">
+    <aside class="side">
 
       <!-- topbar: la marca (carita + "piumy"), arriba de todo, chica y
            alineada a la derecha (T116, ct-2026-09-01-2040 — el dueño:
@@ -30,8 +40,13 @@
            parpadeo/bob eran casi imperceptibles). #moodlabel (el ánimo del
            gateway) y #status (si hay conexión) siguen siendo datos
            DISTINTOS — dos spans separados por "·", nunca fusionados
-           (regla que viene de T112b/d, sin cambios acá). -->
-      <div class="topbar">
+           (regla que viene de T112b/d, sin cambios acá).
+           T172b tramo 1: la marca sube a la cabecera de la barra lateral y
+           el renglón de estado (alive/ánimo/conexión/frescura) se queda en
+           la franja de arriba, ahora de la columna de contenido. Siguen
+           siendo los mismos elementos; .brand deja de ser un "chip" con
+           borde porque ya no flota en una barra ancha: tiene su propia
+           columna, que es lo que T117 intentaba conseguir con el borde. -->
         <div class="brand">
           <div class="face xs" id="face" role="img" aria-label="Cara viva del gateway" data-i18n-aria-label="aria.gateway_face">
             <span class="paren">(</span><span class="eye">◕</span><span class="mouth">‿</span><span class="eye">◕</span><span class="paren">)</span>
@@ -48,6 +63,32 @@
                vacío+oculto no cambia nada del tablero de hoy. -->
           <span class="brand-account hidden" id="brandaccount"></span>
         </div>
+
+        <!-- Las pestañas de Conversaciones, mudadas acá tal cual desde la
+             tarjeta donde vivían (T172b tramo 1). Mismos botones, mismas
+             clases, mismo data-tab: app.js las engancha con
+             querySelectorAll(".tab-btn"), que no mira dónde están, así que
+             la mudanza no le pide una sola línea. El CSS las apila y las
+             esconde cuando #adminpanel está cerrado (sin WhatsApp vinculado
+             no hay nada que navegar). -->
+        <div class="side-title" data-i18n="tab.conversations">Conversaciones</div>
+        <div class="tabs">
+          <button class="tab-btn active" type="button" data-tab="chats" data-i18n="tab.chats">Chats</button>
+          <button class="tab-btn" type="button" data-tab="grupos" data-i18n="tab.groups">Grupos</button>
+          <button class="tab-btn" type="button" data-tab="contactos" data-i18n="tab.contacts">Contactos</button>
+          <button class="tab-btn" type="button" data-tab="agentes" data-i18n="tab.agents">Agentes</button>
+          <button class="tab-btn" type="button" data-tab="rules" data-i18n="tab.rules">Reglas</button>
+          <!-- "Drafts" va en su PROPIO span, no data-i18n directo en el
+               botón (T165, ct-2026-09-16-2016): applyI18n() hace
+               el.textContent = text sobre el elemento con data-i18n —
+               puesto en el <button>, borraría el <span id="draftbadge">
+               vecino en cada pasada. -->
+          <button class="tab-btn" type="button" data-tab="drafts"><span data-i18n="tab.drafts">Drafts</span> <span id="draftbadge" class="tabbadge hidden">0</span></button>
+        </div>
+      </aside>
+
+      <div class="main">
+        <div class="topbar">
         <!-- #fresh (T172a, ct-2026-11-10-2000): hace cuánto llegó el último
              dato, o el aviso de que la señal se cortó. Nace VACÍO y lo
              llena renderFreshness() (app.js) con la hora del último
@@ -59,7 +100,9 @@
              solo cuando el span está vacío. Sin data-i18n: no tiene texto
              estático, todo lo que muestra sale de t() en runtime. -->
         <span class="live"><span class="pulse"></span> alive · <span id="moodlabel">idle</span> · <span class="badge" id="status">—</span><span class="fresh" id="fresh"></span></span>
-      </div>
+        </div><!-- /.topbar -->
+
+        <div class="content">
 
       <!-- alarma: contraseña de fábrica (T9, ct-2026-08-05-1137) — el
            instalador silencioso puede dejar "piumy" puesta (T8), y esa
@@ -174,22 +217,9 @@
       <div class="card">
         <span class="eyebrow" data-i18n="tab.conversations">Conversaciones</span>
 
-        <div class="tabs-head">
-          <div class="tabs">
-            <button class="tab-btn active" type="button" data-tab="chats" data-i18n="tab.chats">Chats</button>
-            <button class="tab-btn" type="button" data-tab="grupos" data-i18n="tab.groups">Grupos</button>
-            <button class="tab-btn" type="button" data-tab="contactos" data-i18n="tab.contacts">Contactos</button>
-            <button class="tab-btn" type="button" data-tab="agentes" data-i18n="tab.agents">Agentes</button>
-            <button class="tab-btn" type="button" data-tab="rules" data-i18n="tab.rules">Reglas</button>
-            <!-- "Drafts" va en su PROPIO span, no data-i18n directo en el
-                 botón (T165, ct-2026-09-16-2016): applyI18n() hace
-                 el.textContent = text sobre el elemento con data-i18n —
-                 puesto en el <button>, borraría el <span id="draftbadge">
-                 vecino en cada pasada. Mismo patrón que #privacybtn
-                 (arriba, ◕ Privacidad) para el mismo problema. -->
-            <button class="tab-btn" type="button" data-tab="drafts"><span data-i18n="tab.drafts">Drafts</span> <span id="draftbadge" class="tabbadge hidden">0</span></button>
-          </div>
-        </div>
+        <!-- Las pestañas vivían acá (.tabs-head) hasta T172b tramo 1: se
+             mudaron a la barra lateral, arriba en este mismo archivo. El
+             buscador NO se movió — sigue pegado a los paneles que filtra. -->
 
         <!-- T14 (ct-2026-08-05-1232): un solo buscador, nunca repetido por
              pestaña — vive acá, DENTRO del bloque de pestañas (debajo de
@@ -384,8 +414,9 @@
         <a href="https://www.reddit.com/r/piumy/" target="_blank" rel="noopener">Reddit</a>
       </footer>
 
-    </div>
-  </div>
+        </div><!-- /.content -->
+      </div><!-- /.main -->
+  </div><!-- /.app -->
 
   <!-- popup: conversación estilo celular (S6, ct-2026-07-21-1543) — reemplaza
        el panel de lectura inline; se abre al hacer clic en un chat. -->
