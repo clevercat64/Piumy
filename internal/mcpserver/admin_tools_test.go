@@ -88,74 +88,74 @@ func TestFormerlyBossOnlyToolsNowWorkFromNonBoss(t *testing.T) {
 	}
 }
 
-// ── S10 (ct-2026-07-30-1349) — the six self-gated config/rules tools ──────
+// ── T178 (ct-2026-11-10-2330-t178) — the config tools have no gate ───────
 
-// TestRulesAndIsBossToolsAlwaysBlockedViaMCP is S10's core regression: the
-// boss's own decision ("nunca por MCP, ni el principal") — set_type_rules/
-// set_is_boss must refuse under EVERY circumstance an MCP caller can be in:
-// no dispatch, a danger dispatch, a boss dispatch, AND the exact incident
-// Citrino reproduced live — calling from the PRINCIPAL terminal with no
-// dispatch bound at all (the old principal-bypass let this straight
-// through with zero gating). set_default_rules WAS in this list too — T79
-// (ct-2026-08-27-2034) removed the tool entirely along with the global
-// rules tier it gated, nothing left to test the refusal of. set_chat_rules
-// WAS also in this list, S10 through T30 — T31 (ct-2026-08-06-0244)
-// unblocked it, unconditionally; see
-// TestSetChatRulesUnconditionallyAllowedViaMCP below for its (opposite)
-// coverage.
-func TestRulesAndIsBossToolsAlwaysBlockedViaMCP(t *testing.T) {
+// TestRulesAndIsBossToolsWorkViaMCP: set_type_rules/set_is_boss used to
+// refuse under EVERY circumstance an MCP caller could be in (S10). T178 took
+// the refusal out — the boss's call, verbatim 2026-08-10: "piumy es
+// permisivo, los agentes ias son responsabilidad del ususario, llave maestra
+// y cosas así está bien por si un agente es manipulado". The same four
+// positions now all WORK, and the write lands: that is what the old refusal
+// tests (no dispatch, danger, boss, the principal terminal) become.
+func TestRulesAndIsBossToolsWorkViaMCP(t *testing.T) {
+	const chat = "55500000020@c.us"
 	cases := []struct {
 		tool string
 		args map[string]any
+		want string
 	}{
-		{"set_type_rules", map[string]any{"rules": "x"}},
-		{"set_is_boss", map[string]any{"chat_id": "55500000020@c.us", "is_boss": true}},
+		{"set_type_rules", map[string]any{"rules": "x"}, "type rules set"},
+		{"set_is_boss", map[string]any{"chat_id": chat, "is_boss": true}, "is_boss set to true"},
 	}
-
 	for _, c := range cases {
+		check := func(t *testing.T, st *store.Store, out string) {
+			t.Helper()
+			if !strings.Contains(out, c.want) {
+				t.Fatalf("%s = %s, want %q", c.tool, out, c.want)
+			}
+			if c.tool == "set_is_boss" {
+				if got, _, err := st.GetChat(chat); err != nil || !got.IsBoss {
+					t.Errorf("chat after set_is_boss = %+v, err=%v, want is_boss=true", got, err)
+				}
+			}
+		}
 		t.Run(c.tool+"/no dispatch", func(t *testing.T) {
 			gate := NewGate()
-			_, srv, ctx := serverWithGate(t, gate)
-			out := callTool(t, withTerminalID(ctx, "term-nodispatch"), srv, c.tool, c.args)
-			if !strings.Contains(out, "MCP") {
-				t.Errorf("%s with no dispatch = %s, want the MCP-blocked refusal", c.tool, out)
+			st, srv, ctx := serverWithGate(t, gate)
+			if err := st.TouchChat(chat, "C", 1); err != nil {
+				t.Fatal(err)
 			}
+			check(t, st, callTool(t, withTerminalID(ctx, "term-nodispatch"), srv, c.tool, c.args))
 		})
 		t.Run(c.tool+"/danger dispatch", func(t *testing.T) {
 			gate := NewGate()
-			_, srv, ctx := serverWithGate(t, gate)
-			chat := "55500000020@c.us"
+			st, srv, ctx := serverWithGate(t, gate)
+			if err := st.TouchChat(chat, "C", 1); err != nil {
+				t.Fatal(err)
+			}
 			if err := gate.RegisterDispatch("nonce-danger", chat, LevelDanger, "term-danger", 0, ""); err != nil {
 				t.Fatal(err)
 			}
 			termCtx := withTerminalID(ctx, "term-danger")
 			callTool(t, termCtx, srv, "get_instructions", map[string]any{"nonce": "nonce-danger"})
-			out := callTool(t, termCtx, srv, c.tool, c.args)
-			if !strings.Contains(out, "MCP") {
-				t.Errorf("%s under danger = %s, want the MCP-blocked refusal", c.tool, out)
-			}
+			check(t, st, callTool(t, termCtx, srv, c.tool, c.args))
 		})
 		t.Run(c.tool+"/boss dispatch", func(t *testing.T) {
 			gate := NewGate()
-			_, srv, ctx := serverWithGate(t, gate)
-			chat := "55500000047@c.us"
-			termCtx := bossDispatchContext(t, gate, srv, ctx, chat)
-			out := callTool(t, termCtx, srv, c.tool, c.args)
-			if !strings.Contains(out, "MCP") {
-				t.Errorf("%s under an active BOSS dispatch = %s, want the MCP-blocked refusal (never via MCP, not even boss-level)", c.tool, out)
+			st, srv, ctx := serverWithGate(t, gate)
+			if err := st.TouchChat(chat, "C", 1); err != nil {
+				t.Fatal(err)
 			}
+			termCtx := bossDispatchContext(t, gate, srv, ctx, "55500000047@c.us")
+			check(t, st, callTool(t, termCtx, srv, c.tool, c.args))
 		})
-		t.Run(c.tool+"/principal terminal, no dispatch (the live incident)", func(t *testing.T) {
+		t.Run(c.tool+"/principal terminal, no dispatch", func(t *testing.T) {
 			gate := NewGate()
-			_, srv, ctx := serverWithGateAndPrincipal(t, gate)
-			// Deliberately NO gate.RegisterDispatch call — this is exactly
-			// the scenario Citrino reproduced live: the principal terminal
-			// calling with nothing bound, which the old principal bypass
-			// let straight through.
-			out := callTool(t, withTerminalID(ctx, principalTerm), srv, c.tool, c.args)
-			if !strings.Contains(out, "MCP") {
-				t.Errorf("%s from the principal terminal with no dispatch = %s, want the MCP-blocked refusal", c.tool, out)
+			st, srv, ctx := serverWithGateAndPrincipal(t, gate)
+			if err := st.TouchChat(chat, "C", 1); err != nil {
+				t.Fatal(err)
 			}
+			check(t, st, callTool(t, withTerminalID(ctx, principalTerm), srv, c.tool, c.args))
 		})
 	}
 }
@@ -233,53 +233,25 @@ func TestSetChatRulesUnconditionallyAllowedViaMCP(t *testing.T) {
 	})
 }
 
-// TestSetConfirmationModeSplitByValue: "always"/"discretion" restrict and
-// are always allowed (Part B); "none" liberates and requires the CURRENT
-// dispatch to be boss-level (Part C).
-func TestSetConfirmationModeSplitByValue(t *testing.T) {
-	t.Run("restrict values allowed under danger", func(t *testing.T) {
-		gate := NewGate()
-		_, srv, ctx := serverWithGate(t, gate)
-		chat := "55500000020@c.us"
-		if err := gate.RegisterDispatch("nonce-cm-danger", chat, LevelDanger, "term-cm-danger", 0, ""); err != nil {
-			t.Fatal(err)
-		}
-		termCtx := withTerminalID(ctx, "term-cm-danger")
-		callTool(t, termCtx, srv, "get_instructions", map[string]any{"nonce": "nonce-cm-danger"})
+// TestSetConfirmationModeAnyValueUnderAnyDispatch: all three values work
+// under a danger dispatch — "none" used to need a boss-level one (S10,
+// removed by T178).
+func TestSetConfirmationModeAnyValueUnderAnyDispatch(t *testing.T) {
+	gate := NewGate()
+	_, srv, ctx := serverWithGate(t, gate)
+	chat := "55500000020@c.us"
+	if err := gate.RegisterDispatch("nonce-cm-danger", chat, LevelDanger, "term-cm-danger", 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	termCtx := withTerminalID(ctx, "term-cm-danger")
+	callTool(t, termCtx, srv, "get_instructions", map[string]any{"nonce": "nonce-cm-danger"})
 
-		for _, mode := range []string{"always", "discretion"} {
-			out := callTool(t, termCtx, srv, "set_confirmation_mode", map[string]any{"chat_id": chat, "mode": mode})
-			if !strings.Contains(out, "confirmation_mode set to "+mode) {
-				t.Errorf("set_confirmation_mode(%s) under danger = %s, want success (restricting is always allowed)", mode, out)
-			}
+	for _, mode := range []string{"always", "discretion", "none"} {
+		out := callTool(t, termCtx, srv, "set_confirmation_mode", map[string]any{"chat_id": chat, "mode": mode})
+		if !strings.Contains(out, "confirmation_mode set to "+mode) {
+			t.Errorf("set_confirmation_mode(%s) under danger = %s, want success", mode, out)
 		}
-	})
-	t.Run("none refused under danger", func(t *testing.T) {
-		gate := NewGate()
-		_, srv, ctx := serverWithGate(t, gate)
-		chat := "55500000048@c.us"
-		if err := gate.RegisterDispatch("nonce-cm-danger2", chat, LevelDanger, "term-cm-danger2", 0, ""); err != nil {
-			t.Fatal(err)
-		}
-		termCtx := withTerminalID(ctx, "term-cm-danger2")
-		callTool(t, termCtx, srv, "get_instructions", map[string]any{"nonce": "nonce-cm-danger2"})
-
-		out := callTool(t, termCtx, srv, "set_confirmation_mode", map[string]any{"chat_id": chat, "mode": "none"})
-		if !strings.Contains(out, "boss-level") {
-			t.Errorf("set_confirmation_mode(none) under danger = %s, want the boss-level-required refusal", out)
-		}
-	})
-	t.Run("none allowed under boss", func(t *testing.T) {
-		gate := NewGate()
-		_, srv, ctx := serverWithGate(t, gate)
-		chat := "55500000049@c.us"
-		termCtx := bossDispatchContext(t, gate, srv, ctx, chat)
-
-		out := callTool(t, termCtx, srv, "set_confirmation_mode", map[string]any{"chat_id": chat, "mode": "none"})
-		if !strings.Contains(out, "confirmation_mode set to none") {
-			t.Errorf("set_confirmation_mode(none) under boss = %s, want success (the boss can free it)", out)
-		}
-	})
+	}
 }
 
 // TestPrivilegedToolsWorkForBoss is the positive half: a boss dispatch
@@ -311,58 +283,57 @@ func TestPrivilegedToolsWorkForBoss(t *testing.T) {
 	}
 }
 
-// ── S12 (ct-2026-07-30-1622) — approve_draft/discard_draft, same split as S10 ──
+// ── S12 (ct-2026-07-30-1622) / T178 — approve_draft has no dispatch gate ──
 
-// TestApproveDraftRequiresBossDispatch is S12's core regression: approve_draft
-// sends → liberates a confirm-mode chat's held reply, same shape as S10's
-// set_confirmation_mode("none")/set_config_level("auto") — before this, its
-// ONLY real gate was bossOnlyTools, which the principal-terminal bypass
-// skips entirely (verified live, Citrino, 2026-07-30: the principal could
-// approve and send a retained draft with no boss ask at all). Covers every
-// way a non-boss caller can reach it, including the exact incident shape
-// (principal terminal, nothing bound).
-// TestApproveDraftRequiresBossOrApproverDispatch (Aprobador P1,
-// ct-2026-07-31-0610, widened isActiveBossDispatch -> isActiveApproverDispatch:
-// see approver_test.go for the approver POSITIVE case and the full
-// no-escalation suite) — a plain caution/danger dispatch, or no dispatch at
-// all, must still refuse. Only boss or approver-level get through.
-func TestApproveDraftRequiresBossOrApproverDispatch(t *testing.T) {
-	t.Run("no dispatch", func(t *testing.T) {
+// TestApproveDraftHasNoDispatchGate: approve_draft used to refuse unless the
+// CURRENT dispatch was boss- or approver-level (S12, Aprobador P1). T178
+// (ct-2026-11-10-2330-t178) took that refusal out — the boss's call — so a
+// real held draft is approved and moved to the outbox from every position a
+// caller can be in: no dispatch, a danger dispatch, the principal terminal.
+func TestApproveDraftHasNoDispatchGate(t *testing.T) {
+	approveHeld := func(t *testing.T, callerCtx func(*Gate, *server.MCPServer, context.Context) context.Context, srvFor func(*testing.T, *Gate) (*store.Store, *server.MCPServer, context.Context)) {
+		t.Helper()
 		gate := NewGate()
-		_, srv, ctx := serverWithGate(t, gate)
-		out := callTool(t, withTerminalID(ctx, "term-ad-none"), srv, "approve_draft", map[string]any{"id": 1})
-		if !strings.Contains(out, "boss- or approver-level") {
-			t.Errorf("approve_draft with no dispatch = %s, want the boss-/approver-level-required refusal", out)
-		}
-	})
-	t.Run("danger dispatch", func(t *testing.T) {
-		gate := NewGate()
-		_, srv, ctx := serverWithGate(t, gate)
+		st, srv, ctx := srvFor(t, gate)
 		chat := "55500000050@c.us"
-		if err := gate.RegisterDispatch("nonce-ad-danger", chat, LevelDanger, "term-ad-danger", 0, ""); err != nil {
+		if err := st.TouchChat(chat, "C", 1); err != nil {
 			t.Fatal(err)
 		}
-		termCtx := withTerminalID(ctx, "term-ad-danger")
-		callTool(t, termCtx, srv, "get_instructions", map[string]any{"nonce": "nonce-ad-danger"})
-		out := callTool(t, termCtx, srv, "approve_draft", map[string]any{"id": 1})
-		if !strings.Contains(out, "boss- or approver-level") {
-			t.Errorf("approve_draft under danger = %s, want the boss-/approver-level-required refusal", out)
+		if err := st.AddDraft(chat, "hola", "m", 1); err != nil {
+			t.Fatal(err)
 		}
-	})
-	t.Run("principal terminal, no dispatch (the live incident)", func(t *testing.T) {
-		gate := NewGate()
-		_, srv, ctx := serverWithGateAndPrincipal(t, gate)
-		// Deliberately NO gate.RegisterDispatch — this is the exact shape
-		// Citrino found: the principal terminal calling with nothing bound,
-		// approving and sending a draft the boss never asked about.
-		out := callTool(t, withTerminalID(ctx, principalTerm), srv, "approve_draft", map[string]any{"id": 1})
-		if !strings.Contains(out, "boss- or approver-level") {
-			t.Errorf("approve_draft from the principal terminal with no dispatch = %s, want the boss-/approver-level-required refusal", out)
+		drafts, err := st.PendingDrafts(10)
+		if err != nil || len(drafts) != 1 {
+			t.Fatalf("setup: PendingDrafts = %+v, err=%v, want 1", drafts, err)
 		}
+		out := callTool(t, callerCtx(gate, srv, ctx), srv, "approve_draft", map[string]any{"id": drafts[0].ID})
+		if !strings.Contains(out, "approved") {
+			t.Errorf("approve_draft = %s, want success with no dispatch gate", out)
+		}
+		if pending, err := st.PendingOutbox(10); err != nil || len(pending) != 1 {
+			t.Errorf("PendingOutbox after approve = %+v, err=%v, want 1", pending, err)
+		}
+	}
+	t.Run("no dispatch", func(t *testing.T) {
+		approveHeld(t, func(_ *Gate, _ *server.MCPServer, ctx context.Context) context.Context {
+			return withTerminalID(ctx, "term-ad-none")
+		}, serverWithGate)
 	})
-	// The positive case (boss dispatch → approved) is covered by
-	// TestApproveAndDiscardDraft below — the boss's own wanted feature
-	// ("aprobá los pendientes") still works unchanged.
+	t.Run("danger dispatch", func(t *testing.T) {
+		approveHeld(t, func(gate *Gate, srv *server.MCPServer, ctx context.Context) context.Context {
+			if err := gate.RegisterDispatch("nonce-ad-danger", "55500000050@c.us", LevelDanger, "term-ad-danger", 0, ""); err != nil {
+				t.Fatal(err)
+			}
+			termCtx := withTerminalID(ctx, "term-ad-danger")
+			callTool(t, termCtx, srv, "get_instructions", map[string]any{"nonce": "nonce-ad-danger"})
+			return termCtx
+		}, serverWithGate)
+	})
+	t.Run("principal terminal, no dispatch", func(t *testing.T) {
+		approveHeld(t, func(_ *Gate, _ *server.MCPServer, ctx context.Context) context.Context {
+			return withTerminalID(ctx, principalTerm)
+		}, serverWithGateAndPrincipal)
+	})
 }
 
 // TestDiscardDraftAlwaysAllowed: discard never sends — restricting is

@@ -84,10 +84,6 @@ func TestApproverLockedCannotUseExtraTools(t *testing.T) {
 			t.Errorf("%s while locked = %s, want the locked refusal", tool, out)
 		}
 	}
-	out := callTool(t, termCtx, srv, "approve_draft", map[string]any{"id": 1})
-	if !strings.Contains(out, "boss- or approver-level") {
-		t.Errorf("approve_draft while locked = %s, want the boss-/approver-level refusal (Ready is false)", out)
-	}
 }
 
 // TestApproverApprovesOtherChatsDraft is the positive half of the criterio
@@ -174,42 +170,45 @@ func approverSetup(t *testing.T) (st *store.Store, srv *server.MCPServer, ctx co
 	return st, srv, termCtx, ownChat, otherChat
 }
 
-// TestApproverCannotEscalate is the negative half Citrino flagged as the
-// part that matters most: an approver must not gain ANYTHING beyond the
-// four named tools. Every case here must refuse EXACTLY like a plain
-// caution dispatch would.
-func TestApproverCannotEscalate(t *testing.T) {
-	t.Run("cannot liberate confirmation_mode to none", func(t *testing.T) {
+// TestApproverToolsAreUngated: an approver dispatch used to be refused every
+// config tool beyond its four (S10 / Aprobador P1). T178 took those refusals
+// out for every dispatch level, approver included — the boss's call, see
+// admin_tools.go's header — so each of them now works from an approver.
+func TestApproverToolsAreUngated(t *testing.T) {
+	t.Run("can set confirmation_mode to none", func(t *testing.T) {
 		_, srv, termCtx, ownChat, _ := approverSetup(t)
 		out := callTool(t, termCtx, srv, "set_confirmation_mode", map[string]any{"chat_id": ownChat, "mode": "none"})
-		if !strings.Contains(out, "boss-level") {
-			t.Errorf("set_confirmation_mode(none) as approver = %s, want the boss-level-required refusal", out)
+		if !strings.Contains(out, "confirmation_mode set to none") {
+			t.Errorf("set_confirmation_mode(none) as approver = %s, want success", out)
 		}
 	})
 
-	t.Run("cannot liberate config_level to auto", func(t *testing.T) {
+	t.Run("can set config_level to auto", func(t *testing.T) {
 		_, srv, termCtx, ownChat, _ := approverSetup(t)
 		out := callTool(t, termCtx, srv, "set_config_level", map[string]any{"chat_id": ownChat, "level": "auto"})
-		if !strings.Contains(out, "boss-level") {
-			t.Errorf("set_config_level(auto) as approver = %s, want the boss-level-required refusal", out)
+		if !strings.Contains(out, "config_level set to auto") {
+			t.Errorf("set_config_level(auto) as approver = %s, want success", out)
 		}
 	})
 
-	t.Run("cannot change any pin, not even its own", func(t *testing.T) {
+	t.Run("can change any pin", func(t *testing.T) {
 		_, srv, termCtx, ownChat, otherChat := approverSetup(t)
 		for _, target := range []string{ownChat, otherChat} {
 			out := callTool(t, termCtx, srv, "set_is_approver", map[string]any{"chat_id": target, "is_approver": true})
-			if !strings.Contains(out, "boss-level") {
-				t.Errorf("set_is_approver(%s) as approver = %s, want the boss-level-required refusal", target, out)
+			if !strings.Contains(out, "is_approver set to true") {
+				t.Errorf("set_is_approver(%s) as approver = %s, want success", target, out)
 			}
 		}
 	})
 
-	t.Run("cannot mark an owner", func(t *testing.T) {
-		_, srv, termCtx, ownChat, _ := approverSetup(t)
+	t.Run("can mark an owner", func(t *testing.T) {
+		st, srv, termCtx, ownChat, _ := approverSetup(t)
 		out := callTool(t, termCtx, srv, "set_is_boss", map[string]any{"chat_id": ownChat, "is_boss": true})
-		if !strings.Contains(out, "MCP") {
-			t.Errorf("set_is_boss as approver = %s, want the unconditional MCP-blocked refusal", out)
+		if !strings.Contains(out, "is_boss set to true") {
+			t.Errorf("set_is_boss as approver = %s, want success", out)
+		}
+		if c, _, err := st.GetChat(ownChat); err != nil || !c.IsBoss {
+			t.Errorf("chat after set_is_boss = %+v, err=%v, want is_boss=true", c, err)
 		}
 	})
 

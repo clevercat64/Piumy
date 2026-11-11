@@ -43,13 +43,17 @@ Vive en la carpeta de datos de la instalación, junto a `status.json` — en una
 ```json
 {
   "mcp_url": "http://127.0.0.1:8091/mcp",
+  "mcp_operator_url": "http://127.0.0.1:8091/mcp/operator",
+  "mcp_manager_url": "http://127.0.0.1:8091/mcp/manager",
   "rest_url": "http://127.0.0.1:8092",
   "mcp_key": "...",
   "rest_key": "..."
 }
 ```
 
-De aquí salen las dos URLs y las dos claves de acceso. **Nunca escribas una clave dentro de esta skill.** Un campo vacío (`""`) significa que esa clave no está configurada — no la inventes, sigue sin ella (`mcp_key`/`rest_key` vacíos son válidos en dev/LAN).
+**Tres puertas MCP, una sola clave** (T178). `mcp_url` sirve TODAS las tools — es la de siempre, sigue funcionando para quien ya está conectado. `mcp_operator_url` sirve solo lo de **atender chats** (leer, contestar, borradores, el ritual de despacho); `mcp_manager_url` sirve solo lo de **configurar Piumy** (quién es el dueño, niveles, agentes, grupos, el freno anti-ban). Un agente conecta a la que le toca, o a las dos: la clave es la misma. Si tu trabajo es contestar chats, conecta a `mcp_operator_url` — no verás ninguna tool de configuración, y es lo recomendado para el agente que atiende a desconocidos.
+
+De aquí salen las URLs y las dos claves de acceso. **Nunca escribas una clave dentro de esta skill.** Un campo vacío (`""`) significa que esa clave no está configurada — no la inventes, sigue sin ella (`mcp_key`/`rest_key` vacíos son válidos en dev/LAN).
 
 ### 4. Enciende tu propia antena
 

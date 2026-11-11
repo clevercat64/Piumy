@@ -477,21 +477,11 @@ func TestGateBossConsumedDispatchNoLongerGrantsPrivileges(t *testing.T) {
 		t.Errorf("set_kill_switch after boss consume = %s, want refused boss-only", kill)
 	}
 
-	// set_is_boss (T150, ct-2026-09-07-1839): this used to assert "locked:"
-	// — accurate when this test was written (ST-A, 2026-07-11), when
-	// set_is_boss was still a bossOnlyTools entry and levelGateMiddleware's
-	// own boss-Ready gate is what refused it. S10 (ct-2026-07-30-1349, three
-	// weeks later) moved set_is_boss OUT of bossOnlyTools entirely — its own
-	// handler (admin_tools.go) has refused it unconditionally ever since,
-	// no dispatch state involved at all. T150's fix (isGated checked before
-	// gate.Active) means levelGateMiddleware now lets it straight through to
-	// that handler instead of intercepting it first — so the message changes,
-	// but the guarantee this line checks (set_is_boss stays blocked, always)
-	// does not: it was always the handler doing the real blocking here, this
-	// assertion just used to observe it one layer too early.
+	// set_is_boss has no gate since T178: a consumed boss dispatch neither
+	// grants nor blocks it, the handler just does the write.
 	setBoss := callTool(t, termCtx, srv, "set_is_boss", map[string]any{"chat_id": bossChat, "is_boss": true})
-	if !strings.Contains(setBoss, "refused: is_boss is never settable via MCP") {
-		t.Errorf("set_is_boss after boss consume, no new dispatch = %s, want the handler's own unconditional MCP-blocked refusal", setBoss)
+	if !strings.Contains(setBoss, "is_boss set to true") {
+		t.Errorf("set_is_boss after boss consume, no new dispatch = %s, want success (no gate)", setBoss)
 	}
 }
 

@@ -22,9 +22,11 @@ Crece de forma **aditiva**: agregar una dimensión de canal, o varias cuentas, s
 
 **El número gana siempre.** Un mismo contacto puede aparecer con dos identidades distintas. Cuando existen las dos, vale la del número: su configuración, sus reglas, todo. Sin mezclas, sin "la que no esté vacía". Aunque eso descarte reglas buenas del otro lado.
 
-**Las reglas por tipo y el dueño no se tocan por el canal del agente** (`set_type_rules` y `set_is_boss` se rechazan siempre por MCP); las reglas de un chat concreto (`set_chat_rules`) sí las puede cambiar un agente. Lo bloqueado está en el código, no en un prompt. El candado duro vive en el código; la instrucción escrita ayuda, nunca garantiza.
+**Reglas por tipo y dueño: sin candado, con advertencia (T178).** `set_type_rules`, `set_is_boss`, `set_config_level("boss")`, aflojar a `"auto"`/`"none"`, `set_is_approver` y `approve_draft` ya no se rechazan por MCP: cualquier agente conectado a `/mcp/manager` (o al `/mcp` completo) las puede llamar. Decisión del dueño de Piumy, textual (2026-08-10): *"piumy es permisivo, los agentes ias son responsabilidad del ususario, llave maestra y cosas así está bien por si un agente es manipulado"*.
 
-**Restringir es gratis, aflojar cuesta.** Subir la vigilancia siempre se puede. Bajarla es solo del dueño.
+**Lo que esto significa para ti, que conectas agentes:** un agente que tenga la puerta de configuración y atienda a desconocidos puede ser convencido por uno de ellos de "hacerlo dueño" — y lo haría. El código ya no lo impide; lo impide tu arquitectura. Conecta al agente que atiende desconocidos SOLO a `/mcp/operator` (no ve ninguna tool de configuración), y deja `/mcp/manager` para el agente que habla con el dueño. Las reglas de un chat concreto (`set_chat_rules`) siguen siendo libres para cualquier agente, como antes. La única excepción que el dueño conservó es `set_kill_switch` (el freno anti-ban): se rechaza a un agente sin despacho vivo del dueño. Lo escrito acá ayuda; ya no hay un candado de código detrás.
+
+**Restringir es gratis, aflojar es del dueño.** Subir la vigilancia siempre se puede. Bajarla es decisión del dueño — ya no la hace cumplir el código sino quien conecta al agente.
 
 **Callarse es una acción.** No contestar es una decisión legítima y cierra el turno igual que responder.
 

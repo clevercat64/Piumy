@@ -56,8 +56,8 @@ var enumerationTools = map[string]bool{
 // two enumerationTools entries an Approver-level dispatch may reach —
 // get_drafts/get_pending, so it can see the cross-chat queue it needs to
 // approve OTHER chats' drafts (approve_draft/discard_draft themselves are
-// never in enumerationTools/chatScopedArg at all — their own handlers in
-// admin_tools.go gate them directly, see isActiveApproverDispatch). Every
+// never in enumerationTools/chatScopedArg at all, and since T178 no handler
+// gates them either). Every
 // OTHER enumerationTools entry (list_chats/get_queue/get_chat_groups/
 // get_outbox) and every bossOnlyTools entry stay refused for Approver
 // exactly like Caution/Danger — this map is the ENTIRE extra surface an
@@ -116,72 +116,19 @@ var chatScopedArg = map[string]string{
 // governor (internal/corepipeline), which is what actually protects
 // against spamming WhatsApp, applied identically regardless of caller.
 //
-// set_is_boss/set_type_rules/set_confirmation_mode/set_config_level/
-// approve_draft/discard_draft are DELIBERATELY absent (S10,
-// ct-2026-07-30-1349; approve_draft/discard_draft added S12,
-// ct-2026-07-30-1622, same hole, same fix): this map is binary (boss or
-// nothing), but these need per-ARGUMENT or per-TOOL logic (restricting is
-// always allowed; only liberating needs an active boss dispatch; is_boss/
-// the type tier are never MCP-settable, not even by the principal) —
-// that can't live in a name→bool map. Their own handlers (admin_tools.go)
-// enforce it directly, which also closes the hole this middleware's
-// principal bypass (below) otherwise left open: verified live (Citrino,
-// 2026-07-30) that a non-principal-aware bypass let ANY MCP caller on the
-// principal terminal rewrite rules/is_boss with zero gating — S12 found
-// the identical shape on approve_draft. Putting the check in the tool
-// handler itself means it holds regardless of what this middleware
-// decides.
-//
-// set_chat_rules is ALSO absent, but for a different reason since T31
-// (ct-2026-08-06-0244): it isn't self-gated anymore either — the boss
-// unblocked it unconditionally (see its own doc, admin_tools.go). Absent
-// from bossOnlyTools, chatScopedArg, AND selfGatedTools — nothing in this
-// file touches it at all, on purpose.
+// T178 (ct-2026-11-10-2330-t178, boss verbatim 2026-08-10: "piumy es
+// permisivo, los agentes ias son responsabilidad del ususario, llave maestra
+// y cosas así está bien por si un agente es manipulado"): the tools that
+// used to refuse inside their own handler (set_is_boss, set_type_rules, the
+// "liberating" values of set_confirmation_mode/set_config_level,
+// approve_draft, set_is_approver) no longer do, so this map is the only
+// authorization left in the package — set_kill_switch, and nothing else.
 var bossOnlyTools = map[string]bool{
 	// Anti-ban emergency stop (H2+H3 hardening, ct-2026-07-10-0540) — an
 	// agent must never be able to un-kill itself. T148: the one lock that
 	// stays, by the boss's own explicit reasoning, not Citrino's/Tourmaline's
 	// call — see this map's own doc comment above.
 	"set_kill_switch": true,
-}
-
-// selfGatedTools (S10, ct-2026-07-30-1349; approve_draft/discard_draft
-// added S12, ct-2026-07-30-1622) are the tools whose authorization lives in
-// their OWN handler (admin_tools.go), not in bossOnlyTools — a witness set
-// purely for tests to assert "every privileged tool is gated SOMEHOW"
-// without hardcoding these names a second time. levelGateMiddleware never
-// reads this map; it's not part of the enforcement, only of confirming the
-// enforcement exists elsewhere.
-// set_chat_rules is deliberately NOT here since T31 (ct-2026-08-06-0244) —
-// it has no gating logic left in its handler either, unconditional by the
-// boss's own explicit call. See its own doc (admin_tools.go).
-var selfGatedTools = map[string]bool{
-	"set_is_boss":           true,
-	"set_type_rules":        true,
-	"set_confirmation_mode": true,
-	"set_config_level":      true,
-	// approve_draft (sends → liberates) requires isActiveBossDispatch,
-	// same reasoning as set_confirmation_mode's "none"/set_config_level's
-	// "auto" — the boss saying "aprobá los pendientes" registers a
-	// boss-level dispatch, so it works; a caution/danger dispatch (the
-	// chat's own interested party talking the agent into it) cannot grant
-	// itself this. discard_draft (never sends → restricts) has NO check at
-	// all — always allowed, same "restricting is free" reasoning as
-	// "always"/"discretion"/"confirm"/"unattended"/"ignored".
-	"approve_draft": true,
-	"discard_draft": true,
-	// reject_draft/edit_draft (T15, ct-2026-08-05-123241) — same family as
-	// discard_draft: never send, so no check at all, always allowed. reject
-	// asks for another attempt (reason travels via capipush's redispatch),
-	// edit replaces the text in place — neither causes a send by itself.
-	"reject_draft": true,
-	"edit_draft":   true,
-	// set_is_approver (Aprobador P1, ct-2026-07-31-0610): the pin itself —
-	// isActiveBossDispatch-gated, same reasoning as set_is_boss being
-	// boss-only, except this one DOES have a valid MCP path (the boss's own
-	// clarification: "la ia tambien puede cambiar el pin por mcp pero solo
-	// si el boss lo manda") rather than being blocked unconditionally.
-	"set_is_approver": true,
 }
 
 func levelGateMiddleware(gate *Gate, principalID string) server.ToolHandlerMiddleware {

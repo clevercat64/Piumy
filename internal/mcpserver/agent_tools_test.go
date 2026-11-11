@@ -230,24 +230,35 @@ func TestSetAgentCAPIModifiesExisting(t *testing.T) {
 	}
 }
 
-// TestSetAgentCAPIRejectsPrincipalTerminalID: agent_id == PrincipalTerminalID
-// is always refused — gate duro. S9 (ct-2026-07-30-031143): the refusal must
-// also name the real door (set_capi_connector) instead of only pointing at
-// the dashboard — Citrino hit this live during the smoke and had to find
-// set_capi_connector by reading the tool list.
-func TestSetAgentCAPIRejectsPrincipalTerminalID(t *testing.T) {
+// TestSetAgentCAPIOnPrincipalGoesThroughTheConnectorPath: agent_id ==
+// PrincipalTerminalID used to be refused and point at set_capi_connector
+// (S9). T178 delegates instead: the principal has no `agents` row, so the
+// update is the same write set_capi_connector does — and the endpoint
+// validation (SetPrincipalAgent) still decides what is accepted.
+func TestSetAgentCAPIOnPrincipalGoesThroughTheConnectorPath(t *testing.T) {
 	st := openAgentDB(t)
 	ctx, srv := buildAgentServer(t, st, nil)
 
 	resp := callTool(t, agentCtx(ctx, principalTerm), srv, "set_agent_capi", map[string]any{
-		"agent_id": principalTerm,
-		"endpoint": "http://evil:8787",
+		"agent_id":            principalTerm,
+		"endpoint":            "http://127.0.0.1:8787",
+		"antenna_terminal_id": "ant-principal",
+		"pinpass":             "pin-principal",
+		"name":                "Principal",
 	})
-	if !strings.Contains(resp, "reserved") {
-		t.Errorf("expected 'reserved' error, got: %s", resp)
+	if strings.Contains(resp, `"isError":true`) || !strings.Contains(resp, `principal`) {
+		t.Fatalf("set_agent_capi on the principal = %s, want success", resp)
 	}
-	if !strings.Contains(resp, "set_capi_connector") {
-		t.Errorf("error doesn't name the real door (set_capi_connector), got: %s", resp)
+	got, ok, err := st.PrincipalAgent(principalTerm)
+	if err != nil || !ok || got.Endpoint != "http://127.0.0.1:8787" || got.AntennaTerminalID != "ant-principal" || got.Name != "Principal" {
+		t.Errorf("principal after the update = %+v ok=%v err=%v", got, ok, err)
+	}
+
+	bad := callTool(t, agentCtx(ctx, principalTerm), srv, "set_agent_capi", map[string]any{
+		"agent_id": principalTerm, "endpoint": "http://evil:8787",
+	})
+	if !strings.Contains(bad, `"isError":true`) || !strings.Contains(bad, "private-network") {
+		t.Errorf("a public endpoint on the principal = %s, want the endpoint validation to refuse it", bad)
 	}
 }
 
@@ -535,7 +546,10 @@ func TestAssignChatToAgentByPrincipal(t *testing.T) {
 	}
 }
 
-func TestAssignChatToAgentRejectsPrincipalAsTarget(t *testing.T) {
+// TestAssignChatToAgentPrincipalMeansUnassigned: an unassigned chat already
+// falls back to the principal, so assigning it there is unassigning it (T178:
+// this used to be refused).
+func TestAssignChatToAgentPrincipalMeansUnassigned(t *testing.T) {
 	st := openAgentDB(t)
 	if err := st.TouchChat("1@s.whatsapp.net", "Juan", 1); err != nil {
 		t.Fatal(err)
@@ -545,12 +559,12 @@ func TestAssignChatToAgentRejectsPrincipalAsTarget(t *testing.T) {
 	resp := callTool(t, agentCtx(ctx, principalTerm), srv, "assign_chat_to_agent", map[string]any{
 		"chat_id": "1@s.whatsapp.net", "agent_id": principalTerm,
 	})
-	if strings.Contains(resp, `"isError":true`) == false {
-		t.Errorf("expected an error assigning to the principal itself, got: %s", resp)
+	if strings.Contains(resp, `"isError":true`) || !strings.Contains(resp, "unassigned") {
+		t.Errorf("assigning to the principal = %s, want it treated as unassigned", resp)
 	}
 	c, _, _ := st.GetChat("1@s.whatsapp.net")
-	if c.Status == "agent_exclusive:"+principalTerm {
-		t.Error("assignment to the principal must be rejected, not persisted")
+	if c.Status != "new" {
+		t.Errorf("Status = %q, want new (no agent_exclusive row pointing at the principal)", c.Status)
 	}
 }
 

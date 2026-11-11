@@ -610,10 +610,8 @@ Piumy. Ver `docs/F1A-STORE-ACCESO.md`.
   es un 6to nivel). Un chat puede ser aprobador siendo boss, automático, o
   cualquier otra cosa — `capipush.LevelFor` lo lee después de `is_boss`.
   Settable por REST (`POST /api/admin/approver`, privilegio de dashboard)
-  y por MCP (`set_is_approver`, `mcpserver/admin_tools.go`) — a diferencia
-  de `is_boss`, el boss explícitamente quiere este alcanzable también por
-  el agente, pero solo con `isActiveBossDispatch` activo (ver mcpserver
-  abajo).
+  y por MCP (`set_is_approver`, `mcpserver/admin_tools.go`) sin chequeo
+  de despacho (ver mcpserver abajo).
 - **`ReconcileIdentities(resolve func(lidJID string) string) ([]ReconcileOutcome, error)`**
   (`reconcile.go`, S13 ct-2026-07-30-1835, firma revisada en C-3
   ct-2026-07-31-0136) — fusiona un chat `@lid` con su contraparte de
@@ -813,7 +811,7 @@ Piumy. Ver `docs/F1A-STORE-ACCESO.md`.
     (`GET`/`POST /api/admin/default-rules`) y su registro en el mux, el
     `chat_type` de `type-rules` (ahora `SetTypeRules(rules)`, group-only,
     sin parámetro que elegir), la tool MCP `set_default_rules` entera (su
-    refusal ya no tenía a qué apuntar) y su entrada en `selfGatedTools`, el
+    refusal ya no tenía a qué apuntar), el
     control del tablero (fila, textarea, botón, endpoint) y las 3 llamadas
     de `loadOriginDefaults` que lo cargaban.
   - **TRAMPA del prefijo, señalada por el dueño antes de que se pisara:**
@@ -5395,118 +5393,60 @@ el modelo vigente: tracking por `terminal_id`, default DENY) +
     arquitectura fuera de S11.
 
 **DB-admin + draft-approval** (`admin_tools.go`, F4c + S10 ct-2026-07-30-1349)
-- **S10 — el candado real, no el de la descripción.** Hasta acá estos 6
-  botones decían "OWNER-ONLY" en el texto pero el ÚNICO control real vivía
-  en `bossOnlyTools` (`levelGateMiddleware`) — y esa gate tiene un bypass
-  para el terminal principal ("full authority, no dispatch needed") que no
-  mira si hay un dispatch boss activo. Verificado en vivo (Citrino,
-  2026-07-30): cualquier llamada MCP desde ese terminal reescribía reglas/
-  is_boss sin ningún chequeo. Violaba CLAUDE.md #4 ("el gate duro va en el
-  código, no en skills ni prompts") — el "OWNER-ONLY" era el prompt.
-  **Fix: las 6 tools ahora se sacaron de `bossOnlyTools` y su handler
-  propio (acá, en `admin_tools.go`) hace el chequeo real** — sostiene
-  aunque el middleware cambie mañana. `selfGatedTools` (`levelgate.go`) es
-  solo un set-testigo para los tests, no parte de la enforcement.
-- `set_type_rules`, `set_is_boss` — **MCP-BLOCKED incondicional**: el
-  handler devuelve un error SIN llamar al store, sin mirar nivel de
-  dispatch ni terminal principal, siempre. Reglas por tipo = un cambio de
-  alcance amplio que el boss nunca pidió abrir; `is_boss` = la llave
-  maestra. Único camino: el dashboard (mismos métodos de `store`, llamados
-  directo por `internal/restapi/admin.go`, sin pasar nunca por MCP).
-  `set_chat_rules` estaba en esta lista, S10 hasta T30 — **T31 la sacó, ver
-  el bullet siguiente.** `set_default_rules` también estuvo acá — **T79
-  (ct-2026-08-27-2034) la sacó del todo**, junto con el tier global que
-  gateaba (ver ese bloque más abajo).
-- **T31 (ct-2026-08-06-0244) — `set_chat_rules` se desbloquea, sin
-  condiciones.** Reversión explícita del boss, sobre dos versiones propias
-  de Citrino que él rechazó (una llave — despacho del chat del dueño —,
-  después dos — esa MÁS ser el agente principal). Su argumento, verbatim:
-  *"No pongas condiciones, que la skill recomiende nada mas, me cargan que
-  metan tantas limitaciones y frenos miedosos... con que la skill
-  recomiende entonces ya es responsabilidad del usuario."* Respaldado con
-  la evidencia del propio día: el whitelist que lo bloqueaba a él mismo
-  (T30), las reglas vacías que dejaban todo mudo (T5), el cifrado
-  obligatorio (T28) — frenos agregados por precaución, todos deshechos
-  después.
-  - El handler llama `d.Store.SetChatRules(jid, rules)` directo — sin
-    chequeo de nivel, sin `chatScopedArg` (puede tocar CUALQUIER chat_id,
-    no solo el del despacho propio — a propósito, "sin condiciones" es
-    literal), sin requerir siquiera un despacho atado. Ausente de
-    `bossOnlyTools`, `chatScopedArg` Y `selfGatedTools` — no queda ningún
-    gate, en ningún lado.
-  - `set_type_rules` (reglas de alcance amplio) **no** se tocó — sigue
-    MCP-BLOCKED incondicional, exactamente como S10 la dejó. El boss pidió
-    destrabar las reglas de un chat, no las de tipo. (`set_default_rules`,
-    su hermana de esta lista en ese momento, se sacó del todo en T79.)
-  - La arquitectura que el boss sí quiere (agentes separados: uno con esta
-    capacidad, otro que atienda desconocidos sin tenerla) queda escrita
-    como **recomendación**, no como gate — en la skill `piumy-operator`,
-    tono de consejo de diseño, no de advertencia de seguridad.
-  - `internal/mcpserver/no_boss_tool_test.go`: `intentionallyUngated` —
-    set-testigo de un solo nombre, para que el chequeo genérico
-    ("¿algo con un argumento `rules` sin gatear?") no vuelva a fallar
-    silenciosamente contra esta excepción a propósito, y para que una
-    tool FUTURA con un argumento parecido siga cayendo bajo el chequeo.
-  - **Corrección (T33, ct-2026-08-06-1526)**: `set_chat_rules` NO fue la
-    primera tool en poder apuntar a otro chat que el del despacho activo
-    — `levelGateMiddleware`'s bypass de terminal-principal y de despacho
-    boss (ambos preexistentes) ya lo permitían para todo `chatScopedArg`.
-    T31 la sumó a esa lista, no abrió la posibilidad — la volvió el caso
-    cotidiano (el dueño pidiendo acción sobre un tercero) en vez de uno
-    raro. Ver `docs/T33-DIAGRAMA-CERRAR-DESPACHO-OTRO-CHAT.md` para el
-    bug real que eso destapó (`send_message`/`draft` marcaban el chat
-    destino, nunca el del despacho activo).
-- `set_confirmation_mode(chat_id, mode)` — **partido por el VALOR del
-  argumento** (no boss-o-nada): `always`/`discretion` RESTRINGEN (exigen
-  confirmación antes de enviar) → siempre permitido, cualquier nivel.
-  `none` LIBERA (deja enviar sin confirmar) → exige
-  `isActiveBossDispatch(gate, ctx)` — el DESPACHO ACTUAL del terminal
-  llamante tiene que ser nivel boss y `Ready` (mismo criterio ST-A,
-  ct-2026-07-11-0740, que `validateSend` ya exige). Es la síntesis del boss:
-  "atendé a este número" (dispatch boss en curso) puede liberar; el propio
-  interesado pidiendo lo mismo (dispatch caution/danger) no puede.
+- **T178 (ct-2026-11-10-2330-t178) — los botones de configuración no tienen
+  candado.** Boss verbatim
+  (2026-08-10): «piumy es permisivo, los agentes ias son responsabilidad del
+  ususario, llave maestra y cosas así está bien por si un agente es
+  manipulado». Se sacaron todos los rechazos de configuración: `set_is_boss`
+  (→ `store.SetIsBoss`) y `set_type_rules` (→ `store.SetTypeRules`) hacen la
+  escritura, igual que su par REST; `set_confirmation_mode("none")`,
+  `set_config_level` (`auto` y `boss`), `approve_draft` y `set_is_approver` ya no
+  miran el despacho. `addAdminTools` ya no recibe `gate`.
+  - **Lo único con candado:** `set_kill_switch` (`bossOnlyTools`), la excepción
+    que el dueño pidió conservar (el freno anti-ban). El gating anti-fuga de
+    caution/danger (`enumerationTools`, `chatScopedArg`) NO cambió.
+  - `set_agent_capi` sobre el principal delega a `updatePrincipalConnector`
+    (`admin_tools.go`, el mismo camino de `set_capi_connector`) en vez de
+    rechazar; `assign_chat_to_agent` al principal equivale a "sin asignar"
+    (un chat sin asignar ya cae al principal).
+  - La advertencia (un agente con la puerta de configuración que atienda a
+    desconocidos puede ser manipulado) vive en el manual `orchestrator`
+    (`SKILL.md`, `direccion.md`), no en el código.
+  - `no_boss_tool_test.go` fija `bossOnlyTools == {set_kill_switch}`: una
+    cerradura nueva lo rompe.
+- `set_is_boss(chat_id, is_boss)` / `set_type_rules(rules)` — escriben
+  `store.SetIsBoss` / `store.SetTypeRules` directo, los mismos métodos que sus
+  pares REST (`POST /api/admin/is-boss`, `POST /api/admin/type-rules`,
+  `internal/restapi/admin.go`), sin chequeo de nivel de despacho ni de
+  terminal. `is_boss` es la llave maestra (un chat boss despacha a nivel boss
+  y se salta la confirmación); `type_rules` es el tier de reglas que heredan
+  los grupos sin reglas propias (T79: el único tier por tipo que queda).
+- `set_chat_rules(chat_id, rules)` (T31, ct-2026-08-06-0244) — llama
+  `d.Store.SetChatRules(jid, rules)` directo, sin chequeo de nivel, sin
+  `chatScopedArg` (puede tocar CUALQUIER chat_id) y sin requerir un despacho
+  atado. Decisión textual del boss: *"No pongas condiciones, que la skill
+  recomiende nada mas... ya es responsabilidad del usuario."* La arquitectura
+  que él prefiere (un agente que atienda desconocidos sin esta capacidad, otro
+  que la tenga) es una **recomendación** del manual `piumy-operator` y de
+  `orchestrator/direccion.md`, no un gate.
+- `set_confirmation_mode(chat_id, mode)` — `none|discretion|always`
+  (`store.SetConfirmationMode`): `always`/`discretion` exigen confirmación
+  antes de enviar (`send_message` deja un borrador); `none` envía directo.
+  Cualquier nivel de despacho.
 - `set_config_level(chat_id, level)` — capa de traducción sobre `set_is_boss`/
   `set_chat_active`/`set_confirmation_mode`/`set_chat_status` (`level` ∈
   `boss|auto|confirm|unattended|ignored`, `store.SetConfigLevel`). NO
-  reemplaza las tools viejas — coexiste. **Mismo split que
-  `set_confirmation_mode` (S10):** `confirm`/`unattended`/`ignored`
-  restringen → siempre permitido; `auto` libera → exige
-  `isActiveBossDispatch`; `level=boss` (pone `is_boss=true`) → **MCP-BLOCKED
-  incondicional**, igual que `set_is_boss`. Mismo endpoint también por REST
-  (`POST /api/admin/config-level`, `internal/restapi/admin.go`) — el
-  dashboard nunca pasa por este handler ni por `levelGateMiddleware`, así
-  que el bloqueo MCP no le toca nada.
-- **`approve_draft`/`discard_draft` (S12, ct-2026-07-30-1622) — el mismo
-  agujero de S10, un botón distinto.** Hasta acá seguían en `bossOnlyTools`
-  (ver arriba) — el ÚNICO control real, y el mismo bypass del terminal
-  principal las salteaba enteras: el agente principal podía aprobar y
-  ENVIAR un borrador retenido sin que el boss lo pidiera, vaciando el
-  sentido de poner números desconocidos en `confirm` (retener sus
-  respuestas para que el boss las revise). Verificado en vivo el mismo
-  patrón que S10 — un desconocido solo necesita convencer al agente de
-  aprobar la respuesta dirigida a él mismo.
-  - `approve_draft` (envía → **libera**) sale de `bossOnlyTools`, pasa a
-    `selfGatedTools`, y su handler exige `isActiveBossDispatch(gate, ctx)`
-    directo — MISMO helper que `set_confirmation_mode`/`set_config_level`
-    ya usan (S10), no duplicado. "aprobá los pendientes" del boss sigue
-    andando igual: ese pedido llega como dispatch nivel boss, así que
-    `isActiveBossDispatch` da `true`.
-  - `discard_draft` (nunca envía → **restringe**) también sale de
-    `bossOnlyTools` — pero sin ningún chequeo nuevo: siempre permitido,
-    cualquier nivel, mismo criterio que `always`/`discretion`/`confirm`/
-    `unattended`/`ignored`. Si manipulan al agente para usarlo, el costo es
-    una respuesta que no sale — molesto, no peligroso.
-  - Descripciones actualizadas: ya no dicen "OWNER-ONLY" (era mentira para
-    el principal, mismo tipo de falla que S10 corrigió) — dicen lo que el
-    código realmente hace cumplir.
-  - Mismos 2 expuestos también por REST privilegiado
-    (`internal/restapi/admin.go`, llama `store.ApproveDraft`/`DiscardDraft`
-    directo) — no pasa por `gate` ni por este handler, así que el fix no le
-    toca nada a esa ruta.
+  reemplaza las tools viejas — coexiste. Mismo endpoint también por REST
+  (`POST /api/admin/config-level`, `internal/restapi/admin.go`).
+- `approve_draft(id, text_override?)` / `discard_draft(id)` (S12) — aprobar
+  mueve el borrador al outbox para que se envíe (`store.ApproveDraft`; el
+  texto de reemplazo es opcional); descartar lo mata (`store.DiscardDraft`).
+  Ninguna mira el nivel de despacho. Mismos 2 expuestos también por REST
+  privilegiado (`internal/restapi/admin.go`, llama el store directo).
 - **`reject_draft`/`edit_draft` (T15, ct-2026-08-05-123241) — misma familia
   que `discard_draft`, no `approve_draft`.** Ninguno de los dos envía, así
   que ninguno pide nivel de dispatch — mismo criterio "restringir es
-  gratis", `selfGatedTools` sin chequeo propio en el handler.
+  gratis", sin chequeo propio en el handler.
   - `reject_draft(id, reason)` — a diferencia de `discard_draft` (final),
     pide OTRO intento: `store.RejectDraft` guarda `reason` EN el draft
     (`status` → `rejected`) y devuelve `round`. Si `round < store.MaxDraftRounds`
@@ -5527,10 +5467,11 @@ el modelo vigente: tracking por `terminal_id`, default DENY) +
     patrón que approve/discard, llaman el store directo, sin pasar por
     `gate`.
 - **Pin de aprobador — Aprobador P1 (ct-2026-07-31-0610).** "Aprueba pero
-  no es boss" (boss verbatim): un chat marcado `is_approver` gana EXACTAMENTE
-  una cosa más que un dispatch caution/danger normal — aprobar/descartar
-  borradores, incluidos los de otros chats — nada más. No es un boss
-  chiquito: es un permiso de una sola función.
+  no es boss" (boss verbatim): un chat marcado `is_approver` despacha a
+  `LevelApprover` y gana UNA cosa más que un despacho caution/danger normal:
+  ver las colas de borradores y pendientes de otros chats (`get_drafts`/
+  `get_pending`) para decidir sobre ellos. No es un boss chiquito: es un
+  permiso de una sola función.
   - `LevelApprover` (`gate.go`) — nivel de dispatch nuevo, entre boss y
     caution. `capipush.LevelFor`: `is_boss` ⇒ Boss (gana); si no,
     `is_approver` ⇒ Approver, sin importar `status` (un chat automático
@@ -5546,26 +5487,17 @@ el modelo vigente: tracking por `terminal_id`, default DENY) +
     `get_outbox`)/`chatScopedArg` siguen aplicando a un aprobador
     IDÉNTICO a caution/danger. Ensanchar ese mapa ensancha qué significa
     "aprobador" — no se toca sin la misma decisión explícita del boss.
-  - `isActiveApproverDispatch(gate, ctx)` (`admin_tools.go`) — `Level ==
-    Boss OR Approver`, y `Ready`. Usado **únicamente** por `approve_draft`
-    (widened desde `isActiveBossDispatch`). `set_confirmation_mode("none")`/
-    `set_config_level("auto")`/`set_is_approver` siguen exigiendo
-    `isActiveBossDispatch` puro — el aprobador aprueba el texto que sale,
-    nada de apagar supervisión ni tocar el pin (decisión explícita del
-    boss, "lo que tiene que quedar cierto" #3 del contrato).
-  - `set_is_approver(chat_id, is_approver)` — tool nueva, **selfGatedTools**
-    (no `bossOnlyTools`, mismo patrón S10/S12: el candado vive en el
-    handler). A diferencia de `set_is_boss` (MCP-BLOCKED incondicional),
-    esta SÍ tiene camino MCP — aclaración del boss verbatim: "la ia tambien
-    puede cambiar el pin por mcp pero solo si el boss lo manda" — gateada
-    por `isActiveBossDispatch`: un aprobador nunca puede cambiar el pin, ni
-    el propio. Mismo endpoint también por REST (`POST /api/admin/approver`,
-    `internal/restapi/admin.go` → `store.SetIsApprover`).
+
+  - `set_is_approver(chat_id, is_approver)` — pone o quita el pin
+    (`store.SetIsApprover`), sin chequeo de despacho. Mismo endpoint también
+    por REST (`POST /api/admin/approver`, `internal/restapi/admin.go`).
   - Ver `internal/mcpserver/approver_test.go` — el ritual completo hasta
-    `Ready`, el caso positivo (aprueba el borrador de OTRO chat) y la
-    batería negativa completa (no hereda `bossOnlyTools`, ni el resto de
-    `enumerationTools`, ni `chatScopedArg` de otro chat, ni puede tocar
-    reglas/confirmación/nivel/pines).
+    `Ready`, el caso positivo (aprueba el borrador de OTRO chat) y las
+    negativas que siguen vigentes (no hereda `bossOnlyTools`, ni el resto de
+    `enumerationTools`, ni `chatScopedArg` de otro chat). Las tools de
+    configuración (`set_confirmation_mode`, `set_config_level`,
+    `set_is_approver`, `set_is_boss`) funcionan igual desde un aprobador:
+    `TestApproverToolsAreUngated`.
 - `set_kill_switch(kill bool)` (hardening H2+H3, ct-2026-07-10-0540) — el
   caller que faltaba para `governor.SetKill`/`state.SetMuted` (existían sin
   ningún caller de producción). Flipea AMBOS juntos (antes dos flags
@@ -7385,28 +7317,10 @@ caution/danger (boss sin restricción; sin dispatch → DENY en lo gateado):
   lo único que el boss pidió cuidar. `set_kill_switch` queda por su propia
   razón, no por decisión de Citrino/Tourmaline: un agente que pudiera
   apagar su propio freno anti-ban lo dejaría sin efecto. Cubierto por
-  `TestPrivilegedToolsRefuseNonBoss` (el único caso que queda) y
-  `TestFormerlyBossOnlyToolsNowWorkFromNonBoss`/
-  `TestGroupProfileToolsAreNoLongerBossOnly` (la apertura).
-  **`selfGatedTools`** (S10, ct-2026-07-30-1349; `approve_draft`/
-  `discard_draft` sumadas en S12, ct-2026-07-30-1622; `reject_draft`/
-  `edit_draft` sumadas en T15, ct-2026-08-05-123241; `set_is_approver`
-  sumada en Aprobador P1, ct-2026-07-31-0610 — ver sección `admin_tools.go`
-  arriba; `set_default_rules` SALIÓ del set en T79, ct-2026-08-27-2034, la
-  tool se sacó entera): las otras 9 (`set_type_rules`/
-  `set_is_boss`/`set_confirmation_mode`/
-  `set_config_level`/`approve_draft`/`discard_draft`/`reject_draft`/
-  `edit_draft`/`set_is_approver`) —
-  su gate real vive en el HANDLER, no acá; este set es solo testigo para
-  los tests
-  (`TestPrivilegedToolsAreAllBossOnly`/`TestPrivilegedToolsExistAndRegistered`
-  aceptan ambos sets). **`set_chat_rules` NO está** — desde T31
-  (ct-2026-08-06-0244) el boss la desbloqueó sin condición y no queda
-  gating en su handler; ausente de los tres sets a propósito.
-  10 tools "privilegiadas" en total entre los dos (1 + 9 — bajó de 18
-  cuando T148 vació `bossOnlyTools` de 8 a 1).
+  `TestOnlyTheKillSwitchIsBossOnly` y `TestConfigToolsAreRegisteredAndUngated`
+  (`no_boss_tool_test.go`).
   **`approverEnumerationTools`** (Aprobador P1, `levelgate.go`) es un
-  tercer set, deliberadamente chico y separado de los dos de arriba:
+  otro set, deliberadamente chico y separado del de arriba:
   `get_drafts`/`get_pending`, la ÚNICA ampliación que `LevelApprover` recibe
   sobre lo que ya puede caution/danger — no es "boss-only" ni "self-gated",
   es "approver-only", ver la sección del pin arriba.
@@ -7449,8 +7363,8 @@ caution/danger (boss sin restricción; sin dispatch → DENY en lo gateado):
     mensaje venía de `levelGateMiddleware` interceptándola ANTES de
     llegar a su handler; `set_is_boss` no está en `bossOnlyTools` desde
     S10 (ct-2026-07-30-1349, un mes y medio antes de T150), así que con
-    el fix llega directo a su propio handler, que la sigue bloqueando
-    SIEMPRE, sin condición — mismo candado, mensaje distinto.
+    el fix llega directo a su propio handler. Desde T178 ese handler
+    simplemente escribe, y el test espera `is_boss set to true`.
     `TestRegisterDispatchClosesResidualPrivilegeWindow` tiene DOS
     aserciones: `set_kill_switch` (la garantía real que protege — una
     tool gateada, sigue "boss-only", intacta) y `send_message` al chat

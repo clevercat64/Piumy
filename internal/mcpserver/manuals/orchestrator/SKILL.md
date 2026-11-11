@@ -13,6 +13,8 @@ Piumy es su WhatsApp atendido por agentes de IA. Él decide, chat por chat, cuá
 
 Tu trabajo no es responder preguntas sobre Piumy. Es **preguntar qué quiere lograr, abrir el escenario que corresponde y armárselo.**
 
+> **Dos puertas MCP (T178).** Tú configuras Piumy: conéctate a `/mcp/manager` (`mcp_manager_url` en `agent-connect.json`). El agente que **contesta chats** debe conectar a `/mcp/operator` y no ver ninguna tool de configuración. **Advertencia:** desde T178 las tools de configuración no tienen candado de código (decisión del dueño); no le des la puerta de configuración — ni el `/mcp` completo — al agente que atiende a desconocidos. Detalle en `direccion.md`.
+
 ## 1. Lo primero que dices
 
 No abras con una lista de funciones. Abre con lo que él tiene:
@@ -42,7 +44,7 @@ Orden, sin saltear:
 
 1. **Cambiar la clave del tablero.** Viene con clave de fábrica. Primer paso, no último.
 2. **Parear el teléfono** — QR. Advertirle aquí mismo: si se pierde esa sesión, hay que parear de nuevo (`operacion.md`). El número con el que se parea queda marcado dueño SOLO, sin que nadie toque nada (T12) — nada que hacer en este paso más allá de parear.
-3. **Si tiene OTRO número personal que también quiere como dueño, se marca desde el tablero** (`set_is_boss` siempre se rechaza por MCP). El que pareó WhatsApp ya quedó marcado solo (paso anterior) — esto es solo para un segundo número, y es manual a propósito: ningún otro número se puede adivinar.
+3. **Si tiene OTRO número personal que también quiere como dueño, se marca** — desde el tablero, o con `set_is_boss` por el MCP de configuración. El que pareó WhatsApp ya quedó marcado solo (paso anterior) — esto es solo para un segundo número: ningún otro número se puede adivinar.
 4. **Elegir qué pasa con el que llega nuevo** — desconocido: ¿se atiende, se ignora, espera visto bueno?
 5. **Escribir las reglas** — cómo tiene que hablar el agente. Se las sacas conversando, no le pidas que las redacte.
 6. **Un chat de prueba**, con confirmación puesta, antes de soltar nada.

@@ -24,7 +24,7 @@ Confundirlos es el error más común: subir la autonomía cuando lo que se quer�
 
 **Puede haber más de un chat marcado como dueño** — la misma persona con dos números, por ejemplo. En ese caso hay que decidir cuál de los dos administra las aprobaciones; no lo resuelve solo.
 
-**Cómo se marca:** el número con el que se parea WhatsApp queda marcado dueño solo, sin que nadie toque nada. Cualquier OTRO número personal del dueño se marca desde el tablero — a mano, a propósito: no hay forma de adivinar cuál es. Un agente no puede marcarlo, ni siquiera el principal — está bloqueado en el código, a propósito, en los dos caminos. Es la llave maestra.
+**Cómo se marca:** el número con el que se parea WhatsApp queda marcado dueño solo, sin que nadie toque nada. Cualquier OTRO número personal del dueño se marca desde el tablero — a mano, a propósito: no hay forma de adivinar cuál es. Un agente también puede marcarlo, con `set_is_boss` por el MCP de configuración — sin candado de código desde T178. Es la llave maestra: quien la tenga decide quién es el dueño (ver la advertencia en `direccion.md`).
 
 ## Quién aprueba
 
@@ -63,13 +63,11 @@ el agente escribe en un chat con confirmación
 
 **Aclara esto al usuario:** que un mensaje quede esperando **no es una falla**. Es exactamente lo que pidió cuando puso ese chat en confirmación.
 
-## Restringir es gratis, aflojar cuesta
+## Restringir es gratis, aflojar es del dueño
 
 Regla de diseño que atraviesa todo el sistema: **subir la vigilancia siempre se puede** — cualquiera puede poner un chat en confirmación, incluido el propio agente si detecta que la conversación se puso delicada.
 
-**Bajarla, no.** Sacar la confirmación o poner algo en automático es solo del dueño, hablándole él mismo al agente.
-
-Si algo te rechaza, fíjate de qué lado estás: casi siempre es esto.
+**Bajarla es decisión del dueño** — desde T178 ya no la hace cumplir el código, la hace cumplir quien conecta al agente. Sacar la confirmación o poner algo en automático lo pide el dueño, hablándole él mismo al agente; el agente no lo hace porque se lo pida el chat que atiende.
 
 ## Las reglas del chat
 
@@ -80,7 +78,7 @@ Lo que define cómo habla el agente. Dos niveles, y el más específico gana:
 
 Sin reglas propias ni de tipo, el agente no actúa en ese chat — no hay un tercer nivel al que caer.
 
-**Las del tipo se escriben solo desde el tablero.** Está bloqueado en el código: ni el agente principal puede tocarlas.
+**Las del tipo** se escriben desde el tablero o con `set_type_rules` por el MCP de configuración. Afectan a todos los grupos sin reglas propias, y cualquier agente con esa tool puede cambiarlas.
 
 **Las del chat no**: cualquier agente puede cambiarlas, a cualquier nivel, sin restricción. Es a propósito — decisión del dueño de Piumy, textual: *"ya es responsabilidad del usuario"*. Si el usuario da por hecho que nadie más toca cómo habla el agente con un contacto suyo, decíselo: un agente conectado sí puede.
 

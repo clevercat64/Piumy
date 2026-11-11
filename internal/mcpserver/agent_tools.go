@@ -89,7 +89,7 @@ func addAgentTools(s *server.MCPServer, d Deps) {
 	// identity invariant (T148's own contract: "no se toca"), not the
 	// authority lock this removes.
 	s.AddTool(mcp.NewTool("set_agent_capi",
-		mcp.WithDescription("Update the cAPI credentials of an existing agent — any registered agent, not just the caller's own."),
+		mcp.WithDescription("Update the cAPI credentials of an existing agent — any registered agent, not just the caller's own. Pass the principal's own id to update the principal (same write as set_capi_connector)."),
 		mcp.WithString("agent_id", mcp.Required(), mcp.Description("The agent to update (terminal_id)")),
 		mcp.WithString("endpoint", mcp.Description("New cAPI endpoint URL (omit to keep current)")),
 		mcp.WithString("antenna_terminal_id", mcp.Description("New antenna terminal_id (omit to keep current)")),
@@ -101,20 +101,15 @@ func addAgentTools(s *server.MCPServer, d Deps) {
 				return mcp.NewToolResultError("agent_id required"), nil
 			}
 
-			// INVARIANTE: principal terminal_id is RESERVED — nobody can
-			// route its injector away, not even the principal itself via MCP.
-			// Structural identity guard (T148, ct-2026-09-07-1644: "no se
-			// toca"), not the authority lock T148 removes below.
-			//
-			// S9 (ct-2026-07-30-031143): the old message ("update via the
-			// dashboard") sent the caller to a door that doesn't mention the
-			// one that actually exists by MCP — set_capi_connector
-			// (admin_tools.go). T148 opened that door wider too (it left
-			// bossOnlyTools the same day this comment's own "secondary can
-			// only update its own" check came out) — the message below still
-			// points there, it's just no longer boss-only either.
+			// The principal has no `agents` row (it is synthesized from KV), so
+			// updating it goes through the same write set_capi_connector uses
+			// (T178: this used to be refused and point there instead).
 			if d.PrincipalTerminalID != "" && agentID == d.PrincipalTerminalID {
-				return mcp.NewToolResultError("forbidden: principal terminal_id is reserved; use set_capi_connector instead — or the dashboard"), nil
+				updated, err := updatePrincipalConnector(d, r.GetString("endpoint", ""), r.GetString("antenna_terminal_id", ""), r.GetString("pinpass", ""), r.GetString("name", ""))
+				if err != nil {
+					return mcp.NewToolResultError(err.Error()), nil
+				}
+				return mcp.NewToolResultText(fmt.Sprintf(`{"agent_id":%q,"status":"updated","principal":true}`, updated.AgentID)), nil
 			}
 
 			existing, ok, err := d.Store.GetAgent(agentID)
@@ -210,7 +205,7 @@ func addAgentTools(s *server.MCPServer, d Deps) {
 	// (T148's own contract: "no se toca"), not the authority lock removed
 	// here.
 	s.AddTool(mcp.NewTool("assign_chat_to_agent",
-		mcp.WithDescription("Manually route a chat's dispatch to one agent (writes agent_exclusive:<id>) and leave the chat active so the agent actually receives its messages (a blacklisted chat stays inactive and the response says so; an ignored one is attended too and the response notes it), or clear the assignment back to the default fallback (omit agent_id or pass an empty string). The principal itself is never a valid assignment target — an unassigned chat already falls back to it."),
+		mcp.WithDescription("Manually route a chat's dispatch to one agent (writes agent_exclusive:<id>) and leave the chat active so the agent actually receives its messages (a blacklisted chat stays inactive and the response says so; an ignored one is attended too and the response notes it), or clear the assignment back to the default fallback (omit agent_id or pass an empty string). Passing the principal's own id clears it too — an unassigned chat already falls back to the principal."),
 		mcp.WithString("chat_id", mcp.Required()),
 		mcp.WithString("agent_id", mcp.Description("The agent to assign to. Omit or pass \"\" to unassign."))),
 		func(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -220,14 +215,13 @@ func addAgentTools(s *server.MCPServer, d Deps) {
 			}
 			agentID := r.GetString("agent_id", "")
 
-			if agentID == "" {
+			// An unassigned chat already falls back to the principal, so
+			// assigning it there IS unassigning (T178: this used to be refused).
+			if agentID == "" || agentID == d.PrincipalTerminalID {
 				if err := d.Store.SetStatus(chatID, "new"); err != nil {
 					return mcp.NewToolResultError(fmt.Sprintf("store: %v", err)), nil
 				}
 				return mcp.NewToolResultText(fmt.Sprintf(`{"chat_id":%q,"status":"unassigned"}`, chatID)), nil
-			}
-			if agentID == d.PrincipalTerminalID {
-				return mcp.NewToolResultError("cannot assign to the principal — it's already the default fallback for an unassigned chat"), nil
 			}
 			if _, ok, err := d.Store.GetAgent(agentID); err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("store: %v", err)), nil

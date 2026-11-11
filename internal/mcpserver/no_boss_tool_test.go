@@ -1,22 +1,13 @@
-// Historically (F4a) NONE of is_boss/rules/draft-approval were reachable
-// via any MCP tool at all — only a privileged REST path. F4c changes that
-// deliberately: they're now MCP tools too, gated by construction
-// (bossOnlyTools or selfGatedTools, levelgate.go). These tests assert the
-// CURRENT invariant: every privileged tool is registered AND gated, never
-// ungated.
-//
-// T148 (ct-2026-09-07-1644, boss verbatim, direct: "quiero que quites ese
-// candado... resulta ser que piumy estaba lleno de candados estupidos")
-// emptied bossOnlyTools down to set_kill_switch alone — every group/profile
-// tool F4c originally put there left. This file's own coverage test used to
-// assert they were THERE; it now asserts the opposite (see
-// TestGroupProfileToolsAreNoLongerBossOnly below) — the tools themselves
-// are unaffected, only the gate map's membership changed.
+// What is and is not gated in the MCP surface. T148 (ct-2026-09-07-1644, boss
+// verbatim: "piumy estaba lleno de candados estupidos") emptied bossOnlyTools
+// down to set_kill_switch alone, and T178 (ct-2026-11-10-2330-t178) took the
+// per-handler refusals out of the config tools too. These tests pin that
+// state: the one lock the boss asked to keep is still there, and nothing new
+// has crept in beside it.
 package mcpserver
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 )
 
@@ -51,93 +42,25 @@ func listTools(t *testing.T) []struct {
 	return parsed.Result.Tools
 }
 
-// intentionallyUngated (T31, ct-2026-08-06-0244) is the ONE deliberate
-// exception TestPrivilegedToolsAreAllBossOnly carves out — set_chat_rules
-// takes a "rules" argument but is neither bossOnlyTools nor selfGatedTools
-// on purpose (the boss's own explicit call, twice rejecting a gated
-// version first: "No pongas condiciones... ya es responsabilidad del
-// usuario"). A witness set of exactly one, so a FUTURE tool that happens
-// to take a "rules"/"is_boss"/etc. argument still trips the generic check
-// below instead of silently reusing this carve-out.
-var intentionallyUngated = map[string]bool{
-	"set_chat_rules": true,
-}
-
-// TestPrivilegedToolsAreAllBossOnly is the structural half: every tool that
-// can set is_boss, rules (any tier OTHER than per-chat — see
-// intentionallyUngated), confirmation_mode, or resolve a draft must be
-// gated — either bossOnlyTools (levelGateMiddleware) or selfGatedTools
-// (S10, ct-2026-07-30-1349: its own handler enforces per-argument
-// authorization instead — see admin_tools.go). Nothing ELSE privileged can
-// slip in ungated.
-func TestPrivilegedToolsAreAllBossOnly(t *testing.T) {
-	for _, tool := range listTools(t) {
-		if bossOnlyTools[tool.Name] || selfGatedTools[tool.Name] || intentionallyUngated[tool.Name] {
-			continue // gated (or deliberately not) — fine regardless of what it accepts
-		}
-		for prop := range tool.InputSchema.Properties {
-			lower := strings.ToLower(prop)
-			for _, sensitive := range []string{"is_boss", "rules", "confirmation_mode", "confirmer"} {
-				if strings.Contains(lower, sensitive) {
-					t.Errorf("tool %q accepts a %q argument but isn't in bossOnlyTools", tool.Name, prop)
-				}
-			}
-		}
-		lower := strings.ToLower(tool.Name)
-		if strings.Contains(lower, "approve") || strings.Contains(lower, "discard") {
-			t.Errorf("tool %q looks like draft-approval but isn't in bossOnlyTools", tool.Name)
-		}
+// TestOnlyTheKillSwitchIsBossOnly: the anti-ban brake is the single entry. A
+// second name here means a new lock was added without the boss's say-so.
+func TestOnlyTheKillSwitchIsBossOnly(t *testing.T) {
+	if !bossOnlyTools["set_kill_switch"] {
+		t.Error("set_kill_switch left bossOnlyTools — the boss asked to keep this ONE lock (levelgate.go)")
+	}
+	if len(bossOnlyTools) != 1 {
+		t.Errorf("bossOnlyTools = %v, want only set_kill_switch", bossOnlyTools)
 	}
 }
 
-// TestPrivilegedToolsExistAndRegistered is the coverage half: every tool
-// F4c's contract requires actually got registered (a name missing here
-// would make the gating test above vacuously pass). S10 (ct-2026-07-30-
-// 1349) split the "gated" check: self-gated tools enforce their own
-// per-argument (or per-tool, S12 ct-2026-07-30-1622) authorization
-// (admin_tools.go) instead of bossOnlyTools.
-func TestPrivilegedToolsExistAndRegistered(t *testing.T) {
-	selfGatedWant := []string{
-		"set_is_boss", "set_type_rules",
-		"set_confirmation_mode", "set_config_level",
-		"approve_draft", "discard_draft", "reject_draft", "edit_draft", "set_is_approver",
-	}
-	found := map[string]bool{}
-	for _, tool := range listTools(t) {
-		found[tool.Name] = true
-	}
-	for _, name := range selfGatedWant {
-		if !found[name] {
-			t.Errorf("tool %q not registered", name)
-		}
-		if !selfGatedTools[name] {
-			t.Errorf("tool %q registered but not in selfGatedTools", name)
-		}
-	}
-	// set_chat_rules (T31, ct-2026-08-06-0244): registered, but deliberately
-	// in NONE of the three gating buckets — confirms the exemption is real
-	// and current, not a name that quietly rotted out of every map.
-	if !found["set_chat_rules"] {
-		t.Error(`tool "set_chat_rules" not registered`)
-	}
-	if bossOnlyTools["set_chat_rules"] || selfGatedTools["set_chat_rules"] {
-		t.Error(`"set_chat_rules" is gated somewhere — T31 unblocked it unconditionally, it should be in neither map`)
-	}
-	if !intentionallyUngated["set_chat_rules"] {
-		t.Error(`"set_chat_rules" missing from intentionallyUngated — TestPrivilegedToolsAreAllBossOnly would now flag it`)
-	}
-}
-
-// TestGroupProfileToolsAreNoLongerBossOnly is T148's own coverage half
-// (ct-2026-09-07-1644, boss verbatim, direct: "quiero que quites ese
-// candado, si le pido a un agente que cree un grupo, quiero que lo haga")
-// — the mirror of TestPrivilegedToolsExistAndRegistered above: these 7
-// tools are still registered (nothing about the FEATURE changed, only who
-// may call it), but must be ABSENT from bossOnlyTools now. set_kill_switch
-// is the control — the one lock T148 keeps, by the boss's own reasoning
-// (the anti-ban emergency stop), so it must stay exactly where it was.
-func TestGroupProfileToolsAreNoLongerBossOnly(t *testing.T) {
-	openedUp := []string{
+// TestConfigToolsAreRegisteredAndUngated: every DB-admin and group/profile
+// tool exists and is outside bossOnlyTools — registered (a missing name would
+// make the check vacuous) and open.
+func TestConfigToolsAreRegisteredAndUngated(t *testing.T) {
+	open := []string{
+		"set_is_boss", "set_type_rules", "set_confirmation_mode", "set_config_level",
+		"set_chat_rules", "set_is_approver",
+		"approve_draft", "discard_draft", "reject_draft", "edit_draft",
 		"create_group", "add_participant", "promote_group_admin", "set_group_icon",
 		"set_group_description", "set_profile_status", "set_profile_photo",
 	}
@@ -145,21 +68,18 @@ func TestGroupProfileToolsAreNoLongerBossOnly(t *testing.T) {
 	for _, tool := range listTools(t) {
 		found[tool.Name] = true
 	}
-	for _, name := range openedUp {
+	for _, name := range open {
 		if !found[name] {
 			t.Errorf("tool %q not registered", name)
 		}
 		if bossOnlyTools[name] {
-			t.Errorf("tool %q is still in bossOnlyTools — T148 asked it removed", name)
+			t.Errorf("tool %q is in bossOnlyTools — T148/T178 left only set_kill_switch there", name)
 		}
-	}
-	if !bossOnlyTools["set_kill_switch"] {
-		t.Error("set_kill_switch left bossOnlyTools — T148 explicitly keeps this ONE lock (the boss's own anti-ban reasoning)")
 	}
 }
 
 // TestAgentWritableToolsStillExist: set_chat_memory/set_chat_context remain
-// agent-writable (unaffected by F4c's privileged additions).
+// agent-writable.
 func TestAgentWritableToolsStillExist(t *testing.T) {
 	foundSetMemory, foundSetContext := false, false
 	for _, tool := range listTools(t) {
@@ -181,8 +101,8 @@ func TestAgentWritableToolsStillExist(t *testing.T) {
 	}
 }
 
-// TestGetDraftsStillReadOnly: get_drafts itself must never be boss-only
-// (any level can see pending drafts — only resolving one is privileged).
+// TestGetDraftsStillReadOnly: get_drafts is enumeration-gated (anti-leakage,
+// levelgate.go), a different restriction from bossOnlyTools.
 func TestGetDraftsStillReadOnly(t *testing.T) {
 	found := false
 	for _, tool := range listTools(t) {

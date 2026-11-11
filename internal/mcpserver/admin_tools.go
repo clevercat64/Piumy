@@ -1,19 +1,15 @@
-// DB-admin tools (F4-DESIGN §3/§5) — boss-only, no caution/danger exception
-// ever, EXCEPT set_chat_rules (T31, ct-2026-08-06-0244 — see its own doc).
-// All call store methods already migrated in F1a; nothing new there. Same
-// methods are also exposed via the privileged REST path (restapi, this
-// same contract) for the owner administering directly from the LAN.
+// DB-admin tools (F4-DESIGN §3/§5): rules, is_boss/is_approver, confirmation
+// and config levels, drafts, the kill switch and the principal's connector.
+// All call store methods already migrated in F1a; the same methods are also
+// exposed via REST (restapi) for the owner administering from the dashboard.
 //
-// S10 (ct-2026-07-30-1349): set_type_rules/set_is_boss/set_confirmation_mode/
-// set_config_level enforce their own authorization HERE, in the handler —
-// not just via levelGateMiddleware's bossOnlyTools map (see its own doc for
-// why: verified live that its principal-terminal bypass let ANY MCP caller
-// through with zero gating). "OWNER-ONLY" in a description is a prompt;
-// this check is the code CLAUDE.md #4 requires it to be. set_chat_rules WAS
-// on this list too, S10 through T30 — T31 unblocked it, unconditionally,
-// per-chat only (the type tier stays exactly as S10 left it; set_default_rules,
-// its sibling, was removed entirely in T79, ct-2026-08-27-2034 — the global
-// tier it gated had nothing left to reach).
+// T178 (ct-2026-11-10-2330-t178): none of these refuses by who is asking or by
+// what dispatch is alive any more — the boss's call, verbatim (2026-08-10):
+// "piumy es permisivo, los agentes ias son responsabilidad del ususario, llave
+// maestra y cosas así está bien por si un agente es manipulado". What that
+// risk means for an owner lives in the manager manual, not in code. The ONE
+// brake left is set_kill_switch (levelgate.go's bossOnlyTools): the anti-ban
+// stop the boss asked to keep.
 package mcpserver
 
 import (
@@ -29,64 +25,15 @@ import (
 	"piumy-gateway/internal/store"
 )
 
-// mcpBlockedRules/mcpBlockedIsBoss are the refusals set_type_rules/
-// set_is_boss return unconditionally — no dispatch, no principal terminal,
-// no argument value ever lets these through via MCP (the boss's decision,
-// verbatim: "que sea manual solo por el boss, el unico gate no ia"). The
-// type tier is a broader, system-wide change the boss never asked to open
-// (T31, ct-2026-08-06-0244 — see set_chat_rules' own doc for what DID open
-// and why); is_boss is the master key. Both point at the dashboard's own
-// REST admin path, which calls the exact same store method directly
-// (restapi/admin.go) — this refusal never blocks the owner, only MCP.
-const (
-	mcpBlockedRules  = "refused: rules are never settable via MCP, not even by the principal — use the dashboard (POST /api/admin/%s)"
-	mcpBlockedIsBoss = "refused: is_boss is never settable via MCP, not even by the principal — use the dashboard (POST /api/admin/is-boss)"
-)
-
-// isActiveBossDispatch reports whether terminalID's CURRENTLY bound dispatch
-// is boss-level and still usable (S10, ct-2026-07-30-1349) — the gate for
-// "liberating" a chat to auto/none: the boss saying "atendé a este número"
-// registers a boss-level dispatch on the calling terminal, so this is true;
-// the chat's OWN interested party asking to be freed arrives as a
-// caution/danger dispatch, so this is false. Same Ready requirement as
-// ST-A (ct-2026-07-11-0740)/validateSend: a consumed (done) boss dispatch
-// must not keep granting this any more than it keeps granting send access.
-func isActiveBossDispatch(gate *Gate, ctx context.Context) bool {
-	active, ok := gate.Active(terminalIDFromContext(ctx))
-	return ok && active.Level == LevelBoss && active.Ready
-}
-
-// isActiveApproverDispatch reports whether terminalID's currently bound
-// dispatch is boss- OR approver-level and still usable (Aprobador P1,
-// ct-2026-07-31-0610) — used ONLY by approve_draft. Deliberately NOT reused
-// by set_confirmation_mode("none")/set_config_level("auto")/set_is_approver:
-// those stay isActiveBossDispatch-only, boss-exclusive — an approver
-// approves the text that goes out, nothing about supervision itself
-// (boss's own decision, "lo que tiene que quedar cierto" #3). Widening this
-// helper's callers is widening what "aprobador" means; don't.
-func isActiveApproverDispatch(gate *Gate, ctx context.Context) bool {
-	active, ok := gate.Active(terminalIDFromContext(ctx))
-	return ok && (active.Level == LevelBoss || active.Level == LevelApprover) && active.Ready
-}
-
-func addAdminTools(s *server.MCPServer, d Deps, gate *Gate, tracker *agentTracker) {
+func addAdminTools(s *server.MCPServer, d Deps, tracker *agentTracker) {
 	// ── set_chat_rules ───────────────────────────────────────────────────
-	// T31 (ct-2026-08-06-0244) reverses S10 (ct-2026-07-30-1349) for this
-	// ONE tool — unconditional, no dispatch level, no chat scoping, no
-	// principal check. Two prior versions of this contract (a single key —
-	// boss-chat dispatch — then a double key — principal AND boss-chat
-	// dispatch) were both rejected by the boss himself, verbatim: "No
-	// pongas condiciones, que la skill recomiende nada mas, me cargan que
-	// metan tantas limitaciones y frenos miedosos... ya es responsabilidad
-	// del usuario." Same day's evidence backs him: the router whitelist
-	// that locked HIM out (T30), the empty-rules dead end (T5), the
-	// mandatory encryption (T28) — all precaution added ahead of a real
-	// need, all later spent a contract getting undone. set_type_rules/
-	// set_default_rules stay exactly as S10 left them (MCP-BLOCKED,
-	// unconditionally) — broader, system-wide changes the boss never asked
-	// to open; only per-chat rules did. The architecture he actually wants
-	// (a separate agent for known vs. unknown contacts) lives as a
-	// recommendation in the piumy-operator skill, not as a code gate here.
+	// T31 (ct-2026-08-06-0244): unconditional, no dispatch level, no chat
+	// scoping, no principal check — the boss rejected two prior versions
+	// with conditions, verbatim: "No pongas condiciones, que la skill
+	// recomiende nada mas... ya es responsabilidad del usuario." The
+	// architecture he wants (a separate agent for known vs. unknown
+	// contacts) lives as a recommendation in the piumy-operator skill, not
+	// as a code gate here.
 	s.AddTool(mcp.NewTool("set_chat_rules",
 		mcp.WithDescription("Set a chat's rules — the permission the agent operates under for that chat. Unconditional (T31, ct-2026-08-06-0244): any chat_id, any dispatch level, no code-level restriction — the boss's own call, verbatim: \"ya es responsabilidad del usuario\". See the piumy-operator skill for his architecture recommendation (a separate agent for chats you don't already trust) before reaching for this on one. Overwrites the whole field."),
 		mcp.WithString("chat_id", mcp.Required()),
@@ -108,43 +55,48 @@ func addAdminTools(s *server.MCPServer, d Deps, gate *Gate, tracker *agentTracke
 		})
 
 	// ── set_is_boss ──────────────────────────────────────────────────────
-	// S10 (ct-2026-07-30-1349): MCP-BLOCKED, unconditionally — the master
-	// key. An agent that can grant itself (or anyone) boss trust has no
-	// gate left; this is the one setter that must never have an MCP path,
-	// principal included.
 	s.AddTool(mcp.NewTool("set_is_boss",
-		mcp.WithDescription("MCP-BLOCKED, always. is_boss is the master key — grants boss-level trust, exempt from the confirmation gate. Never settable via MCP, not even by the principal — set it from the dashboard (POST /api/admin/is-boss)."),
+		mcp.WithDescription("Mark or unmark a chat as the owner (is_boss). A boss chat's dispatches arrive at boss level and it is exempt from the confirmation gate. Same write as POST /api/admin/is-boss."),
 		mcp.WithString("chat_id", mcp.Required()),
 		mcp.WithBoolean("is_boss", mcp.Required())),
 		func(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			tracker.seen(ctx)
-			return mcp.NewToolResultError(mcpBlockedIsBoss), nil
+			jid, err := r.RequireString("chat_id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			isBoss, err := r.RequireBool("is_boss")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			if err := d.Store.SetIsBoss(jid, isBoss); err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return mcp.NewToolResultText(fmt.Sprintf("is_boss set to %v", isBoss)), nil
 		})
 
 	// ── set_type_rules ───────────────────────────────────────────────────
-	// S10 (ct-2026-07-30-1349): MCP-BLOCKED, same reasoning as set_chat_rules.
 	// Group-only since T79 (ct-2026-08-27-2034) removed the "individual"
 	// tier (dead since M5) and set_default_rules entirely — chat_type
 	// dropped, there's nothing left to choose between.
 	s.AddTool(mcp.NewTool("set_type_rules",
-		mcp.WithDescription("MCP-BLOCKED, always. Rules are the permission an agent operates under, not something it writes about itself — set the group rules tier from the dashboard (POST /api/admin/type-rules), never from here, not even by the principal."),
+		mcp.WithDescription("Set the rules every group inherits unless it has its own (the by-type tier — set_chat_rules writes one chat's own). Overwrites the whole field. Same write as POST /api/admin/type-rules."),
 		mcp.WithString("rules", mcp.Required())),
 		func(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			tracker.seen(ctx)
-			return mcp.NewToolResultError(fmt.Sprintf(mcpBlockedRules, "type-rules")), nil
+			rules, err := r.RequireString("rules")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			if err := d.Store.SetTypeRules(rules); err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return mcp.NewToolResultText("type rules set"), nil
 		})
 
 	// ── set_confirmation_mode ────────────────────────────────────────────
-	// S10 (ct-2026-07-30-1349): split by target value, not boss-or-nothing.
-	// "always"/"discretion" RESTRICT (require confirmation before sending)
-	// — always allowed, no permission needed, same reasoning as triage.
-	// "none" LIBERATES (lets send_message send unconfirmed) — only while
-	// the CURRENT dispatch is boss-level (isActiveBossDispatch): the boss
-	// saying "atendé a este número" must be able to free it, but the
-	// chat's own interested party asking the same thing must not be able
-	// to free itself.
 	s.AddTool(mcp.NewTool("set_confirmation_mode",
-		mcp.WithDescription("Set a chat's confirmation_mode. 'always'/'discretion' (require confirmation before sending) restrict and are always allowed. 'none' (send_message sends directly, no confirmation) liberates — only allowed while the CURRENT dispatch is boss-level (e.g. the boss saying 'atendé a este número'); a caution/danger dispatch can never grant itself this."),
+		mcp.WithDescription("Set a chat's confirmation_mode: 'always' or 'discretion' (send_message holds a draft for confirmation first) or 'none' (send_message sends directly)."),
 		mcp.WithString("chat_id", mcp.Required()),
 		mcp.WithString("mode", mcp.Required(), mcp.Enum("none", "discretion", "always"))),
 		func(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -156,9 +108,6 @@ func addAdminTools(s *server.MCPServer, d Deps, gate *Gate, tracker *agentTracke
 			mode, err := r.RequireString("mode")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
-			}
-			if mode == "none" && !isActiveBossDispatch(gate, ctx) {
-				return mcp.NewToolResultError("refused: liberating to confirmation_mode=none requires the CURRENT dispatch to be boss-level — a caution/danger dispatch cannot grant this to itself"), nil
 			}
 			if err := d.Store.SetConfirmationMode(jid, mode); err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
@@ -172,15 +121,8 @@ func addAdminTools(s *server.MCPServer, d Deps, gate *Gate, tracker *agentTracke
 	// SetConfirmationMode/SetStatus (store.SetConfigLevel), reusing those
 	// setters verbatim. Does not replace set_is_boss/set_confirmation_mode/
 	// set_chat_status/set_chat_active — they keep working standalone.
-	//
-	// S10 (ct-2026-07-30-1349): level=boss is MCP-BLOCKED (same as
-	// set_is_boss — it sets is_boss=true underneath). confirm/unattended/
-	// ignored RESTRICT — always allowed. auto LIBERATES — only allowed
-	// while the CURRENT dispatch is boss-level, same isActiveBossDispatch
-	// check as set_confirmation_mode's "none" (this is what a "level=auto"
-	// call ultimately sets anyway).
 	s.AddTool(mcp.NewTool("set_config_level",
-		mcp.WithDescription("Set a chat's unified config level. 'confirm'/'unattended'/'ignored' restrict and are always allowed. 'auto' (agent replies on its own, no confirmation) liberates — only allowed while the CURRENT dispatch is boss-level (e.g. the boss saying 'atendé a este número'); a caution/danger dispatch can never grant itself this. 'boss' is MCP-BLOCKED, always — set it from the dashboard (POST /api/admin/config-level), not even the principal can set it here."),
+		mcp.WithDescription("Set a chat's unified config level: 'boss' (the owner's chat), 'auto' (agent replies on its own, no confirmation), 'confirm' (drafts wait for confirmation), 'unattended' or 'ignored'. Same write as POST /api/admin/config-level."),
 		mcp.WithString("chat_id", mcp.Required()),
 		mcp.WithString("level", mcp.Required(), mcp.Enum("boss", "auto", "confirm", "unattended", "ignored"))),
 		func(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -193,12 +135,6 @@ func addAdminTools(s *server.MCPServer, d Deps, gate *Gate, tracker *agentTracke
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			if level == "boss" {
-				return mcp.NewToolResultError("refused: level=boss sets is_boss, never settable via MCP, not even by the principal — use the dashboard (POST /api/admin/config-level)"), nil
-			}
-			if level == "auto" && !isActiveBossDispatch(gate, ctx) {
-				return mcp.NewToolResultError("refused: liberating to level=auto requires the CURRENT dispatch to be boss-level — a caution/danger dispatch cannot grant this to itself"), nil
-			}
 			if err := d.Store.SetConfigLevel(jid, level); err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
@@ -206,28 +142,12 @@ func addAdminTools(s *server.MCPServer, d Deps, gate *Gate, tracker *agentTracke
 		})
 
 	// ── approve_draft ────────────────────────────────────────────────────
-	// S12 (ct-2026-07-30-1622): sends → liberates, so it requires
-	// isActiveBossDispatch — same gate as set_confirmation_mode's "none"/
-	// set_config_level's "auto". Before this, approve_draft's ONLY real
-	// gate was bossOnlyTools, which the principal-terminal bypass (above)
-	// skips entirely — the principal could approve and send a retained
-	// draft with no boss ask at all, emptying the point of confirm-mode for
-	// unknown numbers (an unknown contact just has to talk the agent into
-	// approving the reply that was addressed to it). The boss's own wanted
-	// feature ("aprobá los pendientes") still works unchanged: that request
-	// arrives as a boss-level dispatch, so isActiveBossDispatch is true.
-	//
-	// Aprobador P1 (ct-2026-07-31-0610): widened to isActiveApproverDispatch
-	// (boss OR approver) — this is the ONE thing an approver pin grants.
 	s.AddTool(mcp.NewTool("approve_draft",
-		mcp.WithDescription("Approve a pending draft, moving it to the outbox to actually send. Optionally override its text first. Requires the CURRENT dispatch to be boss- or approver-level (e.g. the boss saying 'aprobá los pendientes', or a chat pinned as approver) — a plain caution/danger dispatch can never approve its own held draft."),
+		mcp.WithDescription("Approve a pending draft, moving it to the outbox to actually send. Optionally override its text first."),
 		mcp.WithNumber("id", mcp.Required()),
 		mcp.WithString("text_override", mcp.Description("Optional: replace the draft's text before sending"))),
 		func(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			tracker.seen(ctx)
-			if !isActiveApproverDispatch(gate, ctx) {
-				return mcp.NewToolResultError("refused: approving a draft requires the CURRENT dispatch to be boss- or approver-level — a plain caution/danger dispatch cannot approve its own held draft"), nil
-			}
 			id, err := r.RequireInt("id")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
@@ -357,27 +277,13 @@ func addAdminTools(s *server.MCPServer, d Deps, gate *Gate, tracker *agentTracke
 		})
 
 	// ── set_is_approver ──────────────────────────────────────────────────
-	// Aprobador P1 (ct-2026-07-31-0610): UNLIKE set_is_boss (MCP-BLOCKED,
-	// unconditionally, above), the boss explicitly wants this pin reachable
-	// via MCP too — verbatim: "la ia tambien puede cambiar el pin por mcp
-	// pero solo si el boss lo manda". Gated by isActiveBossDispatch, same
-	// lock as set_confirmation_mode's "none"/set_config_level's "auto"/
-	// approve_draft's boss half: only a CURRENTLY boss-level dispatch can
-	// grant or revoke the pin — an approver dispatch can never touch it,
-	// not even its own (no self-escalation). Same self-gated pattern as the
-	// tools above: the check lives HERE, not in bossOnlyTools, because it's
-	// per-argument-value logic (well, per-tool here, but the same reasoning
-	// as S10's split — restricting is never the question, only the effect
-	// of granting is), not a binary boss-or-nothing refusal.
+	// Aprobador P1 (ct-2026-07-31-0610).
 	s.AddTool(mcp.NewTool("set_is_approver",
-		mcp.WithDescription("Grant or revoke the approver pin on a chat — lets it approve/discard drafts, including OTHER chats' drafts, without being the owner. Requires the CURRENT dispatch to be boss-level (e.g. the boss saying 'hacé aprobador a este número') — an approver dispatch can never change the pin, not even its own."),
+		mcp.WithDescription("Grant or revoke the approver pin on a chat — lets it see the cross-chat drafts and pending queue (get_drafts/get_pending) and approve or discard them, without being the owner. Same write as POST /api/admin/approver."),
 		mcp.WithString("chat_id", mcp.Required()),
 		mcp.WithBoolean("is_approver", mcp.Required())),
 		func(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			tracker.seen(ctx)
-			if !isActiveBossDispatch(gate, ctx) {
-				return mcp.NewToolResultError("refused: changing the approver pin requires the CURRENT dispatch to be boss-level — an approver dispatch cannot grant or revoke this, not even for itself"), nil
-			}
 			jid, err := r.RequireString("chat_id")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
@@ -471,11 +377,7 @@ func addAdminTools(s *server.MCPServer, d Deps, gate *Gate, tracker *agentTracke
 				return mcp.NewToolResultError("at least one of connector_string or name is required"), nil
 			}
 
-			current, _, err := d.Store.PrincipalAgent(d.PrincipalTerminalID)
-			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("store: %v", err)), nil
-			}
-			endpoint, terminalID, pinpass := current.Endpoint, current.AntennaTerminalID, current.Pinpass
+			var endpoint, terminalID, pinpass string
 			if raw != "" {
 				ip, port, tid, pp, err := capiconn.ParseConnectorString(raw)
 				if err != nil {
@@ -483,16 +385,41 @@ func addAdminTools(s *server.MCPServer, d Deps, gate *Gate, tracker *agentTracke
 				}
 				endpoint, terminalID, pinpass = "http://"+ip+":"+port, tid, pp
 			}
-			if name == "" {
-				name = current.Name
-			}
-
-			if err := d.Store.SetPrincipalAgent(name, endpoint, terminalID, pinpass); err != nil {
+			updated, err := updatePrincipalConnector(d, endpoint, terminalID, pinpass, name)
+			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			if d.Connector != nil {
-				d.Connector.SetConfig(endpoint, terminalID, pinpass)
-			}
-			return mcp.NewToolResultText(fmt.Sprintf("cAPI connector actualizado — endpoint: %s, terminal_id: %s, name: %s", endpoint, terminalID, name)), nil
+			return mcp.NewToolResultText(fmt.Sprintf("cAPI connector actualizado — endpoint: %s, terminal_id: %s, name: %s", updated.Endpoint, updated.AntennaTerminalID, updated.Name)), nil
 		})
+}
+
+// updatePrincipalConnector overwrites whichever of the principal's connector
+// fields is non-empty, keeps the rest, persists it and applies it in hot — the
+// one write path set_capi_connector and set_agent_capi (when aimed at the
+// principal, which has no `agents` row) share. SetPrincipalAgent is where the
+// endpoint gets validated.
+func updatePrincipalConnector(d Deps, endpoint, terminalID, pinpass, name string) (store.Agent, error) {
+	current, _, err := d.Store.PrincipalAgent(d.PrincipalTerminalID)
+	if err != nil {
+		return store.Agent{}, fmt.Errorf("store: %w", err)
+	}
+	if endpoint != "" {
+		current.Endpoint = endpoint
+	}
+	if terminalID != "" {
+		current.AntennaTerminalID = terminalID
+	}
+	if pinpass != "" {
+		current.Pinpass = pinpass
+	}
+	if name != "" {
+		current.Name = name
+	}
+	if err := d.Store.SetPrincipalAgent(current.Name, current.Endpoint, current.AntennaTerminalID, current.Pinpass); err != nil {
+		return store.Agent{}, err
+	}
+	if d.Connector != nil {
+		d.Connector.SetConfig(current.Endpoint, current.AntennaTerminalID, current.Pinpass)
+	}
+	return current, nil
 }

@@ -66,10 +66,7 @@ type Chat struct {
 	// IsBoss/ConfigLevel — a chat can be an approver whether it's boss,
 	// automatic, or anything else (capipush.LevelFor checks IsBoss first,
 	// then this). Settable via the privileged REST path (SetIsApprover) and
-	// via MCP (set_is_approver) — unlike IsBoss, the boss explicitly wants
-	// this one reachable by the agent too, but only while the agent's
-	// CURRENT dispatch is itself boss-level (isActiveBossDispatch gates the
-	// MCP tool's handler, same pattern as approve_draft).
+	// via MCP (set_is_approver).
 	IsApprover bool `json:"is_approver"`
 
 	// Origin is where this chat came from — derived on read (never cached,

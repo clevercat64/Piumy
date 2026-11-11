@@ -644,7 +644,7 @@ func NewSet(ctx context.Context, d Deps) Set {
 	// agent has to be able to read its own manual before it has any work
 	// assigned, not after.
 	s.AddTool(mcp.NewTool("get_manual",
-		mcp.WithDescription("The Piumy manual for your role — READ THIS before you have any work assigned. role=\"connect\" if you still need to wire yourself to the gateway; role=\"orchestrator\" if you set up/change the gateway (levels, owner, approvers, scenarios); role=\"operator\" if you answer WhatsApp dispatches. Never gated: available with no dispatch bound."),
+		mcp.WithDescription("The Piumy manual for your role — READ THIS before you have any work assigned. role=\"connect\" if you still need to wire yourself to the gateway; role=\"orchestrator\" if you set up/change the gateway (levels, owner, approvers, scenarios) — the agent that configures connects to /mcp/manager; role=\"operator\" if you answer WhatsApp dispatches — the agent that answers chats connects to /mcp/operator. Never gated: available with no dispatch bound."),
 		mcp.WithString("role", mcp.Required(), mcp.Enum("connect", "orchestrator", "operator"))),
 		func(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			tracker.seen(ctx)
@@ -780,7 +780,7 @@ func NewSet(ctx context.Context, d Deps) Set {
 
 	// ── get_chat ─────────────────────────────────────────────────────────
 	s.AddTool(mcp.NewTool("get_chat",
-		mcp.WithDescription("A chat's record: name, mode, unread count, triage status, active flag, is_boss (read-only — true means this is the trusted owner; only settable via set_is_boss, boss-only, never by a caution/danger agent), origin (inbound_spoke = a real conversation happened, in either direction — not necessarily that THEY spoke last; group_discovered/synced_contact = never a real conversation), last_speaker (them/us) + last_model, and memory/context/rules. memory (particular facts) and context (general situation) are agent-writable via set_chat_memory/set_chat_context. rules is the EFFECTIVE, already-resolved value (particular → this chat's type → the global default → \"\" — the agent never sees the hierarchy, only the answer) — READ-ONLY here; set_chat_rules writes this chat's OWN particular tier directly (unconditional since T31, ct-2026-08-06-0244 — any dispatch level, no gate; see that tool's own description), or use the privileged REST path for the type/default tiers. Also read-only: confirmation_mode (none/discretion/always — governs how send_message behaves, see its own description) and confirmer — who a held draft's confirmation is directed to; only settable via set_confirmation_mode (boss-only) or the privileged REST path. description (a group's WhatsApp topic, or your own note about the chat) is settable via the privileged REST path. group_invite_link is READ-ONLY, populated by the gateway from WhatsApp itself — empty for a 1-1 chat or a group the gateway isn't admin on. claimed_by/claimed_until (both empty/0 if unclaimed or expired) show whether another agent currently holds this chat via claim_chat — check before you invest work drafting a reply. The agent must NOT always have the last word — if last_speaker is already \"us\" and they haven't answered since, don't send another message just to get their attention. That's different from completing a single reply with more than one piece (e.g. a short message, then a sticker) in the same turn, which send_message/draft allow (see their own descriptions)."),
+		mcp.WithDescription("A chat's record: name, mode, unread count, triage status, active flag, is_boss (read-only here — true means this is the trusted owner; settable via set_is_boss on the manager endpoint), origin (inbound_spoke = a real conversation happened, in either direction — not necessarily that THEY spoke last; group_discovered/synced_contact = never a real conversation), last_speaker (them/us) + last_model, and memory/context/rules. memory (particular facts) and context (general situation) are agent-writable via set_chat_memory/set_chat_context. rules is the EFFECTIVE, already-resolved value (particular → this chat's type → the global default → \"\" — the agent never sees the hierarchy, only the answer) — READ-ONLY here; set_chat_rules writes this chat's OWN particular tier directly (unconditional since T31, ct-2026-08-06-0244 — any dispatch level, no gate; see that tool's own description), or set_type_rules for the by-type tier. Also read-only here: confirmation_mode (none/discretion/always — governs how send_message behaves, see its own description) and confirmer — who a held draft's confirmation is directed to; settable via set_confirmation_mode. description (a group's WhatsApp topic, or your own note about the chat) is settable via the privileged REST path. group_invite_link is READ-ONLY, populated by the gateway from WhatsApp itself — empty for a 1-1 chat or a group the gateway isn't admin on. claimed_by/claimed_until (both empty/0 if unclaimed or expired) show whether another agent currently holds this chat via claim_chat — check before you invest work drafting a reply. The agent must NOT always have the last word — if last_speaker is already \"us\" and they haven't answered since, don't send another message just to get their attention. That's different from completing a single reply with more than one piece (e.g. a short message, then a sticker) in the same turn, which send_message/draft allow (see their own descriptions)."),
 		mcp.WithString("chat_id", mcp.Required())),
 		func(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			tracker.seen(ctx)
@@ -1016,9 +1016,8 @@ func NewSet(ctx context.Context, d Deps) Set {
 		})
 
 	// ── get_drafts ───────────────────────────────────────────────────────
-	// READ-ONLY for every level. Resolving one (approve_draft/discard_draft,
-	// admin_tools.go) is boss-only, not "MCP-forbidden" — F4c added those as
-	// real MCP tools, gated by bossOnlyTools rather than absent entirely.
+	// READ-ONLY for every level. Resolving one is approve_draft/discard_draft
+	// (admin_tools.go).
 	//
 	// T122 (ct-2026-09-02-2045): a draft carrying a photo must be
 	// reviewable before approving it blind (Citrino verbatim: "un borrador
@@ -1032,7 +1031,7 @@ func NewSet(ctx context.Context, d Deps) Set {
 	// get_media_full already charges for an original — one real cost,
 	// counted at whichever door it walks through.
 	s.AddTool(mcp.NewTool("get_drafts",
-		mcp.WithDescription("Pending drafts awaiting approval — read-only at every level. Cheap by default: a draft carrying a photo shows media_mime/media_size but not the image itself. Pass draft_id to fetch ONE draft (any status) with its photo embedded as media_data_url — costs an image usage charge, same as get_media_full. Resolving one (approve_draft/discard_draft) is boss-only."),
+		mcp.WithDescription("Pending drafts awaiting approval — read-only at every level. Cheap by default: a draft carrying a photo shows media_mime/media_size but not the image itself. Pass draft_id to fetch ONE draft (any status) with its photo embedded as media_data_url — costs an image usage charge, same as get_media_full. Resolve one with approve_draft or discard_draft."),
 		mcp.WithNumber("limit", mcp.DefaultNumber(20)),
 		mcp.WithNumber("draft_id", mcp.Description("Optional: fetch ONE draft by id (ignores limit) with its photo embedded as media_data_url, if it has one."))),
 		func(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -1127,7 +1126,7 @@ func NewSet(ctx context.Context, d Deps) Set {
 		})
 
 	addGateTools(s, d, gate, tracker)
-	addAdminTools(s, d, gate, tracker)
+	addAdminTools(s, d, tracker)
 	addGroupTools(s, d, tracker)
 	addMediaTools(s, d, tracker)
 	addAgentTools(s, d)
