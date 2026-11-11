@@ -55,6 +55,13 @@ var indexHTMLI18nExceptions = map[string]string{
 	"piumy": "el nombre del producto en minúscula estilizada (topbar), o el valor " +
 		"literal de la contraseña de fábrica usado como placeholder de ejemplo " +
 		"(login) — ninguno de los dos es prosa traducible.",
+	"Piumy": "el nombre del producto, ahora también con mayúscula inicial: desde " +
+		"T172b tramo 4 titula la barra del modal de login, donde antes decía " +
+		"\"piumy@gateway: login\". Misma clase que la \"piumy\" de acá arriba — un " +
+		"nombre propio, no prosa.",
+	"QR": "sigla, igual en los dos idiomas (y ya usada así en qr.scan_instructions). " +
+		"Titula la barra del overlay del código desde T172b tramo 4, donde antes " +
+		"decía \"piumy@gateway: qr\".",
 	"WhatsApp": "nombre de marca de la plataforma de mensajería, no se traduce (misma " +
 		"clase que GitHub/Reddit/clever.cat más abajo).",
 	"GitHub": "nombre de marca — link del footer.",

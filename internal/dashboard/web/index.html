@@ -472,7 +472,6 @@
   <div class="overlay hidden" id="editmodal">
     <div class="term modal">
       <div class="titlebar">
-        <span class="mdot r"></span><span class="mdot y"></span><span class="mdot g"></span>
         <span class="path" id="edittitle">Editar</span>
         <span class="spacer"></span>
         <button class="close-x" type="button" id="edit_cancel" aria-label="Cerrar" data-i18n-aria-label="action.close">✕</button>
@@ -492,7 +491,6 @@
   <div class="overlay hidden" id="draftEditModal">
     <div class="term modal">
       <div class="titlebar">
-        <span class="mdot r"></span><span class="mdot y"></span><span class="mdot g"></span>
         <span class="path" id="draftEditTitle">Editar borrador</span>
         <span class="spacer"></span>
         <button class="close-x" type="button" id="draftEdit_cancel" aria-label="Cerrar" data-i18n-aria-label="action.close">✕</button>
@@ -516,7 +514,6 @@
   <div class="overlay hidden" id="draftRejectModal">
     <div class="term modal">
       <div class="titlebar">
-        <span class="mdot r"></span><span class="mdot y"></span><span class="mdot g"></span>
         <span class="path" id="draftRejectTitle">Rechazar borrador</span>
         <span class="spacer"></span>
         <button class="close-x" type="button" id="draftReject_cancel" aria-label="Cerrar" data-i18n-aria-label="action.close">✕</button>
@@ -541,8 +538,7 @@
   <div class="overlay hidden" id="agentdeletemodal">
     <div class="term modal">
       <div class="titlebar">
-        <span class="mdot r"></span><span class="mdot y"></span><span class="mdot g"></span>
-        <span class="path"><b data-i18n="titlebar.delete_agent">borrar agente</b>@gateway: ~</span>
+        <span class="path" data-i18n="titlebar.delete_agent">borrar agente</span>
         <span class="spacer"></span>
         <button class="close-x" type="button" id="agentdelete_cancel" aria-label="Cerrar" data-i18n-aria-label="action.close">✕</button>
       </div>
@@ -564,8 +560,7 @@
   <div class="overlay hidden" id="approvermodal">
     <div class="term modal">
       <div class="titlebar">
-        <span class="mdot r"></span><span class="mdot y"></span><span class="mdot g"></span>
-        <span class="path"><b data-i18n="titlebar.approver_permission">permiso de aprobar</b>@gateway: ~</span>
+        <span class="path" data-i18n="titlebar.approver_permission">permiso de aprobar</span>
         <span class="spacer"></span>
         <button class="close-x" type="button" id="approver_cancel" aria-label="Cerrar" data-i18n-aria-label="action.close">✕</button>
       </div>
@@ -584,13 +579,16 @@
   <div class="overlay hidden" id="configmodal">
     <div class="term modal">
       <div class="titlebar">
-        <span class="mdot r"></span><span class="mdot y"></span><span class="mdot g"></span>
-        <span class="path"><b>config</b>@gateway: ~</span>
+        <span class="path" data-i18n="modal.settings_title">Configuración</span>
         <span class="spacer"></span>
         <button class="close-x" type="button" id="config_cancel" aria-label="Cerrar" data-i18n-aria-label="action.close">✕</button>
       </div>
       <div class="screen">
-        <h3 class="modal-title" data-i18n="modal.settings_title">Configuración ⚙</h3>
+        <!-- El titulo de este modal vive ahora en su barra (T172b tramo 4,
+             misma clave modal.settings_title): tenerlo dos veces era
+             repetirselo al dueno en la misma pantalla. Los otros tres
+             modales con h3 NO se tocan: ahi la barra lleva una etiqueta
+             corta ("perfil") y el h3 la frase completa. -->
 
         <p class="modal-sub">Governor (anti-ban)</p>
         <p class="dimnote" id="config_governor_info">—</p>
@@ -661,8 +659,7 @@
   <div class="overlay hidden" id="profilemodal">
     <div class="term modal">
       <div class="titlebar">
-        <span class="mdot r"></span><span class="mdot y"></span><span class="mdot g"></span>
-        <span class="path"><b data-i18n="titlebar.profile">perfil</b>@gateway: ~</span>
+        <span class="path" data-i18n="titlebar.profile">perfil</span>
         <span class="spacer"></span>
         <button class="close-x" type="button" id="profile_cancel" aria-label="Cerrar" data-i18n-aria-label="action.close">✕</button>
       </div>
@@ -703,8 +700,7 @@
   <div class="overlay hidden" id="disconnectmodal">
     <div class="term modal">
       <div class="titlebar">
-        <span class="mdot r"></span><span class="mdot y"></span><span class="mdot g"></span>
-        <span class="path"><b data-i18n="titlebar.disconnect">desconectar</b>@gateway: ~</span>
+        <span class="path" data-i18n="titlebar.disconnect">desconectar</span>
         <span class="spacer"></span>
         <button class="close-x" type="button" id="disconnect_cancel" aria-label="Cerrar" data-i18n-aria-label="action.close">✕</button>
       </div>
@@ -721,8 +717,7 @@
   <div class="overlay hidden" id="loginmodal">
     <div class="term modal">
       <div class="titlebar">
-        <span class="mdot r"></span><span class="mdot y"></span><span class="mdot g"></span>
-        <span class="path"><b>piumy</b>@gateway: login</span>
+        <span class="path">Piumy</span>
       </div>
       <div class="screen">
         <div class="login-head">
@@ -745,8 +740,7 @@
   <div class="overlay hidden" id="recovermodal">
     <div class="term modal">
       <div class="titlebar">
-        <span class="mdot r"></span><span class="mdot y"></span><span class="mdot g"></span>
-        <span class="path"><b>piumy</b>@gateway: <span data-i18n="titlebar.recover">recuperar</span></span>
+        <span class="path" data-i18n="titlebar.recover">recuperar</span>
         <span class="spacer"></span>
         <button class="close-x" type="button" id="recover_cancel" aria-label="Cerrar" data-i18n-aria-label="action.close">✕</button>
       </div>
@@ -771,8 +765,7 @@
   <div class="overlay hidden" id="qroverlay">
     <div class="term modal">
       <div class="titlebar">
-        <span class="mdot r"></span><span class="mdot y"></span><span class="mdot g"></span>
-        <span class="path"><b>piumy</b>@gateway: qr</span>
+        <span class="path">QR</span>
         <span class="spacer"></span>
         <button class="close-x" type="button" id="qrclose" aria-label="Cerrar" data-i18n-aria-label="action.close">✕</button>
       </div>
