@@ -77,6 +77,17 @@ const (
 	SettingCapipushSwampedAt     = "capipush_swamped_at"
 	SettingCapipushSwampedWindow = "capipush_swamped_window"
 
+	// SettingSessionPreMigrationKeep (T193, ct-2026-11-11-1039) — how many
+	// pre-migration copies of whatsmeow's session DB to keep beside it.
+	// Piumy takes one whenever a new version is about to migrate that DB to
+	// a newer schema, because whatsmeow's migrations have no way back: if
+	// one fails, or the old version has to be reinstalled, the alternative
+	// is re-scanning the QR. Each copy is a full copy of the session DB, so
+	// this is a disk-vs-safety knob, not a free one. See
+	// internal/whatsmeow's premigrationKeepDefault for the code-level
+	// fallback when unset.
+	SettingSessionPreMigrationKeep = "session_pre_migration_keep"
+
 	// SettingCapipushMaxRedispatch / SettingCapipushDispatchStaleAfter (S4b,
 	// ct-2026-07-30-1255) — two of the "three clocks" (sweep interval,
 	// redispatch cap, stale-dispatch reclaim) calibrated together. MaxRedispatch

@@ -11,7 +11,7 @@
 // pairing). piumy-gateway has no whatsmeow session — open-wa manages its own
 // session externally — so SessionDBPath here points at piumy-gateway's OWN
 // store.db (chats/messages/memory/rules) instead: the mechanism is generic
-// (SessionDBPath is just a path, snapshotSQLite works on any SQLite file),
+// (SessionDBPath is just a path, SnapshotSQLite works on any SQLite file),
 // and store.db is arguably more worth protecting than a pairing token. See
 // docs/F1C-GUARD-BACKUP-BRIDGE-AUTOREPLY.md.
 package sessionbackup
@@ -120,7 +120,7 @@ func (b *Backuper) BackupNow(ctx context.Context) (Result, error) {
 
 	tmpSnapshot := filepath.Join(b.dir, fmt.Sprintf(".snapshot-%d.tmp", time.Now().UnixNano()))
 	defer os.Remove(tmpSnapshot) // best-effort cleanup; the encrypted copy is what matters
-	if err := snapshotSQLite(ctx, b.sessionDBPath, tmpSnapshot); err != nil {
+	if err := SnapshotSQLite(ctx, b.sessionDBPath, tmpSnapshot); err != nil {
 		return Result{}, err
 	}
 

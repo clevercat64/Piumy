@@ -469,8 +469,40 @@ func New(ctx context.Context, cfg Config) (*Adapter, error) {
 	// (session/crypto state, not the message history) so serializing has
 	// no real cost.
 	db.SetMaxOpenConns(1)
+	// Close this connection on EVERY failure path below (T193,
+	// ct-2026-11-11-1039). A New that returns an error hands back no
+	// Adapter, so nobody else can ever close it — and on Windows the
+	// leaked handle keeps the session FILE locked, which is exactly what
+	// would block restoring one of premigration.go's copies over it.
+	// A defer instead of a Close() at each return, deliberately: this
+	// started as three separate leaks (the upgrade and get-device paths
+	// below had it since F5), so the pattern that only works when the next
+	// person remembers is the pattern that already failed here.
+	success := false
+	defer func() {
+		if !success {
+			db.Close()
+		}
+	}()
 
 	container := sqlstore.NewWithDB(db, "sqlite", logger)
+	// T193 (ct-2026-11-11-1039): copy the session DB BEFORE the library
+	// migrates it — see premigration.go for why that migration is the one
+	// irreversible step of a self-update. A failure here deliberately
+	// refuses to start: migrating without the copy is what costs the owner
+	// their session, and "Piumy did not start" is the cheaper failure. The
+	// mood is best-effort (this process is about to stop, so the log and
+	// the returned error are the channels that actually carry the reason;
+	// Speech is left to state.Manager, which derives it from the mood).
+	if copied, err := backupBeforeMigration(ctx, db, cfg.DBPath, premigrationKeep(cfg.Store)); err != nil {
+		log.Printf("whatsmeow: NO se migra el esquema de la sesión — %v", err)
+		if cfg.State != nil {
+			_ = cfg.State.UpdateMood(func(s *state.Status) { s.Mood = "error" })
+		}
+		return nil, err
+	} else if copied != "" {
+		log.Printf("whatsmeow: sesión respaldada antes de migrar el esquema → %s", copied)
+	}
 	if err := container.Upgrade(ctx); err != nil {
 		return nil, fmt.Errorf("whatsmeow: upgrade session store: %w", err)
 	}
@@ -542,6 +574,9 @@ func New(ctx context.Context, cfg Config) (*Adapter, error) {
 	// captured client.Connect would keep dialing the deleted device
 	// forever. reconnect_test.go still overrides this same seam.
 	a.connectFn = func() error { return a.cli().Connect() }
+	// From here the Adapter owns the connection: Stop closes the container,
+	// which closes this db. The defer above must not close it too.
+	success = true
 	return a, nil
 }
 

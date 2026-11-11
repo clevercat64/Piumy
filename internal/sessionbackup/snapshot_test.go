@@ -32,7 +32,7 @@ func TestSnapshotSQLiteProducesValidReadableCopy(t *testing.T) {
 
 	// Source connection stays OPEN (WAL, not stopped) while snapshotting —
 	// this is the whole point of VACUUM INTO for a hot backup.
-	if err := snapshotSQLite(context.Background(), src, dst); err != nil {
+	if err := SnapshotSQLite(context.Background(), src, dst); err != nil {
 		t.Fatal(err)
 	}
 

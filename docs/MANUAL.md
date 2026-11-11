@@ -1822,12 +1822,20 @@ WhatsApp-outbound).
 Rol: backup cifrado y rotado del **`store.db` propio** (reinterpretado
 de Piumy — ver `docs/F1C-*.md`).
 
-⚠️ **`whatsmeow.db` NO se respalda — por nadie.** El texto anterior decía
-"no hay sesión whatsmeow que respaldar": era cierto pre-pivote a whatsmeow
-(ST-E) y hoy es FALSO. `WADBPath` guarda el pareo del teléfono y ningún
-backup lo toca (`restapi/admin.go` lo declara explícito: "NEVER touches
-whatsmeow.db"). Si ese archivo se pierde, el único camino es re-parear por
-QR: `store.db` sobrevive (historial/reglas/memoria), la sesión no.
+⚠️ **El backup cifrado y periódico de este paquete NO respalda
+`whatsmeow.db`.** El texto anterior decía "no hay sesión whatsmeow que
+respaldar": era cierto pre-pivote a whatsmeow (ST-E) y hoy es FALSO.
+`WADBPath` guarda el pareo del teléfono y este backup no lo toca
+(`restapi/admin.go` lo declara explícito: "NEVER touches whatsmeow.db").
+Si ese archivo se pierde, el único camino es re-parear por QR: `store.db`
+sobrevive (historial/reglas/memoria), la sesión no.
+
+**Matiz desde T193 (ct-2026-11-11-1039):** ya existe **un** respaldo de
+`whatsmeow.db`, pero es puntual, no periódico y no cifrado — la copia
+**previa a una migración de esquema**, que la toma `internal/whatsmeow`
+(ver su sección) llamando a `SnapshotSQLite` de acá. Cubre exactamente el
+momento irreversible de una auto-actualización, no la pérdida del archivo
+en general. El párrafo de arriba sigue valiendo para todo lo demás.
 
 - `New(Config) *Backuper` — `Key` vacío desliga el backup (fail-safe-off).
 - `(*Backuper) BackupNow(ctx) (Result, error)`
@@ -1837,6 +1845,14 @@ QR: `store.db` sobrevive (historial/reglas/memoria), la sesión no.
 - `CheckNotServing(sessionDBPath, force) error` — gate antes de restaurar.
 - `Restore(backupPath, sessionDBPath, passphrase) error`
 - `WarnIfSameVolume(backupDir, sessionDir, logf)`
+- `SnapshotSQLite(ctx, sourcePath, destPath) error` (exportada en T193,
+  ct-2026-11-11-1039; antes privada) — copia consistente de CUALQUIER
+  archivo SQLite vía `VACUUM INTO`, sobre su propia conexión corta
+  `mode=ro`: segura en caliente, sin frenar a quien tenga el origen
+  abierto. `destPath` no debe existir. La usa `BackupNow` acá y
+  `internal/whatsmeow` para su copia previa a migrar — un solo lugar donde
+  vive "copiar un SQLite bien", y ya verificado contra
+  `modernc.org/sqlite`.
 
 ---
 
@@ -2482,6 +2498,43 @@ la única capa que orquesta este sweep.
   presencia "online" (`SendPresence` haría lo mismo pero delataría la
   cuenta como siempre-conectada — anti-ban, mismo espíritu que el pacing
   humano de `governor`).
+- **Respaldo previo a una migración de esquema** (T193 parte A,
+  ct-2026-11-11-1039; `premigration.go`). Boss: *«piumy se tiene que auto
+  actualizar y auto instalar sin perder la sesion de whatsapp»*. El
+  instalador NO es el riesgo (no toca `secrets/`, conserva config y
+  claves); el riesgo es el PRIMER arranque de la versión nueva, porque
+  `container.Upgrade` migra la base de sesión y **las migraciones de
+  whatsmeow no tienen vuelta**: si una falla, o hay que reinstalar la
+  versión anterior, la sesión se pierde y hay que re-escanear el QR.
+  Entre `sqlstore.NewWithDB` y `container.Upgrade`, `New` compara la
+  versión del esquema en la base contra la que la librería va a aplicar y,
+  **solo si hay migración por delante**, copia la base junto a sí misma con
+  la versión en el nombre (`whatsmeow.db.premigration-v15-<fecha>`).
+  - La versión actual se lee de la tabla `whatsmeow_version` (el nombre lo
+    fija sqlstore en `wrapped.VersionTable`, no se inventa acá; su
+    existencia se consulta por `sqlite_master`, NO matcheando el texto del
+    error del driver, que cambiaría el día que lo reescriban). La
+    objetivo es **`len(upgrades.Table)`** — la lista embebida de
+    migraciones de la propia librería, así que sube sola al actualizarla y
+    no hay número clavado. Verificado antes de confiar en él: tras un
+    `Upgrade`, la versión que queda en la base es igual a ese largo.
+  - La copia la hace `sessionbackup.SnapshotSQLite` (`VACUUM INTO`) —
+    reusada, no duplicada. Cuántas se conservan sale de
+    **`store.SettingSessionPreMigrationKeep`** (fallback en código:
+    `premigrationKeepDefault` = 3); la rotación borra por **fecha**, no por
+    nombre, porque `"v15"` ordena antes que `"v9"`.
+  - **Si la copia falla, NO se migra:** `New` devuelve error, lo dice en el
+    log y pone `mood` `error`. Arrancar sin red de seguridad es el único
+    desenlace que puede costar la sesión, así que "Piumy no arrancó" es el
+    fallo más barato. Un arranque ordinario (base ya al día) y una
+    instalación limpia (versión 0, no hay sesión que perder) **no copian
+    nada**: cuestan una consulta.
+  - En el mismo contrato, `New` pasó a **cerrar su conexión en todo camino
+    de error** (defer con bandera, puesta en `true` recién cuando el
+    Adapter toma posesión y `Stop` se vuelve el dueño). Eran tres fugas
+    —incluidas las de `upgrade session store` y `get device`, de F5— y en
+    Windows el handle filtrado deja el ARCHIVO de sesión tomado, que es
+    justo lo que impediría restaurar una de estas copias encima.
 - **Flags de full sync** (M1, ct-2026-07-22-2342, re-pareo del historial):
   junto a `Os`/`PlatformType`, `New` también setea
   `store.DeviceProps.RequireFullSync = true` +
