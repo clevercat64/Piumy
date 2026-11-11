@@ -8619,6 +8619,15 @@ como la ÚNICA lista de textos: el tablero nunca guarda su propia copia.
   literal, no un mapa `{key: "clave"}` (ver el comentario ahí). Probado en
   rojo antes de darlo por bueno: sacar una clave usada, ver el fallo,
   reponerla.
+- **T188 — el estado del gateway y el vacío de la tabla, en el catálogo.**
+  Claves nuevas (es/en): `status.alive`, 18 `mood.*` (una por ánimo de
+  `state.ValidMoods`), `chat.empty_none`/`chat.empty_filter` (la fila de la
+  tabla de Conversaciones sin filas) y `qr.error_unavailable` (modal del QR
+  cuando `GET /api/status` trae `qr_error`). `app.js#moodLabel` las pide con un
+  `case` por ánimo y la clave escrita entera en cada `t(...)`: el test de paridad
+  (`TestAllKeysMatchBetweenFrontendAndCatalog`) sólo ve las claves escritas así,
+  no las armadas con `+`. `indexHTMLI18nExceptions` perdió la excepción «idle»
+  (el `<span id="moodlabel">` de `index.html` nace vacío y lo llena `applyMood`).
 - `TestNoUntranslatedProseInKnownSinks` (`prose_sink_test.go`, T153 2b-v)
   cubre lo que el test de arriba NO puede: prueba que ninguna clave FALTE
   o SOBRE, pero nada dice de texto que nunca pidió una clave. Nació de un
@@ -9114,6 +9123,42 @@ del dueño desde la LAN, sin agente de por medio. Grupo/perfil NO están acá
     cuenta (`TestDashboardIndexGivesOtherMachinesOnlyTheAccountId`). Sin
     cuenta el archivo sale byte por byte el embebido. Se arma por petición,
     no una vez: la etiqueta cambia cuando la sesión recibe su nombre.
+  - **Revisión de la interfaz del tablero (T188, `ct-2026-11-11-0959`).** Lo
+    que cambió en `internal/dashboard/web/` y por qué. Cada cambio se midió
+    antes y después en una copia aislada, con un servidor de mentira (datos
+    inventados, prefijo 555) y Chrome headless a 360/743/1024/1101/1440/1920 px,
+    en los dos temas y los dos idiomas; el instrumento arranca con un control
+    de defectos conocidos.
+    - **Sin WhatsApp vinculado** (`style.css`, `:has(#adminpanel.hidden)`): la
+      barra lateral se acuesta arriba y la ventana se ajusta a su contenido;
+      no se dibujan el avatar vacío, «Agregar estado» ni los contadores en 0.
+    - **Modal del QR** (`app.js`): `#qrimg` nace `hidden`; se muestra en `load`
+      y se oculta en `error` (antes, imagen rota con el alt encima). Si
+      `GET /api/status` trae `qr_error` (`""` normal; `"qr_unavailable"` =
+      Piumy no pudo abrir la ronda de QR) el modal lo dice con
+      `qr.error_unavailable` y deja el botón de refrescar. `qr_error` es un
+      código, nunca el texto de la librería.
+    - **Tabla de Conversaciones** (`#chattable`): `table-layout:fixed` con
+      Nivel 160px / Agente 22% / Reglas 27%, `.levelselect` con `min-width:0`
+      y las reglas a dos líneas (`-webkit-line-clamp`) con `title`; antes la
+      tabla medía 1174px dentro de una tarjeta de 956 y la columna Reglas, con
+      su lápiz, quedaba fuera del marco. De 1100px para abajo pasa a tarjetas
+      en grilla (tres columnas de 640 a 1100px; Nivel y Agente lado a lado bajo
+      640px; ~196px por chat a 743px en vez de ~363). Sin filas:
+      `renderEmptyRow()` y la leyenda `#legend` se oculta.
+    - **`.app{overflow:clip}`**, no `hidden`: con `hidden` el marco era un
+      contenedor de scroll y ningún `position:sticky` se pegaba. La franja
+      superior (`.topbar`) pega; el encabezado de la tabla y los títulos de
+      sección ya no son sticky (nunca se pegaron).
+    - **Franja de estado**: `moodLabel(mood)`/`renderMoodLabel()` (también desde
+      `applyAllI18n()`), sin mayúsculas ni espaciado. Lista de salud en dos
+      columnas entre 560 y 779px.
+    - **`initialsFor(label)`**: sólo cuentan las palabras que empiezan con
+      letra y el primer carácter se toma con `Array.from`; `charAt(0)` partía
+      un emoji (par sustituto) a la mitad.
+    - **Encabezado de grupo y filas de drafts**: `flex-wrap` a todo ancho; los
+      controles se achican dentro de la tarjeta (a 360px la regla de un grupo
+      quedaba con 0px visibles y no se podía editar).
   - `GET /api/qr/image` → el QR actual como PNG (`rsc.io/qr` —
     YA era dependencia indirecta vía `qrterminal`, esto solo la promueve a
     directa, cero dependencia nueva). 404 si no hay QR pendiente.
