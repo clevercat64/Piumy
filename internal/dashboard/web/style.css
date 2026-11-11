@@ -159,7 +159,12 @@ body {
   display: grid; grid-template-columns: 228px minmax(0, 1fr);
   min-height: calc(100vh - 50px);
   background: var(--bg2); border: 1px solid var(--border);
-  border-radius: 14px; box-shadow: var(--shadow); overflow: hidden;
+  border-radius: 14px; box-shadow: var(--shadow);
+  /* clip y no hidden (T188): hidden vuelve a .app un contenedor de scroll, y
+     entonces ningún position:sticky de adentro se pega a la ventana — medido:
+     tras 600px de scroll la franja superior subía a -577px. clip recorta las
+     esquinas igual, sin ser contenedor de scroll. */
+  overflow: clip;
 }
 .side {
   display: flex; flex-direction: column; gap: 4px;
@@ -563,7 +568,7 @@ body {
 
 /* preview del último mensaje en la fila del chat (S1h) */
 .cpreview {
-  font-size: 12px; color: var(--dim); margin-top: 2px; max-width: 260px;
+  font-size: 12px; color: var(--dim); margin-top: 2px; max-width: 100%;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
@@ -578,7 +583,9 @@ body {
    de "visible" (incluido overflow-x solo) convierte este div en scroll
    container propio y el `thead th`/`td.list-sub` sticky de abajo dejan de
    pegarse a la página — se pegarían (sin efecto visible) a esta caja, que
-   nunca tiene overflow real porque su alto es auto. El div en sí ya no
+   nunca tiene overflow real porque su alto es auto. (T188: el encabezado y
+   los títulos de sección ya no son sticky — nunca se pegaron, y la franja
+   superior, que sí pega, los taparía.) El div en sí ya no
    cumple ningún rol funcional (`overflow: visible` es el default) — se
    deja explícito, no implícito, para que nadie le vuelva a poner un
    max-height/overflow "para prolijidad" sin leer este comentario primero. */
@@ -592,10 +599,23 @@ body {
    --maxw y el punto de corte a tarjetas (ver @media más abajo), no agregando
    un ancho mínimo de vuelta. */
 table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+/* T188 (prioridad 1, evidencia del boss con datos reales): con layout
+   automático la tabla medía 1174px y se salía de su tarjeta — el <select> de
+   agente se estiraba al nombre más largo de la lista (382px) y el texto de
+   las reglas iba en una sola línea; el marco recortaba lo que sobraba y la
+   columna Reglas, con su lápiz, quedaba fuera de alcance. Layout fijo: las
+   columnas se reparten el ancho que HAY, y el contenido se adapta a ellas
+   (select que se achica, reglas en dos líneas) en vez de empujarlas. Sin
+   min-width, como pide el comentario de arriba: debajo de 1100px la tabla
+   pasa a tarjetas (ver @media). */
+#chattable { table-layout: fixed; }
+#chattable thead th:nth-child(2) { width: 160px; }
+#chattable thead th:nth-child(3) { width: 22%; }
+#chattable thead th:nth-child(4) { width: 27%; }
 thead th {
   text-align: left; color: var(--dim); font-size: 12px; font-weight: 500;
   padding: 9px 12px; border-bottom: 1px solid var(--border);
-  position: sticky; top: 0; background: var(--panel); z-index: 1;
+  background: var(--panel);
 }
 tbody tr { border-bottom: 1px solid var(--border); }
 tbody tr:last-child { border-bottom: none; }
@@ -640,9 +660,9 @@ tbody tr td:first-child { cursor: pointer; }
 .avatar-xl .avatar-initials { font-size: 44px; }
 
 .row-flex { display: flex; align-items: center; gap: 10px; }
-.row-textwrap { min-width: 0; }
+.row-textwrap { flex: 1 1 0; min-width: 0; }
 
-.cname { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+.cname { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .csub { font-size: 11px; color: var(--dim); }
 
 /* hbadge (ct-2026-07-21-1837): ícono de history_state junto al nombre — sutil, no compite con el nombre. */
@@ -686,9 +706,13 @@ tbody tr td:first-child { cursor: pointer; }
    quedaba cortado — sin wrap el único con nada, cae solo a su propia línea,
    no rompe nada porque nunca comparte fila con otro elemento. */
 .levelcell { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* min-width:0 + ellipsis (T188): un <select> mide, por defecto, lo que su
+   opción más larga — con un agente de nombre largo la columna entera se
+   estiraba (382px medidos) y empujaba la tabla fuera de su tarjeta. */
 .levelselect {
   background: var(--bg2); color: var(--text); border: 1px solid var(--border); border-radius: 7px;
   padding: 5px 8px; font-size: 13px; font-family: var(--sans); cursor: pointer; max-width: 100%;
+  min-width: 0; text-overflow: ellipsis;
 }
 .levelselect:hover, .levelselect:focus { border-color: var(--phos); outline: none; }
 
@@ -736,7 +760,6 @@ tbody tr td:first-child { cursor: pointer; }
   padding: 11px 12px 7px; background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
-td.list-sub { position: sticky; top: 40px; z-index: 1; }
 td.list-sub::before { content: none; } /* sin data-label — no heredar el ::before responsive de abajo */
 
 .smbtn {
@@ -749,17 +772,20 @@ td.list-sub::before { content: none; } /* sin data-label — no heredar el ::bef
 /* ── celda "Agente" (T56, ct-2026-08-10-201641) — mismo look que
    .levelcell/.levelselect, reusado tal cual (el <select> ya tiene el
    estilo correcto, no hace falta una clase nueva para eso). */
-.agentassigncell { display: flex; align-items: center; gap: 8px; }
+.agentassigncell { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .agentassignresult { font-size: 11px; color: var(--dim); }
 
-.rulescell { display: inline-flex; align-items: center; }
-/* max-width subido de 150px a 220px en T80 — con la tabla más ancha (--maxw)
-   el corte a media palabra que el boss reportó ya no hacía falta tan pronto;
-   sigue habiendo ellipsis para reglas largas, pero se lee como una elección,
-   no como un defecto. */
+.rulescell { display: flex; align-items: center; min-width: 0; }
+.rulescell .smbtn { flex: none; }
+/* T188: la vista previa de las reglas hace wrap y se corta a DOS líneas con
+   "…" (el texto completo va en el title) en vez de ir en una sola línea que
+   el marco de la ventana recortaba a media frase, con el lápiz fuera de
+   alcance (evidencia del boss). 220px es el techo (en el encabezado de grupo,
+   cuyo contenedor no se achica); en una columna más angosta se achica. */
 .rulespreview {
-  font-size: 11px; color: var(--dim); max-width: 220px; white-space: nowrap; overflow: hidden;
-  text-overflow: ellipsis; display: inline-block; vertical-align: middle;
+  font-size: 11px; color: var(--dim); max-width: 220px; min-width: 0;
+  overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
 }
 .dash { color: var(--dim); }
 #more { color: var(--dim); font-size: 12px; margin: 10px 2px 0; }
@@ -886,19 +912,16 @@ td.list-sub::before { content: none; } /* sin data-label — no heredar el ::bef
 .agentsearch-result:last-child { border-bottom: none; }
 .agentsearch-result:hover { background: var(--tint); }
 
-/* Punto de corte subido de 640 a 900 en T80 (boss: "está muy angosto") —
-   la tabla de Conversaciones tiene 4 columnas reales (avatar+nombre+preview,
-   nivel+aprobador, agente, reglas+editar) y entre 640 y 900 es donde peor se
-   veía: ni el modo tarjeta la agarraba ni --maxw le daba aire. El modo
-   tarjeta en sí (de acá para abajo) no se tocó — ya resolvía el teléfono. */
-@media (max-width: 900px) {
+/* Punto de corte de la tabla a tarjetas: subido de 640 a 900 en T80 (boss:
+   "está muy angosto") y de 900 a 1100 en T188. La tabla tiene 4 columnas
+   reales (avatar+nombre+preview, nivel+aprobador, agente, reglas+editar) y,
+   con la barra lateral de 228px de T172b, a 1024px de ventana sólo quedan
+   ~700px para ella; con layout fijo necesita ~780 (medido), o sale la columna
+   Reglas por el borde. El modo tarjeta en sí no se tocó. */
+@media (max-width: 1100px) {
   thead { display: none; }
   table, tbody, tr, td { display: block; width: 100%; min-width: 0; }
   tr { border-bottom: 1px solid var(--border); padding: 8px 10px; }
-  /* thead está oculto acá — el header de sección ya no tiene que dejarle
-     lugar arriba (ver td.list-sub más arriba, top:40px pensado para
-     convivir con el thead sticky de escritorio). */
-  td.list-sub { top: 0; }
   /* Etiqueta arriba, valor abajo — no label-izq/valor-der: varias columnas
      reales llevan grupos de botones o texto multilínea, no un valor corto. */
   td {
@@ -911,7 +934,9 @@ td.list-sub::before { content: none; } /* sin data-label — no heredar el ::bef
   td::before {
     content: attr(data-label); color: var(--dim); font-size: 12px;
   }
-  .rulespreview { max-width: none; white-space: normal; }
+  .rulespreview { max-width: none; }
+}
+@media (max-width: 900px) {
   .groupheader { flex-wrap: wrap; }
   .draftrow { flex-wrap: wrap; }
 }

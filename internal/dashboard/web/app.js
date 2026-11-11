@@ -2274,6 +2274,8 @@
         ? t("rules.no_own_applies_prefix") + sourceLabel
         : t("rules.none_at_any_level");
     }
+    // title (T188): la vista previa se corta a dos líneas — las reglas completas, al pasar el cursor.
+    preview.title = preview.textContent;
     var editBtn = document.createElement("button");
     editBtn.className = "smbtn";
     editBtn.style.marginLeft = "6px";
@@ -2307,6 +2309,8 @@
     var nameDiv = document.createElement("div");
     nameDiv.className = "cname";
     nameDiv.textContent = displayName;
+    // title (T188): el nombre largo se recorta con "…" — el completo, al pasar el cursor.
+    nameDiv.title = displayName;
     var hbadge = historyBadge(c);
     if (hbadge) nameDiv.appendChild(hbadge);
     textWrap.appendChild(nameDiv);
@@ -2324,6 +2328,7 @@
       var previewDiv = document.createElement("div");
       previewDiv.className = "cpreview";
       previewDiv.textContent = c.last_text;
+      previewDiv.title = c.last_text;
       textWrap.appendChild(previewDiv);
     }
     var subDiv = document.createElement("div");
