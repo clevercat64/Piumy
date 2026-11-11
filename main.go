@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mark3labs/mcp-go/server"
 	"github.com/mdp/qrterminal/v3"
 
 	"piumy-gateway/internal/agentconnect"
@@ -270,6 +269,7 @@ func main() {
 	if err := agentconnect.Write(agentconnect.Params{
 		DataDir: filepath.Dir(cfg.StatusPath),
 		MCPAddr: mcpAddr, RESTAddr: restAddr,
+		OperatorPath: mcpserver.PathOperator, ManagerPath: mcpserver.PathManager,
 		MCPKey: cfg.MCPKey, RESTKey: cfg.RESTKey,
 	}); err != nil {
 		log.Printf("agentconnect: write agent-connect.json: %v", err)
@@ -573,7 +573,7 @@ func main() {
 		BlockThreshold: cfg.MCPGuardBlockThreshold,
 		BlockCooldown:  cfg.MCPGuardBlockCooldown,
 	})
-	mcpSrv := mcpserver.New(ctx, mcpserver.Deps{
+	mcpSet := mcpserver.NewSet(ctx, mcpserver.Deps{
 		Store: s, State: sm, Router: rt,
 		ReadMarker: ctrl,
 		// MediaDir (T122): same directory the adapter downloads inbound
@@ -616,6 +616,19 @@ func main() {
 		// MCP (e.g. "aprobá los pendientes") — same bus corepipeline
 		// publishes "message"/etc. on.
 		Bus: bus,
+		// T178: what get_config/set_config/gateway_action need, wired from the
+		// same sources the dashboard already uses so both surfaces agree.
+		// ConfigFileDir is where set_config writes default_terminal_id (it is
+		// only read at startup); the rate limits are what the governor above
+		// actually runs with.
+		ConfigFileDir:       config.FileDir(),
+		RateLimitPerMin:     cfg.RateLimitPerMin,
+		RateLimitPerDay:     cfg.RateLimitPerDay,
+		AutoUpdateDefault:   cfg.AutoUpdate,
+		DriftReportsDefault: cfg.DriftReports,
+		Disconnecter:        gw,
+		Reconnecter:         gw,
+		Resetter:            gw,
 	})
 
 	// ponytail: internal/autoreply + internal/bridge quedan sin cablear acá
@@ -677,10 +690,7 @@ func main() {
 		go func(r func(context.Context)) { defer bg.Done(); r(ctx) }(run)
 	}
 
-	mcpTransport := server.NewStreamableHTTPServer(mcpSrv,
-		server.WithHTTPContextFunc(mcpserver.ExtractTerminalID),
-		server.WithEndpointPath("/mcp"))
-	mcpHTTP := &http.Server{Handler: mcpserver.RequireBearerToken(cfg.MCPKey, mcpTransport)}
+	mcpHTTP := &http.Server{Handler: mcpserver.Handler(mcpSet, cfg.MCPKey)}
 	restHTTP := &http.Server{Handler: restapi.NewMux(restapi.Deps{
 		Bus: bus, Store: s, Governor: gov, State: sm, Router: rt, APIKey: cfg.RESTKey, Connector: cleverInj, Backup: bk,
 		// MediaFetcher: on-demand media FIFO backfill (ct-2026-07-21-1358) —

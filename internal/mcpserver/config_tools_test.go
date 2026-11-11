@@ -3,11 +3,17 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mark3labs/mcp-go/server"
 
+	"piumy-gateway/internal/config"
+	"piumy-gateway/internal/router"
+	"piumy-gateway/internal/state"
 	"piumy-gateway/internal/store"
 )
 
@@ -241,5 +247,185 @@ func TestConfigToolsLiveOnTheManagerProfileOnly(t *testing.T) {
 		if _, ok := set.Operator.ListTools()[tool]; ok {
 			t.Errorf("operator has %s, it must not", tool)
 		}
+	}
+}
+
+// configServer builds a manager server over a real router.json in a temp dir;
+// mutate may add Deps (the config dir, the principal) before it is built.
+func configServer(t *testing.T, mutate func(*Deps)) (srv *server.MCPServer, ctx context.Context, routerPath string) {
+	t.Helper()
+	dir := t.TempDir()
+	st, err := store.Open(filepath.Join(dir, "piumy.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	routerPath = filepath.Join(dir, "router.json")
+	if err := os.WriteFile(routerPath, []byte(`{"default_mode":"dedicated"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d := Deps{Store: st, State: state.NewManager(filepath.Join(dir, "status.json"), 8), Router: router.NewManager(routerPath), AgentIdle: time.Minute}
+	if mutate != nil {
+		mutate(&d)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	return NewSet(ctx, d).Manager, ctx, routerPath
+}
+
+func TestRouterDefaultMode(t *testing.T) {
+	srv, ctx, path := configServer(t, nil)
+	if text, isErr := configCall(t, ctx, srv, "set_config", map[string]any{"key": "router.default_mode", "value": "auto"}); isErr {
+		t.Fatalf("set router.default_mode: %s", text)
+	}
+	if got := router.Load(path).DefaultMode; got != "auto" {
+		t.Errorf("router.json default_mode = %q, want auto (it must persist, not just apply)", got)
+	}
+	text, isErr := configCall(t, ctx, srv, "set_config", map[string]any{"key": "router.default_mode", "value": "maybe"})
+	if !isErr || !strings.Contains(text, "auto or dedicated") {
+		t.Errorf("bad mode = %s (error=%v)", text, isErr)
+	}
+}
+
+func TestRouterRoutes(t *testing.T) {
+	srv, ctx, path := configServer(t, nil)
+	jid := "555000001@s.whatsapp.net"
+	set := func(match, body string) (string, bool) {
+		return configCall(t, ctx, srv, "set_config", map[string]any{"key": routeKeyPrefix + match, "value": body})
+	}
+
+	if text, isErr := set("*", `{"mode":"auto"}`); isErr {
+		t.Fatalf("catch-all route: %s", text)
+	}
+	if text, isErr := set(jid, `{"mode":"dedicated","vip":true,"terminal_id":"term-x"}`); isErr {
+		t.Fatalf("route for a JID: %s", text)
+	}
+	rt := router.NewManager(path) // a fresh read: what got persisted, not what is in memory
+	if d := rt.Resolve(jid); d.Mode != "dedicated" || d.TerminalID != "term-x" || !rt.IsVIP(jid) {
+		t.Errorf("Resolve(%s) = %+v vip=%v, want the exact route to win over \"*\"", jid, d, rt.IsVIP(jid))
+	}
+
+	routes := configEntries(t, ctx, srv, map[string]any{"prefix": routeKeyPrefix})
+	if len(routes) != 2 || routes[routeKeyPrefix+jid].Value == "" {
+		t.Errorf("get_config lists %v, want the 2 routes just set", routes)
+	}
+
+	// Setting an existing match replaces it; it must not append a duplicate.
+	set(jid, `{"mode":"auto"}`)
+	if n := len(router.NewManager(path).Snapshot().Routes); n != 2 {
+		t.Errorf("%d routes after replacing one, want 2", n)
+	}
+
+	// "" removes it.
+	set(jid, "")
+	if n := len(router.NewManager(path).Snapshot().Routes); n != 1 {
+		t.Errorf("%d routes after removing one, want 1", n)
+	}
+}
+
+func TestRouterRouteRejectsBadBodies(t *testing.T) {
+	srv, ctx, _ := configServer(t, nil)
+	for _, c := range []struct{ body, want string }{
+		{`{"mode":"sometimes"}`, "auto or dedicated"},
+		{`{"modo":"auto"}`, "not a route"}, // a typo'd field must not be silently dropped
+		{`no es json`, "not a route"},
+	} {
+		text, isErr := configCall(t, ctx, srv, "set_config", map[string]any{"key": routeKeyPrefix + "*", "value": c.body})
+		if !isErr || !strings.Contains(text, c.want) {
+			t.Errorf("body %s = %s (error=%v), want an error containing %q", c.body, text, isErr, c.want)
+		}
+	}
+	if text, isErr := configCall(t, ctx, srv, "set_config", map[string]any{"key": routeKeyPrefix, "value": `{"mode":"auto"}`}); !isErr || !strings.Contains(text, "needs a match") {
+		t.Errorf("a route with no match = %s (error=%v)", text, isErr)
+	}
+}
+
+func TestDefaultTerminalIDIsWrittenToTheConfigFileAndAppliesOnRestart(t *testing.T) {
+	t.Setenv(defaultTerminalEnv, "")
+	dir := t.TempDir()
+	srv, ctx, _ := configServer(t, func(d *Deps) { d.ConfigFileDir = dir; d.PrincipalTerminalID = "term-viejo" })
+
+	text, isErr := configCall(t, ctx, srv, "set_config", map[string]any{"key": "default_terminal_id", "value": "term-nuevo"})
+	if isErr || !strings.Contains(text, `"applied": "restart"`) {
+		t.Fatalf("set default_terminal_id = %s (error=%v), want applied=restart", text, isErr)
+	}
+	if got := config.FileValue(dir, defaultTerminalEnv); got != "term-nuevo" {
+		t.Errorf("piumy-config.json holds %q, want term-nuevo", got)
+	}
+	got := configEntries(t, ctx, srv, map[string]any{"prefix": "default_terminal_id"})["default_terminal_id"]
+	if got.Value != "term-nuevo" || !strings.Contains(got.Source, "pending restart") {
+		t.Errorf("get_config = %+v, want the new value flagged as pending a restart", got)
+	}
+
+	if text, isErr := configCall(t, ctx, srv, "set_config", map[string]any{"key": "default_terminal_id", "value": ""}); isErr {
+		t.Fatalf("clearing it: %s", text)
+	}
+	if got := config.FileValue(dir, defaultTerminalEnv); got != "" {
+		t.Errorf("\"\" left %q in the file", got)
+	}
+}
+
+func TestDefaultTerminalIDWarnsWhenTheEnvironmentWins(t *testing.T) {
+	dir := t.TempDir()
+	srv, ctx, _ := configServer(t, func(d *Deps) { d.ConfigFileDir = dir })
+
+	t.Setenv(defaultTerminalEnv, "desde-el-entorno")
+	text, _ := configCall(t, ctx, srv, "set_config", map[string]any{"key": "default_terminal_id", "value": "otro"})
+	if !strings.Contains(text, "environment") {
+		t.Errorf("a real environment variable overrides the file, the response must say so: %s", text)
+	}
+
+	// The value startup copied FROM the file into the environment is not "the
+	// environment winning" — warning about it would be noise on every change.
+	if err := config.SetFileValue(dir, defaultTerminalEnv, "del-archivo"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(defaultTerminalEnv, "del-archivo")
+	text, _ = configCall(t, ctx, srv, "set_config", map[string]any{"key": "default_terminal_id", "value": "nuevo"})
+	if strings.Contains(text, "environment") {
+		t.Errorf("warned although the environment value came from the file itself: %s", text)
+	}
+}
+
+func TestDefaultTerminalIDWithoutAConfigDirRefusesClearly(t *testing.T) {
+	srv, ctx, _ := configServer(t, nil)
+	text, isErr := configCall(t, ctx, srv, "set_config", map[string]any{"key": "default_terminal_id", "value": "x"})
+	if !isErr || !strings.Contains(text, "not reachable") {
+		t.Errorf("no config dir = %s (error=%v), want a clear refusal", text, isErr)
+	}
+}
+
+// The anti-ban limits an agent asks about are the real ones the governor runs
+// with, shown read-only and labelled as coming from the environment.
+func TestRateLimitsShowTheRealNumbersAndStayReadOnly(t *testing.T) {
+	srv, ctx, _ := configServer(t, func(d *Deps) { d.RateLimitPerMin, d.RateLimitPerDay = 7, 70 })
+	got := configEntries(t, ctx, srv, map[string]any{"prefix": "rate_limit"})
+	if e := got["rate_limit_per_min"]; e.Value != "7" || e.Source != "env" || e.Writable {
+		t.Errorf("rate_limit_per_min = %+v, want 7 from env, read-only", e)
+	}
+	if e := got["rate_limit_per_day"]; e.Value != "70" || e.Source != "env" || e.Writable {
+		t.Errorf("rate_limit_per_day = %+v, want 70 from env, read-only", e)
+	}
+	text, isErr := configCall(t, ctx, srv, "set_config", map[string]any{"key": "rate_limit_per_min", "value": "100000"})
+	if !isErr || !strings.Contains(text, antiBanNote) {
+		t.Errorf("raising the send limit = %s (error=%v), want the anti-ban refusal", text, isErr)
+	}
+}
+
+func TestAutoUpdateShowsItsDefaultUntilTouched(t *testing.T) {
+	var st *store.Store
+	srv, ctx, _ := configServer(t, func(d *Deps) { st, d.AutoUpdateDefault = d.Store, true })
+	if e := configEntries(t, ctx, srv, map[string]any{"prefix": "auto_update"})["auto_update"]; e.Value != "true" || e.Source != "default" {
+		t.Errorf("untouched auto_update = %+v, want true from the default", e)
+	}
+	if text, isErr := configCall(t, ctx, srv, "set_config", map[string]any{"key": "auto_update", "value": "false"}); isErr {
+		t.Fatalf("set auto_update: %s", text)
+	}
+	if e := configEntries(t, ctx, srv, map[string]any{"prefix": "auto_update"})["auto_update"]; e.Value != "false" || e.Source != "kv" {
+		t.Errorf("auto_update after set = %+v, want false from kv", e)
+	}
+	// The updater reads the same setting on every look.
+	if st.SettingBool(store.SettingAutoUpdate, true) {
+		t.Error("the stored choice must win over the default the updater falls back to")
 	}
 }

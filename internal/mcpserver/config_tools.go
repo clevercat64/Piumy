@@ -6,7 +6,10 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,7 +18,9 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"piumy-gateway/internal/config"
 	"piumy-gateway/internal/i18n"
+	"piumy-gateway/internal/router"
 	"piumy-gateway/internal/store"
 )
 
@@ -31,8 +36,14 @@ type configKey struct {
 	enum     []string
 	note     string
 	readOnly bool
-	get      func(d Deps) (value, source string, err error)
-	set      func(d Deps, v string) error
+	// applies is "" for a change that takes effect at once, "restart" for one
+	// that is only read at startup.
+	applies string
+	// preflight, when set, runs before set and may return a warning to show
+	// next to the result.
+	preflight func(d Deps, v string) string
+	get       func(d Deps) (value, source string, err error)
+	set       func(d Deps, v string) error
 }
 
 func kvGet(d Deps, setting string) (string, string, error) {
@@ -41,6 +52,42 @@ func kvGet(d Deps, setting string) (string, string, error) {
 		return "", "default", err
 	}
 	return v, "kv", err
+}
+
+// boolKey is an on/off switch stored as KV; until it is touched it shows what
+// the install defaults to.
+func boolKey(name, desc, setting string, defaultOf func(Deps) bool) configKey {
+	return configKey{
+		name: name, typ: "bool", desc: desc,
+		get: func(d Deps) (string, string, error) {
+			raw, _, err := kvGet(d, setting)
+			if raw == "" || err != nil {
+				return strconv.FormatBool(defaultOf(d)), "default", err
+			}
+			return strconv.FormatBool(raw == "1" || raw == "true"), "kv", nil
+		},
+		set: func(d Deps, v string) error {
+			on, err := strconv.ParseBool(v)
+			if err != nil {
+				return fmt.Errorf("must be true or false, got %q", v)
+			}
+			return d.Store.SetSettingBool(setting, on)
+		},
+	}
+}
+
+// envLimitKey is a send cap Piumy starts with from its environment: shown so
+// an agent can answer "what is my limit", never changed from here.
+func envLimitKey(name, desc string, pick func(Deps) int) configKey {
+	return configKey{
+		name: name, typ: "int", desc: desc, readOnly: true, note: antiBanNote,
+		get: func(d Deps) (string, string, error) {
+			if n := pick(d); n > 0 {
+				return strconv.Itoa(n), "env", nil
+			}
+			return "", "default", nil
+		},
+	}
 }
 
 func textKey(name, desc, setting string) configKey {
@@ -123,6 +170,147 @@ func debounceKey(name, desc, setting, other string, isCeiling bool) configKey {
 	}
 }
 
+const defaultTerminalEnv = "PIUMY_DEFAULT_TERMINAL_ID"
+
+// defaultTerminalKey is the principal agent's terminal id. It is read once at
+// startup and copied into the gate, the level middleware and capipush, so it
+// cannot change live: the writer is piumy-config.json, which the next startup
+// reads (config.ApplyFileDefaults) — unless the environment sets it, which wins.
+func defaultTerminalKey() configKey {
+	return configKey{
+		name: "default_terminal_id", typ: "text", applies: "restart",
+		desc: "Terminal id of the principal agent — it receives the chats no other agent was assigned and works without a dispatch. Read once at startup: a change applies after Piumy restarts",
+		get: func(d Deps) (string, string, error) {
+			running := d.PrincipalTerminalID
+			if d.ConfigFileDir == "" {
+				if running == "" {
+					return "", "default", nil
+				}
+				return running, "env", nil
+			}
+			file := config.FileValue(d.ConfigFileDir, defaultTerminalEnv)
+			switch {
+			case file != "" && file != running:
+				return file, "file (pending restart)", nil
+			case running == "":
+				return "", "default", nil
+			case file == running:
+				return running, "file", nil
+			}
+			return running, "env", nil
+		},
+		preflight: func(d Deps, v string) string {
+			if d.ConfigFileDir == "" {
+				return ""
+			}
+			// The file's own value was copied into the environment at startup, so
+			// an environment value that differs from it came from outside.
+			if env := os.Getenv(defaultTerminalEnv); env != "" && env != config.FileValue(d.ConfigFileDir, defaultTerminalEnv) {
+				return fmt.Sprintf("the environment sets %s=%q and wins over piumy-config.json until that variable is removed", defaultTerminalEnv, env)
+			}
+			return ""
+		},
+		set: func(d Deps, v string) error {
+			if d.ConfigFileDir == "" {
+				return errors.New("piumy-config.json is not reachable from here (no config directory wired)")
+			}
+			return config.SetFileValue(d.ConfigFileDir, defaultTerminalEnv, v)
+		},
+	}
+}
+
+var errNoRouter = errors.New("router not available")
+
+func routerDefaultModeKey() configKey {
+	return configKey{
+		name: "router.default_mode", typ: "enum", enum: []string{"auto", "dedicated"},
+		desc: "Mode a chat gets when no route says otherwise (router.json)",
+		get: func(d Deps) (string, string, error) {
+			if d.Router == nil {
+				return "", "", errNoRouter
+			}
+			return d.Router.Snapshot().DefaultMode, "file", nil
+		},
+		set: func(d Deps, v string) error {
+			if d.Router == nil {
+				return errNoRouter
+			}
+			if v != "auto" && v != "dedicated" {
+				return fmt.Errorf("must be auto or dedicated, got %q", v)
+			}
+			return d.Router.Update(func(c *router.Config) { c.DefaultMode = v })
+		},
+	}
+}
+
+const routeKeyPrefix = "router.route:"
+
+// routeBody is a route minus its match, which is the key's own name.
+type routeBody struct {
+	Mode       string `json:"mode,omitempty"`
+	Plugin     string `json:"plugin,omitempty"`
+	Model      string `json:"model,omitempty"`
+	VIP        bool   `json:"vip,omitempty"`
+	TerminalID string `json:"terminal_id,omitempty"`
+}
+
+// routeKey is one entry of router.json's routes, addressed by its match (a JID
+// or "*"). Any match is valid to set: a route that doesn't exist yet is created.
+func routeKey(match string) configKey {
+	return configKey{
+		name: routeKeyPrefix + match, typ: "json",
+		desc: "Route for " + strconv.Quote(match) + " in router.json (a JID, or \"*\" for every chat): JSON {\"mode\":\"auto|dedicated\",\"plugin\":\"\",\"model\":\"\",\"vip\":false,\"terminal_id\":\"\"}; \"\" removes it",
+		get: func(d Deps) (string, string, error) {
+			if d.Router == nil {
+				return "", "", errNoRouter
+			}
+			for _, r := range d.Router.Snapshot().Routes {
+				if r.Match == match {
+					b, err := json.Marshal(routeBody{r.Mode, r.Plugin, r.Model, r.VIP, r.TerminalID})
+					return string(b), "file", err
+				}
+			}
+			return "", "default", nil
+		},
+		set: func(d Deps, v string) error {
+			if d.Router == nil {
+				return errNoRouter
+			}
+			if match == "" {
+				return errors.New(`a route needs a match: a JID, or "*"`)
+			}
+			var route *router.Route
+			if v != "" {
+				dec := json.NewDecoder(strings.NewReader(v))
+				dec.DisallowUnknownFields()
+				var b routeBody
+				if err := dec.Decode(&b); err != nil {
+					return fmt.Errorf("not a route: %v", err)
+				}
+				if b.Mode != "" && b.Mode != "auto" && b.Mode != "dedicated" {
+					return fmt.Errorf("mode must be auto or dedicated, got %q", b.Mode)
+				}
+				route = &router.Route{Match: match, Mode: b.Mode, Plugin: b.Plugin, Model: b.Model, VIP: b.VIP, TerminalID: b.TerminalID}
+			}
+			// A fresh slice every time: Snapshot hands out the live one.
+			return d.Router.Update(func(c *router.Config) {
+				routes := make([]router.Route, 0, len(c.Routes)+1)
+				for _, r := range c.Routes {
+					if r.Match != match {
+						routes = append(routes, r)
+					} else if route != nil {
+						routes, route = append(routes, *route), nil
+					}
+				}
+				if route != nil {
+					routes = append(routes, *route)
+				}
+				c.Routes = routes
+			})
+		},
+	}
+}
+
 // configKeys is the whole adjustable surface.
 func configKeys() []configKey {
 	return []configKey{
@@ -142,23 +330,8 @@ func configKeys() []configKey {
 		agentDefaultKey("agent_default_boss", "Agent that attends the owner's chat", store.SettingAgentDefaultBoss),
 		debounceKey("dispatch_debounce_sec", "Seconds of silence in a chat before its burst of messages is handed to the agent", store.SettingCapipushDispatchDebounce, store.SettingCapipushMaxDispatchDebounce, false),
 		debounceKey("max_dispatch_debounce_sec", "Ceiling in seconds: a burst goes out by then even if the chat stays active", store.SettingCapipushMaxDispatchDebounce, store.SettingCapipushDispatchDebounce, true),
-		{
-			name: "drift_reports", typ: "bool", desc: "Whether Piumy may send the maintainers a short anonymous note when its picture of the world differs from reality",
-			get: func(d Deps) (string, string, error) {
-				raw, _, err := kvGet(d, store.SettingDriftReports)
-				if raw == "" || err != nil {
-					return "", "default", err
-				}
-				return strconv.FormatBool(raw == "1" || raw == "true"), "kv", nil
-			},
-			set: func(d Deps, v string) error {
-				on, err := strconv.ParseBool(v)
-				if err != nil {
-					return fmt.Errorf("must be true or false, got %q", v)
-				}
-				return d.Store.SetSettingBool(store.SettingDriftReports, on)
-			},
-		},
+		boolKey("drift_reports", "Whether Piumy may send the maintainers a short anonymous note when its picture of the world differs from reality", store.SettingDriftReports, func(d Deps) bool { return d.DriftReportsDefault }),
+		boolKey("auto_update", "Whether Piumy may download and install a newer release by itself, when nothing is in flight", store.SettingAutoUpdate, func(d Deps) bool { return d.AutoUpdateDefault }),
 		{
 			name: "language", typ: "text", desc: "Language of the dashboard, tray and notices (\"\" = follow the OS)", note: "the tray menu picks a change up on the next restart",
 			get: func(d Deps) (string, string, error) { return kvGet(d, store.SettingLanguage) },
@@ -179,6 +352,10 @@ func configKeys() []configKey {
 				return d.Store.KVSet(store.SettingDashRecoveryEmail, v)
 			},
 		},
+		defaultTerminalKey(),
+		routerDefaultModeKey(),
+		envLimitKey("rate_limit_per_min", "Messages Piumy may send per minute — the anti-ban governor's cap", func(d Deps) int { return d.RateLimitPerMin }),
+		envLimitKey("rate_limit_per_day", "Messages Piumy may send per day — the anti-ban governor's cap", func(d Deps) int { return d.RateLimitPerDay }),
 		antiBanKey("delay_dispatch_min", "duration", "Shortest random wait before the agent's reply is dispatched", store.SettingDispatchDelayMin),
 		antiBanKey("delay_dispatch_max", "duration", "Longest random wait before the agent's reply is dispatched", store.SettingDispatchDelayMax),
 		antiBanKey("delay_read_min", "duration", "Shortest random wait before an inbound message is marked read", store.SettingReadDelayMin),
@@ -191,11 +368,25 @@ func configKeys() []configKey {
 	}
 }
 
+// allConfigKeys is the table plus one key per route router.json has today.
+func allConfigKeys(d Deps) []configKey {
+	keys := configKeys()
+	if d.Router != nil {
+		for _, r := range d.Router.Snapshot().Routes {
+			keys = append(keys, routeKey(r.Match))
+		}
+	}
+	return keys
+}
+
 func findConfigKey(name string) (configKey, bool) {
 	for _, k := range configKeys() {
 		if k.name == name {
 			return k, true
 		}
+	}
+	if match, ok := strings.CutPrefix(name, routeKeyPrefix); ok {
+		return routeKey(match), true
 	}
 	return configKey{}, false
 }
@@ -206,7 +397,7 @@ func configKeyNames() string {
 		names = append(names, k.name)
 	}
 	sort.Strings(names)
-	return strings.Join(names, ", ")
+	return strings.Join(names, ", ") + ", " + routeKeyPrefix + "<match>"
 }
 
 type configEntry struct {
@@ -228,7 +419,7 @@ func addConfigTools(s *server.MCPServer, d Deps, tracker *agentTracker) {
 			tracker.seen(ctx)
 			prefix := r.GetString("prefix", "")
 			entries := []configEntry{}
-			for _, k := range configKeys() {
+			for _, k := range allConfigKeys(d) {
 				if !strings.HasPrefix(k.name, prefix) {
 					continue
 				}
@@ -269,13 +460,23 @@ func addConfigTools(s *server.MCPServer, d Deps, tracker *agentTracker) {
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("%s: %v", k.name, err)), nil
 			}
+			note := k.note
+			if k.preflight != nil {
+				if warning := k.preflight(d, value); warning != "" {
+					note = warning
+				}
+			}
 			if err := k.set(d, value); err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("%s: %v", k.name, err)), nil
 			}
 			applied := "live"
-			if k.note != "" {
-				applied = "live — " + k.note
+			if k.applies != "" {
+				applied = k.applies
 			}
-			return jsonResult(map[string]string{"key": k.name, "old": old, "new": value, "applied": applied})
+			out := map[string]string{"key": k.name, "old": old, "new": value, "applied": applied}
+			if note != "" {
+				out["note"] = note
+			}
+			return jsonResult(out)
 		})
 }

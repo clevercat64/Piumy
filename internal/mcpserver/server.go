@@ -176,6 +176,28 @@ type Deps struct {
 	// verify, falls back to the old unconditional idle-clear (no
 	// regression for a deploy that never wires a Pusher, e.g. most tests).
 	PingAgent func(terminalID string) bool
+
+	// ConfigFileDir is where piumy-config.json lives (config.FileDir) — the
+	// writer set_config uses for settings that are only read at startup, such
+	// as default_terminal_id. Empty = those keys refuse with a clear error.
+	ConfigFileDir string
+
+	// RateLimitPerMin/Day are the send caps the anti-ban governor actually runs
+	// with (PIUMY_RATE_LIMIT_*), shown read-only by get_config so an agent that
+	// asks about its sending limit gets the real number. 0 = not wired.
+	RateLimitPerMin int
+	RateLimitPerDay int
+
+	// AutoUpdateDefault/DriftReportsDefault are what those two switches show
+	// until the owner touches them (the stored choice always wins).
+	AutoUpdateDefault   bool
+	DriftReportsDefault bool
+
+	// Disconnecter/Reconnecter/Resetter back gateway_action. Each is nil-safe:
+	// the action answers "not available" instead of panicking.
+	Disconnecter Disconnecter
+	Reconnecter  Reconnecter
+	Resetter     Resetter
 }
 
 // CAPIConnector is the reconfigurable cAPI injector set_capi_connector
@@ -1131,6 +1153,7 @@ func NewSet(ctx context.Context, d Deps) Set {
 	addMediaTools(s, d, tracker)
 	addAgentTools(s, d)
 	addConfigTools(s, d, tracker)
+	addGatewayActionTool(s, d, tracker)
 	// send_to_boss (T39, ct-2026-08-08-1619): DELIBERATELY not passed
 	// through levelGateMiddleware's gated-tool maps (bossOnlyTools/
 	// enumerationTools/chatScopedArg in levelgate.go) — same "no chat

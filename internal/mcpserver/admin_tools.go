@@ -369,7 +369,7 @@ func addAdminTools(s *server.MCPServer, d Deps, tracker *agentTracker) {
 		func(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			tracker.seen(ctx)
 			if d.PrincipalTerminalID == "" {
-				return mcp.NewToolResultError("no principal configured (PIUMY_DEFAULT_TERMINAL_ID unset)"), nil
+				return mcp.NewToolResultError("no principal configured (PIUMY_DEFAULT_TERMINAL_ID unset) — set default_terminal_id with set_config and restart Piumy"), nil
 			}
 			raw := r.GetString("connector_string", "")
 			name := r.GetString("name", "")
