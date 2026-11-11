@@ -8328,6 +8328,35 @@ plantados en el chat, la ruta y el error del inyector, la petición HTTP real
   código) y datos `555` de punta a punta. Se verificó con sabotaje que los
   tests pueden fallar (cada regla rota a propósito hizo caer al menos uno).
 
+## clientsfile — `internal/clientsfile`
+
+Rol: leer el `clients.json` de CleverCoder (T172c, `ct-2026-11-10-2254`;
+diagrama y contrato de respuesta en `docs/T172C-CLIENTS-BACKEND.md`): la foto
+de solo lectura de sus clientes (un cliente = un chat de grupo, palabra del
+boss) que muestra la pestaña Clientes. Piumy **nunca lo escribe**. Conoce el
+ARCHIVO y nada de Piumy: cruzar un cliente con un chat es del handler REST.
+
+- `Path() string` — dónde lo escribe CleverCoder en este PC:
+  `<CLEVERCODER_APPDATA_DIR o %LOCALAPPDATA%>\CleverCoderData\clientes\clients.json`
+  (la variable ocupa el lugar de `%LOCALAPPDATA%`, igual que en el
+  `AppDataPaths.LocalRoot` de CleverCoder). `""` si no hay dónde (Linux/macOS).
+  Se lee del entorno en cada llamada.
+- `Read(path, now) (Snapshot, error)` — abre, lee y **cierra enseguida**
+  (`os.ReadFile`): CleverCoder se salta su escritura si encuentra el archivo
+  tomado, así que nunca se retiene. `Snapshot{Status, GeneratedAt, Clients}`;
+  `Clients` es siempre una lista (nunca `nil`) y sus campos pasan **tal cual**
+  (los números con `UseNumber`, sin pasar por `float64`); no se interpreta
+  ninguno.
+- `Status`: `missing` (sin archivo, también si falta la carpeta),
+  `unknown_version` (`schema_version != 1`, incluido ausente: no se interpreta
+  nada más, y se mira ANTES de leer `clients`, cuya forma puede cambiar en una
+  versión futura), `stale` (`generated_at` de hace más de 2 min — CleverCoder lo
+  reescribe cada minuto —; trae igual los clientes de la última foto), `empty`
+  (foto fresca, 0 clientes), `ok`.
+- Un archivo que existe pero no se puede leer o no parsea es un **error**, no un
+  sexto estado: nunca sale como `missing` (diría «CleverCoder no está acá»).
+  Lo mismo un archivo «tomado» por otro proceso en Windows.
+
 ## i18n — `internal/i18n`
 
 Rol: el mecanismo de idioma de Piumy (T153, ct-2026-09-08-1656) —
@@ -10480,6 +10509,21 @@ del dueño desde la LAN, sin agente de por medio. Grupo/perfil NO están acá
   - `app.js`: botón "Ping 🏓" en cada `.agentcard` (`.agentcard-actions`),
     junto a las credenciales — llama `POST /api/admin/capi-ping {agent_id}`,
     mismo patrón que el ping del modal Antena.
+- **T172c (ct-2026-11-10-2254) — `GET /api/clients` (`clients.go`), el backend
+  de la pestaña Clientes.** Misma auth que el resto (`d.auth`); 503 sin Store.
+  Responde `{status, generated_at, clients}` con lo que lee `clientsfile.Read`
+  (los 5 estados y los campos del archivo, ver el nodo `clientsfile` y
+  `docs/T172C-CLIENTS-BACKEND.md`) y suma a cada cliente DOS campos propios:
+  `chat_jid` (el grupo de Piumy que es, `""` si Piumy no lo tiene o no es un
+  grupo) y `agent_id` (la asignación manual de ESE grupo,
+  `store.AgentExclusiveID`; `""` = sin asignación manual, el despacho cae a la
+  ruta, al agente por defecto de grupos o al principal). **El cruce no es
+  `key == JID` a secas:** `capipush.envelopeFrom` escribe en el `de:` la PARTE DE
+  USUARIO del JID (`jidNumber`) y CleverCoder clave al cliente por eso, así que
+  `key` llega como `<dígitos>`; `groupOfClient` acepta eso (→ `<dígitos>@g.us`)
+  o un JID completo. Cambiar el agente del grupo NO tiene endpoint nuevo: es
+  `POST /api/admin/agent-assign` (abajo, M3) con `chat_id = chat_jid`; la UI
+  solo lo ofrece si `chat_jid != ""`. Archivo ilegible o corrupto: 500.
 - **M3 (ct-2026-07-22-1301) — asignación manual de números:**
   - `GET /api/agents/chats?agent_id=<id>` (`read.go`) — envuelve
     `store.ChatsForAgent` (ya wireado en M1) en un DTO liviano
