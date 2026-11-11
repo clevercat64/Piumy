@@ -1381,6 +1381,19 @@ func (p *Pusher) dispatch(chatJID, sender string, burst []store.Message) error {
 			p.recordChannelRecovered(terminalID)
 			return p.answerPausedClient(chatJID, sender, burst, paused)
 		}
+		// T179 (ct-2026-11-10-2336): the answer's seal is wrong. The message
+		// WAS sent and nobody knows whether it entered, so the generic retry
+		// below (every 5 s sweep, unbounded) would re-send it blind and the
+		// agent could answer twice. The injector already parked itself
+		// (markDead), so later sweeps skip it through the "sin antena" path;
+		// the burst stays in PendingDedicated, like terminal_gone below, until
+		// the owner re-saves the destination. Nothing from the answer is
+		// believed — a forged "paused" included: no notice reaches the chat.
+		if errors.Is(err, errResponseTampered) {
+			log.Printf("capipush: terminal %s: %v — NO se sabe si el despacho del chat %s llegó; no se reintenta y el destino queda detenido hasta que el dueño vuelva a guardar sus credenciales (el chat queda en PendingDedicated)", terminalID, err, chatJID)
+			p.gate.CancelDispatch(nonce, terminalID)
+			return nil
+		}
 		// T32 (ct-2026-08-06-1109): terminal_gone is the one PERMANENT
 		// handshake failure (protocol §2, ct-2026-08-06-0221) — the injector
 		// already discarded its own credential (CleverInjector.markDead), so

@@ -80,7 +80,7 @@ func TestCleverInjector_HandshakeEncryptPost(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	inj := NewCleverInjector(srv.URL, terminalID, pinpass)
+	inj := NewCleverInjector(srv.URL, terminalID, pinpass, nil)
 	const opaquePayload = "opaque-dispatch-payload"
 	const from = "55500000044, boss"
 	if err := inj.Inject("some-piumy-routing-terminal-id", from, opaquePayload); err != nil {
@@ -108,7 +108,7 @@ func TestCleverInjector_HandshakeEncryptPost(t *testing.T) {
 // live session so the next Inject re-handshakes with the new credentials
 // instead of carrying a stale token from the old config.
 func TestCleverInjector_SetConfigResetsSession(t *testing.T) {
-	inj := NewCleverInjector("http://old:8787", "old-term", "old-pin")
+	inj := NewCleverInjector("http://old:8787", "old-term", "old-pin", nil)
 	inj.token = "old-token"
 	inj.key = []byte("0123456789abcdef0123456789abcdef")
 
@@ -153,7 +153,7 @@ func TestCleverInjector_ReHandshakeOn401(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	inj := NewCleverInjector(srv.URL, terminalID, pinpass)
+	inj := NewCleverInjector(srv.URL, terminalID, pinpass, nil)
 	// Pre-seed a stale session, as if this injector handshook a while ago and
 	// the antenna no longer recognizes the token (antenna cycled, or the
 	// session simply expired) — the first /message attempt must 401.
@@ -196,7 +196,7 @@ func TestCleverInjector_TerminalGoneMarksDead(t *testing.T) {
 	srv := handshakeErrorServer(t, "terminal_gone")
 	defer srv.Close()
 
-	inj := NewCleverInjector(srv.URL, "some-old-guid", "pin")
+	inj := NewCleverInjector(srv.URL, "some-old-guid", "pin", nil)
 	inj.scanPorts = []int{} // T177: no loopback sweep — this test is about the final terminal_gone
 	if !inj.Configured() {
 		t.Fatal("setup: injector should start Configured (has an endpoint)")
@@ -247,7 +247,7 @@ func testHandshakeCodeStaysConfigured(t *testing.T, code string) {
 	srv := handshakeErrorServer(t, code)
 	defer srv.Close()
 
-	inj := NewCleverInjector(srv.URL, "some-id", "pin")
+	inj := NewCleverInjector(srv.URL, "some-id", "pin", nil)
 	err := inj.Inject("routing-id", "55500000045, boss", "payload")
 	if err == nil {
 		t.Fatal("Inject = nil error, want a handshake failure")
@@ -265,7 +265,7 @@ func testHandshakeCodeStaysConfigured(t *testing.T, code string) {
 // set_capi_connector/register_agent with new credentials) clears dead, same
 // as it already clears the stale token/key.
 func TestCleverInjector_SetConfigRevivesDeadCredential(t *testing.T) {
-	inj := NewCleverInjector("http://old:8787", "old-term", "old-pin")
+	inj := NewCleverInjector("http://old:8787", "old-term", "old-pin", nil)
 	inj.markDead()
 	if inj.Configured() {
 		t.Fatal("setup: injector should be dead (not Configured) before SetConfig")

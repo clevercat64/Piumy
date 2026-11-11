@@ -250,7 +250,7 @@ func TestCleverInjectorPausedResponseBecomesPausedError(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			err := NewCleverInjector(srv.URL, "term-555", "pin==").Inject("", "555001, Grupo, caution", "payload")
+			err := NewCleverInjector(srv.URL, "term-555", "pin==", nil).Inject("", "555001, Grupo, caution", "payload")
 
 			var paused *PausedError
 			if !errors.As(err, &paused) {

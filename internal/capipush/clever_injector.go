@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -51,12 +52,16 @@ type CleverInjector struct {
 
 	httpClient *http.Client
 
+	// seals remembers which antennas have already sealed their answers (T179,
+	// seal.go). Set once by the constructor; nil = no memory.
+	seals KV
+
 	token string
 	key   []byte
 
 	// dead is set once a handshake comes back terminal_gone (T32,
-	// ct-2026-08-06-1109) — see markDead/Configured. Only SetConfig, a fresh
-	// credential, clears it.
+	// ct-2026-08-06-1109) or an answer's seal is wrong (T179) — see
+	// markDead/Configured. Only SetConfig, a fresh credential, clears it.
 	dead bool
 
 	// scanPorts are the loopback ports relocate() sweeps for this terminal's
@@ -66,25 +71,29 @@ type CleverInjector struct {
 }
 
 // NewCleverInjector builds a ready-to-use injector; sessions start empty and
-// handshake lazily on the first Inject call.
-func NewCleverInjector(endpoint, terminalID, pinpass string) *CleverInjector {
+// handshake lazily on the first Inject call. seals is where "this antenna
+// already seals its answers" lives between restarts (T179); nil = none.
+func NewCleverInjector(endpoint, terminalID, pinpass string, seals KV) *CleverInjector {
 	return &CleverInjector{
 		Endpoint:   endpoint,
 		TerminalID: terminalID,
 		Pinpass:    pinpass,
+		seals:      seals,
 		httpClient: &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
 // SetConfig updates the antenna credentials and forces a re-handshake on the
 // next Inject call. Safe to call concurrently with Inject (dashboard HTTP
-// handler vs sweep goroutine).
+// handler vs sweep goroutine). Re-saving a destination also makes the injector
+// forget that it sealed (ForgetSeal, T179): the next valid seal teaches it again.
 func (c *CleverInjector) SetConfig(endpoint, terminalID, pinpass string) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.Endpoint, c.TerminalID, c.Pinpass = endpoint, terminalID, pinpass
 	c.token, c.key = "", nil
 	c.dead = false
+	c.mu.Unlock()
+	ForgetSeal(c.seals, terminalID)
 }
 
 // Configured reports whether this injector has real credentials wired yet
@@ -110,6 +119,9 @@ func (c *CleverInjector) Configured() bool {
 // dispatch() would have to know about — future sweeps skip this injector
 // quietly (the same "sin antena" path an unconfigured one takes), no
 // separate wiring needed. Only SetConfig (a fresh credential) clears it.
+// T179 parks a destination whose answer's seal is wrong the same way: a
+// channel nobody can vouch for gets no further message until its owner
+// re-saves it.
 func (c *CleverInjector) markDead() {
 	c.mu.Lock()
 	c.dead = true
@@ -202,7 +214,7 @@ func (c *CleverInjector) Inject(_ string, from, payload string) error {
 	if relocatable(err) && c.relocate() {
 		err = c.injectOnce(from, payload)
 	}
-	if errors.Is(err, errTerminalGone) {
+	if errors.Is(err, errTerminalGone) || errors.Is(err, errResponseTampered) {
 		c.markDead()
 	}
 	return err
@@ -218,7 +230,7 @@ func (c *CleverInjector) injectOnce(from, payload string) error {
 		}
 		c.updateSession(token, key)
 	}
-	err := c.postMessage(endpoint, token, key, from, payload)
+	err := c.postMessage(endpoint, terminalID, token, key, from, payload)
 	if !errors.Is(err, errUnauthorized) {
 		return err
 	}
@@ -229,7 +241,7 @@ func (c *CleverInjector) injectOnce(from, payload string) error {
 		return fmt.Errorf("clever_injector: re-handshake after 401: %w", err)
 	}
 	c.updateSession(token, key)
-	return c.postMessage(endpoint, token, key, from, payload)
+	return c.postMessage(endpoint, terminalID, token, key, from, payload)
 }
 
 // snapshot reads all mutable config fields under the lock, releasing before
@@ -324,7 +336,10 @@ type cleverHeader struct {
 // repeats in the body) render as the antenna's "app:"/"de:" lines;
 // SenderApp names the app+channel (fixed), From carries numero/nivel
 // (dynamic, computed by capipush per dispatch).
-func (c *CleverInjector) postMessage(endpoint, token string, key []byte, from, payload string) error {
+//
+// T179: the answer's seal is checked on the raw bytes before anything reads its
+// status or JSON, so a forged "paused" never gets to be believed.
+func (c *CleverInjector) postMessage(endpoint, terminalID, token string, key []byte, from, payload string) error {
 	envelope := cleverEnvelope{
 		Header: cleverHeader{
 			SentAt:    time.Now().UTC().Format(time.RFC3339),
@@ -353,9 +368,10 @@ func (c *CleverInjector) postMessage(endpoint, token string, key []byte, from, p
 	}
 	sealed := gcm.Seal(nil, nonce, plain, nil)
 
+	nonceB64 := base64.StdEncoding.EncodeToString(nonce)
 	reqBody, err := json.Marshal(map[string]string{
 		"token":      token,
-		"nonce":      base64.StdEncoding.EncodeToString(nonce),
+		"nonce":      nonceB64,
 		"ciphertext": base64.StdEncoding.EncodeToString(sealed),
 	})
 	if err != nil {
@@ -366,6 +382,13 @@ func (c *CleverInjector) postMessage(endpoint, token string, key []byte, from, p
 		return fmt.Errorf("clever_injector: message request: %w", err)
 	}
 	defer resp.Body.Close()
+	answer, err := io.ReadAll(io.LimitReader(resp.Body, maxAnswerBytes))
+	if err != nil {
+		return fmt.Errorf("clever_injector: message response: %w", err)
+	}
+	if err := c.checkSeal(terminalID, key, resp.StatusCode, nonceB64, answer, resp.Header.Get(sealHeader)); err != nil {
+		return err
+	}
 	if resp.StatusCode == http.StatusUnauthorized {
 		return errUnauthorized
 	}
@@ -386,7 +409,7 @@ func (c *CleverInjector) postMessage(endpoint, token string, key []byte, from, p
 		Text     string `json:"text"`
 		PayURL   string `json:"pay_url"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.Unmarshal(answer, &out); err != nil {
 		return fmt.Errorf("clever_injector: message response not ok: %w", err)
 	}
 	// T175: a paused client gets a 200 (a 404 would make us retry) with

@@ -7784,7 +7784,7 @@ propio que describen se sacó en T28, ver `docs/T28-DIAGRAMA-CAPI-SIN-CIFRADO.md
   `TestFileInjectorAppendsTabSeparatedLines` fija ese wire format
   (`terminalID\tpayload\n`) para el consumidor externo; agregar un campo
   correría lo que "split en el primer tab" lee.
-- `NewCleverInjector(endpoint, terminalID, pinpass) *CleverInjector`
+- `NewCleverInjector(endpoint, terminalID, pinpass string, seals KV) *CleverInjector`
   (ct-2026-07-10-2307) — el `Injector` REAL: habla la external-agent-api de
   CleverCoder (`C:\proyectos\Piumy\cAPI\external-agent-protocol.md` — ver
   la skill `capi-protocol` para el protocolo completo) contra un terminal
@@ -7824,6 +7824,22 @@ propio que describen se sacó en T28, ver `docs/T28-DIAGRAMA-CAPI-SIN-CIFRADO.md
     protocolo escrito: cualquier desajuste se lee como «no está aquí». El campo
     `scanPorts` (nil = rango de CleverCoder, `cleverPorts()`) es el seam de los
     tests. Ver `docs/T177-ANTENA-LOOPBACK.md`.
+  - Sello de la respuesta (T179, `seal.go` + `clever_injector.go`). CleverCoder sella
+    la respuesta de `/message` (cabecera `X-Capi-Seal: v1=<hex>`: HMAC sobre
+    estado·nonce·cuerpo exacto, con una llave derivada de la de la sesión).
+    `postMessage` lee el cuerpo crudo y `checkSeal` lo verifica ANTES de mirar
+    estado o JSON: un sello que no calza → `errResponseTampered`; sin sello, de una
+    antena que ya selló alguna vez → lo mismo, salvo `401` y `5xx` (CleverCoder los
+    manda sin sello por diseño). «Ya selló» es el KV
+    `capipush.seal_seen:<chat_id de la antena>` (`seals KV`, 4º parámetro de
+    `NewCleverInjector`; `nil` = sin memoria). `Inject` estaciona el injector
+    (`markDead`) y `dispatch` loguea, cancela el despacho, NO publica el aviso de
+    T175 y deja la ráfaga en `PendingDedicated`: no se reintenta a ciegas. Botones
+    exportados: `KV` (`KVGet`/`KVSet`, la misma interfaz que `autoupdate` y
+    `driftreport`) y `ForgetSeal(kv, terminalID)` — lo llaman `SetConfig`
+    (principal) y el `onAgentUpsert` de `main.go` (secundario) al re-guardar un
+    destino; el arranque no. Con pin el sello estrecha el hueco de T175 y no lo
+    cierra. Ver `docs/T179-SELLO-CAPI.md`.
 - `(*Pusher) RegisterInjector(agentID string, inj Injector)` (Multi-agente
   F1) — registra o reemplaza el `Injector` de un agente en el mapa interno
   (`injectors map[string]Injector`, protegido por `sync.RWMutex`). El

@@ -81,7 +81,7 @@ func deadEndpoint(t *testing.T) string {
 // Windows a closed loopback port hangs instead of refusing, and the default
 // 10 s would make every unreachable-endpoint test take that long.
 func quickInjector(endpoint, terminalID string, scanPorts []int) *CleverInjector {
-	inj := NewCleverInjector(endpoint, terminalID, "pin==")
+	inj := NewCleverInjector(endpoint, terminalID, "pin==", nil)
 	inj.httpClient.Timeout = 300 * time.Millisecond
 	inj.scanPorts = scanPorts
 	return inj

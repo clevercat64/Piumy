@@ -2509,7 +2509,7 @@ func newBootPusher(t *testing.T, endpoint, terminalID, pinpass string) (*store.S
 	}
 	rt := router.NewManager(routerPath)
 	gate := mcpserver.NewGate()
-	cleverInj := NewCleverInjector(endpoint, terminalID, pinpass)
+	cleverInj := NewCleverInjector(endpoint, terminalID, pinpass, st)
 	pusher := New(st, rt, gate, cleverInj, Config{PortFallback: "port-fallback"})
 	return st, cleverInj, pusher
 }

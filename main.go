@@ -361,7 +361,7 @@ func main() {
 		endpoint := kvOrEnv(s, store.SettingCAPIEndpoint, cfg.CleverAPIEndpoint)
 		terminalID := kvOrEnv(s, store.SettingCAPITerminalID, cfg.CleverAPITerminalID)
 		pinpass := kvOrEnv(s, store.SettingCAPIPinpass, cfg.CleverAPIPinpass)
-		cleverInj = capipush.NewCleverInjector(endpoint, terminalID, pinpass)
+		cleverInj = capipush.NewCleverInjector(endpoint, terminalID, pinpass, s)
 		injector = cleverInj
 		if endpoint != "" {
 			log.Printf("capipush: CleverInjector -> %s (terminal %s)", endpoint, terminalID)
@@ -426,7 +426,7 @@ func main() {
 		log.Printf("capipush: load secondary agents: %v", err)
 	} else {
 		for _, a := range agents {
-			inj := capipush.NewCleverInjector(a.Endpoint, a.AntennaTerminalID, a.Pinpass)
+			inj := capipush.NewCleverInjector(a.Endpoint, a.AntennaTerminalID, a.Pinpass, s)
 			pusher.RegisterInjector(a.AgentID, inj)
 			log.Printf("capipush: secondary agent registered %s -> %s", a.AgentID, a.Endpoint)
 		}
@@ -468,7 +468,11 @@ func main() {
 	// into the same store write + the same in-memory effect; the closure
 	// itself isn't duplicated.
 	onAgentUpsert := func(agentID, endpoint, terminalID, pinpass string) {
-		pusher.RegisterInjector(agentID, capipush.NewCleverInjector(endpoint, terminalID, pinpass))
+		// Re-saving a destination is its owner vouching for it again (T179): the
+		// seal it showed before is forgotten and the next valid one teaches Piumy
+		// anew. Boot builds its injectors above WITHOUT forgetting.
+		capipush.ForgetSeal(s, terminalID)
+		pusher.RegisterInjector(agentID, capipush.NewCleverInjector(endpoint, terminalID, pinpass, s))
 	}
 	onAgentDelete := func(agentID string) {
 		pusher.UnregisterInjector(agentID)
@@ -515,7 +519,7 @@ func main() {
 			log.Printf("send_to_boss: antenna endpoint rejected for %s: %q (%v)", termID, host, err)
 			return false
 		}
-		inj := capipush.NewCleverInjector(endpoint, antennaTerminalID, pinpass)
+		inj := capipush.NewCleverInjector(endpoint, antennaTerminalID, pinpass, s)
 		pingErr := capipush.PingWithTimeout(inj, capipush.SendToBossPingTimeout)
 		pusher.RegisterEphemeralInjector(termID, inj, capipush.EphemeralAgentTTL)
 		return pingErr == nil
