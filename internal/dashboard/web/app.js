@@ -3162,6 +3162,17 @@
       document.getElementById("config_debounce").value = "";
       document.getElementById("config_max_debounce").value = "";
     });
+    // T174a: estado real de los reportes de drift, leído del servidor cada
+    // vez que se abre Opciones — nunca se asume. Si la lectura falla, el
+    // interruptor queda APAGADO: mostrarlo encendido sin saberlo sería
+    // decirle al dueño que está mandando algo que quizá no manda.
+    document.getElementById("config_drift_result").textContent = "";
+    api("/api/admin/drift-reports").then(function (d) {
+      document.getElementById("config_drift_enabled").checked = !!d.enabled;
+      if (d.url) document.getElementById("config_drift_url").textContent = d.url;
+    }).catch(function () {
+      document.getElementById("config_drift_enabled").checked = false;
+    });
     // T153 etapa 1: elección manual guardada (vacío = "nunca elegido",
     // el backend autodetecta) — /api/i18n ya trae el crudo, sin endpoint
     // aparte que duplique effectiveLang.
@@ -3275,6 +3286,19 @@
     post("/api/admin/dispatch-debounce", {
       debounce_seconds: parseInt(document.getElementById("config_debounce").value, 10) || 0,
       max_debounce_seconds: parseInt(document.getElementById("config_max_debounce").value, 10) || 0,
+    }).then(function () {
+      result.textContent = t("action.saved");
+    }).catch(function (e) {
+      result.textContent = t("error.prefix") + e.message;
+    });
+  });
+  // T174a: encender o apagar los reportes de drift. Aplica en el acto del
+  // lado del servidor, sin reiniciar; acá sólo se manda la decisión y se
+  // dice si quedó guardada.
+  document.getElementById("config_drift_save").addEventListener("click", function () {
+    var result = document.getElementById("config_drift_result");
+    post("/api/admin/drift-reports", {
+      enabled: document.getElementById("config_drift_enabled").checked,
     }).then(function () {
       result.textContent = t("action.saved");
     }).catch(function (e) {

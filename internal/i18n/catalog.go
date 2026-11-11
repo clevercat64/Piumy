@@ -161,6 +161,22 @@ var esCatalog = map[string]string{
 	"modal.dispatch_wait_hint1":    "Cuánto espera el gateway, en silencio, antes de pasarle los mensajes al agente — así llegan agrupados en vez de uno por uno. 0 = despachar apenas llega cada mensaje.",
 	"label.wait_seconds":           "Espera (segundos)",
 	"modal.dispatch_wait_hint2":    "Si el chat no para de escribir, la espera de arriba se reinicia con cada mensaje — sin este límite, el agente podría no recibir nada nunca. Como mucho, esto es lo que espera desde el primer mensaje sin contestar antes de despachar igual.",
+
+	// Reportes de drift (T174a, ct-2026-11-10-210158; el tablero los muestra
+	// desde T172b tramo 4b). Cada frase de "qué sale" y "qué nunca sale"
+	// describe lo que el código de internal/driftreport ya hace cumplir —
+	// vocabularios cerrados, sin campo de texto libre. Si ese código cambia,
+	// estos textos cambian con él: son la divulgación que el dueño pidió ver
+	// junto al interruptor, no un texto de relleno.
+	"modal.drift_heading":     "Reportes de drift",
+	"modal.drift_intro":       "Cuando lo que Piumy cree difiere de lo que pasa de verdad —despachos retenidos porque nadie puede recibirlos, WhatsApp desconectado mucho rato, una antena que no responde— puede mandar un aviso corto a los desarrolladores. Es voluntario: viene apagado y solo sale si lo activas aquí.",
+	"modal.drift_sent_label":  "Qué sale",
+	"modal.drift_sent":        "El tipo de problema, cuántas veces ocurrió, cuánto duró, la versión de Piumy, el sistema operativo y la arquitectura, y un identificador aleatorio de esta instalación.",
+	"modal.drift_never_label": "Qué nunca sale",
+	"modal.drift_never":       "Ningún número de teléfono, nombre, contacto, mensaje ni chat, ni rutas de tu disco, ni claves. Esto está fijado en el código del programa: no depende de esta pantalla.",
+	"modal.drift_limits":      "Como máximo 3 al día, y uno de cada tipo cada 6 a 9 horas. Si el envío falla, se descarta.",
+	"modal.drift_destination": "Destino",
+	"modal.drift_switch":      "Enviar reportes de drift a los desarrolladores",
 	"label.ceiling_seconds":        "Techo (segundos)",
 	"label.language":               "Idioma",
 	"modal.language_hint":          `Idioma del tablero y de los avisos que manda Piumy. "Automático" usa el idioma del sistema operativo.`,
@@ -593,6 +609,16 @@ var enCatalog = map[string]string{
 	"modal.dispatch_wait_hint1":    "How long the gateway waits, silently, before passing messages to the agent — so they arrive grouped instead of one by one. 0 = dispatch as soon as each message arrives.",
 	"label.wait_seconds":           "Wait (seconds)",
 	"modal.dispatch_wait_hint2":    "If the chat keeps typing without stopping, the wait above resets with every new message — without this cap, the agent might never receive anything. At most, this is how long it waits from the first unanswered message before dispatching anyway.",
+
+	"modal.drift_heading":     "Drift reports",
+	"modal.drift_intro":       "When what Piumy believes differs from what is really happening — dispatches held because nobody can receive them, WhatsApp disconnected for a long while, an antenna that does not answer — it can send the developers a short note. It is voluntary: it ships switched off and only goes out if you turn it on here.",
+	"modal.drift_sent_label":  "What is sent",
+	"modal.drift_sent":        "The kind of problem, how many times it happened, how long it lasted, the Piumy version, the operating system and architecture, and a random identifier of this installation.",
+	"modal.drift_never_label": "What is never sent",
+	"modal.drift_never":       "No phone number, name, contact, message or chat, no paths on your disk, no keys. This is fixed in the program's code: it does not depend on this screen.",
+	"modal.drift_limits":      "At most 3 a day, and one of each kind every 6 to 9 hours. If sending fails, the report is dropped.",
+	"modal.drift_destination": "Destination",
+	"modal.drift_switch":      "Send drift reports to the developers",
 	"label.ceiling_seconds":        "Ceiling (seconds)",
 	"label.language":               "Language",
 	"modal.language_hint":          `Language for the dashboard and the notifications Piumy sends. "Automatic" uses the operating system's language.`,

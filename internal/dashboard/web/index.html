@@ -624,6 +624,33 @@
         <div class="field"><button class="btn pri block" type="button" id="config_debounce_save" data-i18n="action.save">Guardar</button></div>
         <p id="config_debounce_result" class="result"></p>
 
+        <!-- T174a (ct-2026-11-10-210158), pegado acá en T172b tramo 4b: los
+             reportes de drift son voluntarios y vienen APAGADOS. El
+             interruptor y el texto de qué sale / qué nunca sale van JUNTOS y
+             a la vista — es la divulgación que pidió el boss, no una nota
+             detrás de un enlace. El fragmento lo escribió Tourmaline en
+             docs/T174A-DRIFT-REPORT.md; acá sólo se adaptaron las clases al
+             tablero nuevo (el interruptor usa .switch-row, el mismo patrón
+             de renglón con el control a la derecha que usa la barra de
+             salud). El texto va completo, palabra por palabra. -->
+        <div class="divider"></div>
+        <p class="modal-sub" data-i18n="modal.drift_heading">Reportes de drift</p>
+        <p class="dimnote" data-i18n="modal.drift_intro">Cuando lo que Piumy cree difiere de lo que pasa de verdad —despachos retenidos porque nadie puede recibirlos, WhatsApp desconectado mucho rato, una antena que no responde— puede mandar un aviso corto a los desarrolladores. Es voluntario: viene apagado y solo sale si lo activas aquí.</p>
+        <p class="modal-sub" data-i18n="modal.drift_sent_label">Qué sale</p>
+        <p class="dimnote" data-i18n="modal.drift_sent">El tipo de problema, cuántas veces ocurrió, cuánto duró, la versión de Piumy, el sistema operativo y la arquitectura, y un identificador aleatorio de esta instalación.</p>
+        <p class="modal-sub" data-i18n="modal.drift_never_label">Qué nunca sale</p>
+        <p class="dimnote" data-i18n="modal.drift_never">Ningún número de teléfono, nombre, contacto, mensaje ni chat, ni rutas de tu disco, ni claves. Esto está fijado en el código del programa: no depende de esta pantalla.</p>
+        <p class="dimnote" data-i18n="modal.drift_limits">Como máximo 3 al día, y uno de cada tipo cada 6 a 9 horas. Si el envío falla, se descarta.</p>
+        <p class="dimnote"><span data-i18n="modal.drift_destination">Destino</span>: <span id="config_drift_url"></span></p>
+        <div class="field">
+          <label class="switch-row" for="config_drift_enabled">
+            <span data-i18n="modal.drift_switch">Enviar reportes de drift a los desarrolladores</span>
+            <input type="checkbox" id="config_drift_enabled">
+          </label>
+        </div>
+        <div class="field"><button class="btn pri block" type="button" id="config_drift_save" data-i18n="action.save">Guardar</button></div>
+        <p id="config_drift_result" class="result"></p>
+
         <!-- T153 etapa 1 (ct-2026-09-08-1656): el selector, sin traducir
              nada todavía — el catálogo que sirve GET /api/i18n arranca
              vacío, esto solo persiste la elección manual. "Automático" deja
