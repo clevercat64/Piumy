@@ -11471,6 +11471,31 @@ es un paso aparte, conjunto con el boss (no en `main.go`).
     aborta (exit code 1), binario intacto.
   - `appmutex_other.go` (`//go:build !windows`): no-op — el chequeo es
     Windows-only (el instalador también lo es).
+- **Un solo tablero por cuenta** (T186, ct-2026-11-11-095349; boss: «que solo se abra 1
+  dashboard del mismo piumy») — antes cada clic de «Abrir tablero» lanzaba otra ventana
+  `--app`. Diseño, techos y lo no verificado: `docs/T186-UN-SOLO-TABLERO.md`.
+  - `showDashboard(url, account, sm)` (`tray_windows.go`; en `tray_other.go` es
+    `openAppWindow`) — la ÚNICA puerta al tablero: si la cuenta ya tiene su ventana la
+    restaura (solo si está minimizada) y la trae al frente; si no, `openAppWindow` y espera
+    (`windowAppearTimeout`) a que exista, con un mutex, para que un 2º pedido mientras el
+    navegador arranca la encuentre. Bloquea: se llama en su propia goroutine. La usan el
+    clic de «Abrir tablero», la apertura de arranque de una cuenta sin vincular (`main.go`)
+    y el pedido de un 2º arranque. `openAppWindow` queda como lanzador puro.
+  - `appwindow_windows.go` — `pickAppWindow(wins, titles...)` (pura: clase
+    `Chrome_WidgetWin_1`, visible, título EXACTO; la de más arriba gana), `listTopWindows()`
+    (EnumWindows), `raiseWindow(w)`, `allowAnyProcessToForeground()` y `waitUntil`. user32 por
+    `syscall.NewLazyDLL` (x/sys/windows no trae GetWindowText/ShowWindow/SetForegroundWindow).
+    Busca por título, no por URL ni HWND: ver el doc.
+  - Los títulos aceptados salen de `trayTitle(label)` y `trayTitle(account)`; el test
+    `TestTrayTitleIsTheTitleAppJSPaints` ata ese formato al literal de `app.js`.
+  - `listenShowRequests(dataDir, onRequest)` / `requestShowDashboard(dataDir)`
+    (`singleinstance_windows.go`; no-op en `_other`) — evento con nombre por hash del
+    `dataDir`, la misma llave que el mutex de instancia única. El 2º arranque (`main.go`, justo
+    antes del `return` de instancia duplicada) abre el evento, cede el primer plano
+    (`ASFW_ANY`) y lo señala; la 1ª instancia (`main.go`, antes de `runTrayOrWait`) escucha y
+    llama `showDashboard`. Un 2º arranque durante el arranque de la 1ª no encuentra el evento
+    y sale en silencio, como antes.
+  - Tests: `appwindow_windows_test.go`, `singleinstance_windows_test.go` (`TestShowRequest*`).
 - **`acquireSingleInstance(dataDir string) bool`** (T59, ct-2026-08-10-2116;
   parámetro `dataDir` agregado en S1, ct-2026-09-20-1100) — el mutex REAL de
   instancia única, deliberadamente SEPARADO de `acquireAppMutex` arriba:

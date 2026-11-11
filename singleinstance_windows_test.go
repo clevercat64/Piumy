@@ -2,7 +2,69 @@
 
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
+
+// A second launch asking the first for its dashboard (T186,
+// ct-2026-11-11-095349) — the real named event, one made-up data directory per
+// test so nothing here can reach a running Piumy.
+
+// One request is ONE call, and the listener keeps listening: the next launch,
+// minutes later, is heard too.
+func TestShowRequestReachesTheListener(t *testing.T) {
+	dir := t.TempDir()
+	got := make(chan struct{}, 8)
+	listenShowRequests(dir, func() { got <- struct{}{} })
+	for i := 1; i <= 2; i++ {
+		requestShowDashboard(dir)
+		select {
+		case <-got:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("request %d: the listener never heard it", i)
+		}
+		select {
+		case <-got:
+			t.Fatalf("request %d: the listener was called twice for one request", i)
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+}
+
+// Two accounts run side by side: a launch of one must not wake the other.
+func TestShowRequestStaysWithinItsDataDir(t *testing.T) {
+	dirA, dirB := t.TempDir(), t.TempDir()
+	gotA, gotB := make(chan struct{}, 1), make(chan struct{}, 1)
+	listenShowRequests(dirA, func() { gotA <- struct{}{} })
+	listenShowRequests(dirB, func() { gotB <- struct{}{} })
+	requestShowDashboard(dirB)
+	select {
+	case <-gotB:
+	case <-time.After(5 * time.Second):
+		t.Fatal("B's listener never heard B's request")
+	}
+	select {
+	case <-gotA:
+		t.Fatal("A's listener woke for B's request")
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+// A launch that finds nobody listening (the seconds Piumy takes to start)
+// leaves nothing behind: the instance that starts listening afterwards must
+// not wake up to a request from the past.
+func TestShowRequestWithoutListenerLeavesNothingBehind(t *testing.T) {
+	dir := t.TempDir()
+	requestShowDashboard(dir)
+	got := make(chan struct{}, 1)
+	listenShowRequests(dir, func() { got <- struct{}{} })
+	select {
+	case <-got:
+		t.Fatal("a request made before anyone listened was delivered later")
+	case <-time.After(200 * time.Millisecond):
+	}
+}
 
 // TestDataDirHashSameForDifferentCaseSpellings is S1's core guarantee
 // (ct-2026-09-20-1100): two spellings of the SAME Windows directory (which

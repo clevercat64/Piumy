@@ -179,6 +179,8 @@ func main() {
 	}
 	if !acquireSingleInstance(dataDir) {
 		log.Println("piumy-gateway: ya hay una instancia corriendo — esta instancia sale ahora, sin tocar la sesión de WhatsApp")
+		// T186: quien pulsó Piumy espera ver el tablero, no nada.
+		requestShowDashboard(dataDir)
 		return
 	}
 
@@ -803,8 +805,10 @@ func main() {
 	// everything is bound and serving: pairing can't have started (it waits
 	// for the "Conectar QR" click), so Paired() still means "linked at boot".
 	if openDashboardAtStart(cfg.Account, gw.Paired()) {
-		openAppWindow(dashboardURL)
+		go showDashboard(dashboardURL, cfg.Account, sm)
 	}
+	// T186: a second launch of this account asks for the dashboard through here.
+	listenShowRequests(dataDir, func() { showDashboard(dashboardURL, cfg.Account, sm) })
 	runTrayOrWait(ctx, stop, dashboardURL, i18n.Resolve(trayRaw), trayLangChanged, cfg.Account, s, sm)
 	log.Println("piumy-gateway shutting down")
 

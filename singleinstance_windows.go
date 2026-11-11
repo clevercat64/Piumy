@@ -5,10 +5,13 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"log"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 // singleInstanceMutexPrefix is deliberately its OWN mutex family, separate
@@ -74,4 +77,67 @@ func acquireSingleInstance(dataDir string) bool {
 		return false
 	}
 	return true
+}
+
+// showRequestEventPrefix names the event a second launch signals to ask the
+// first one for its dashboard (T186, ct-2026-11-11-095349): whoever presses
+// Piumy in the Start menu with Piumy already running expects to see the
+// dashboard, not nothing. Same scope as the mutex above — the hash of the data
+// directory — so each account's launches reach that account's instance only.
+const showRequestEventPrefix = "PiumyGatewayShowDashboardEvent-"
+
+func showRequestEventName(dataDir string) (*uint16, error) {
+	return windows.UTF16PtrFromString(showRequestEventPrefix + dataDirHash(dataDir))
+}
+
+// listenShowRequests, in the instance that holds dataDir's mutex, calls
+// onRequest each time a later launch asks for the dashboard. The event exists
+// when this returns, so a launch from then on finds it; one that comes earlier
+// (the seconds Piumy takes to start) finds nothing and just exits, as it did
+// before T186. Auto-reset: launches in a row collapse into one request. It
+// lives as long as the process — there is nothing to stop at shutdown.
+// Fails open like the mutex: no event, no feature, Piumy runs.
+func listenShowRequests(dataDir string, onRequest func()) {
+	name, err := showRequestEventName(dataDir)
+	if err != nil {
+		log.Printf("single-instance: evento de «mostrar tablero»: %v", err)
+		return
+	}
+	ev, err := windows.CreateEvent(nil, 0, 0, name)
+	if ev == 0 { // err alone isn't failure: ERROR_ALREADY_EXISTS still hands back the handle
+		log.Printf("single-instance: evento de «mostrar tablero»: %v", err)
+		return
+	}
+	go func() {
+		for {
+			if r, err := windows.WaitForSingleObject(ev, windows.INFINITE); r != windows.WAIT_OBJECT_0 {
+				log.Printf("single-instance: espera del evento de «mostrar tablero»: %v", err)
+				return
+			}
+			onRequest()
+		}
+	}()
+}
+
+// requestShowDashboard, in a launch that lost the mutex, asks the running
+// instance to show its dashboard. It hands that instance the right to take the
+// foreground first: this process was just started by the user, the running one
+// was not. Opens the event, never creates it — with no instance listening
+// there is nothing to leave behind.
+func requestShowDashboard(dataDir string) {
+	name, err := showRequestEventName(dataDir)
+	if err != nil {
+		log.Printf("single-instance: pedir el tablero: %v", err)
+		return
+	}
+	ev, err := windows.OpenEvent(windows.EVENT_MODIFY_STATE, false, name)
+	if err != nil {
+		log.Printf("single-instance: la instancia que corre aún no escucha pedidos de tablero: %v", err)
+		return
+	}
+	defer windows.CloseHandle(ev)
+	allowAnyProcessToForeground()
+	if err := windows.SetEvent(ev); err != nil {
+		log.Printf("single-instance: pedir el tablero: %v", err)
+	}
 }

@@ -7,6 +7,7 @@ import (
 	_ "embed"
 	"log"
 	"os/exec"
+	"sync"
 	"time"
 
 	"fyne.io/systray"
@@ -143,7 +144,9 @@ func runTrayOrWait(ctx context.Context, stop context.CancelFunc, dashboardURL st
 			for {
 				select {
 				case <-mOpen.ClickedCh:
-					openAppWindow(dashboardURL)
+					// Own goroutine: showDashboard can wait seconds for a cold
+					// browser's window — same reason as openAnotherPiumy below.
+					go showDashboard(dashboardURL, account, sm)
 				case <-anotherClicked:
 					// Own goroutine: it runs powershell (about a second) and must
 					// not freeze this loop — Quit and language changes keep working.
@@ -229,11 +232,47 @@ func browserAppPath(exeName string) (string, bool) {
 	return "", false
 }
 
+// showDashboardMu makes showDashboard one at a time: "is there a window?" and
+// "launch one" must not interleave between a tray click and a second launch's
+// request, or both would launch.
+var showDashboardMu sync.Mutex
+
+// showDashboard is the ONE door to the dashboard (T186, ct-2026-11-11-095349,
+// boss: «que solo se abra 1 dashboard del mismo piumy»): if this account
+// already has its window open it is restored and brought to the front, and
+// only otherwise does openAppWindow launch one. Called by the tray's "Abrir
+// tablero", by the startup open of a fresh named account, and by a second
+// launch's request (listenShowRequests).
+//
+// Two titles are accepted: the account's label (what the page paints once the
+// WhatsApp name is known) and its bare id (what it says before that, and for a
+// few seconds after: the open window repaints on its next status poll). The
+// default account has no label, both collapse into "Piumy Gateway".
+//
+// Blocks while a launched browser starts (windowAppearTimeout) — call it from
+// its own goroutine. ponytail: if the window never matches (the default-browser
+// fallback, or a title the finder can't read) it waited for nothing and the
+// next call launches another, which is how it behaved before T186.
+func showDashboard(url, account string, sm *state.Manager) {
+	showDashboardMu.Lock()
+	defer showDashboardMu.Unlock()
+	label, _ := accountLabels(account, sm)
+	titles := []string{trayTitle(label), trayTitle(account)}
+	find := func() (topWindow, bool) { return pickAppWindow(listTopWindows(), titles...) }
+	if w, ok := find(); ok {
+		raiseWindow(w)
+		return
+	}
+	openAppWindow(url)
+	waitUntil(windowAppearTimeout, windowAppearEvery, func() bool { _, ok := find(); return ok })
+}
+
 // openAppWindow launches url as a chromeless "app window" — msedge first
 // (ships with every modern Windows), chrome fallback, then the OS default
 // browser as a last resort. Each Start() is fire-and-forget — the spawned
 // browser outlives this process's own lifecycle checks, same as
-// double-clicking a shortcut.
+// double-clicking a shortcut. It always launches: showDashboard is the caller
+// that first looks for a window already open.
 //
 // T62 (ct-2026-08-11-1527, boss: "no me gusta que al querer verlo una
 // ventana negra se abra, es como que en vez de abrir la web, usan un

@@ -24,6 +24,12 @@ func runTrayOrWait(ctx context.Context, stop context.CancelFunc, dashboardURL st
 	<-ctx.Done()
 }
 
+// showDashboard is openAppWindow here (T186, ct-2026-11-11-095349): finding
+// the window already open is Windows-only for now (tray_windows.go), so Linux
+// and macOS still open a new one per call. account/sm are only in the
+// signature so both build tags match, like runTrayOrWait's.
+func showDashboard(url, account string, sm *state.Manager) { openAppWindow(url) }
+
 // openAppWindow launches url as a chromeless "app window" on Linux/macOS —
 // misma idea que la versión de tray_windows.go, con la lista de candidatos
 // propia de cada SO. El tray todavía no corre fuera de Windows (systray es
