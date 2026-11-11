@@ -21,7 +21,7 @@ func (a *Adapter) Send(ctx context.Context, toJID, text string) (gateway.SendRes
 	if err != nil {
 		return gateway.SendResult{}, fmt.Errorf("whatsmeow: parse JID %q: %w", toJID, err)
 	}
-	resp, err := a.client.SendMessage(ctx, jid, &waE2E.Message{Conversation: proto.String(text)})
+	resp, err := a.cli().SendMessage(ctx, jid, &waE2E.Message{Conversation: proto.String(text)})
 	if err != nil {
 		return gateway.SendResult{}, err
 	}
@@ -38,7 +38,7 @@ func (a *Adapter) SetTyping(ctx context.Context, toJID string, on bool) error {
 	if on {
 		state = types.ChatPresenceComposing
 	}
-	return a.client.SendChatPresence(ctx, jid, state, types.ChatPresenceMediaText)
+	return a.cli().SendChatPresence(ctx, jid, state, types.ChatPresenceMediaText)
 }
 
 // MarkRead sends read receipts for msgIDs in chatJID, addressed to
@@ -70,7 +70,7 @@ func (a *Adapter) MarkRead(ctx context.Context, chatJID, senderJID string, msgID
 	for i, id := range msgIDs {
 		ids[i] = types.MessageID(id)
 	}
-	return a.client.MarkRead(ctx, ids, time.Now(), jid, sender)
+	return a.cli().MarkRead(ctx, ids, time.Now(), jid, sender)
 }
 
 // MarkDelivered is a no-op: WhatsApp's own protocol sends delivery

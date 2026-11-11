@@ -114,7 +114,7 @@ func (a *Adapter) downloadAndStoreMedia(ctx context.Context, msgID, chatJID stri
 	if a.mediaDir == "" || a.store == nil {
 		return
 	}
-	data, err := a.client.DownloadAny(ctx, m.proto)
+	data, err := a.cli().DownloadAny(ctx, m.proto)
 	if err != nil {
 		log.Printf("whatsmeow: download media msg=%s chat=%s: %v", msgID, chatJID, err)
 		a.captureMediaPending(chatJID, msgID, ts, m)
@@ -231,7 +231,7 @@ func (a *Adapter) downloadMediaPending(ctx context.Context, p store.MediaPending
 	if !ok {
 		return fmt.Errorf("media_pending %s/%s: unknown kind %q", p.ChatJID, p.MsgID, p.Kind)
 	}
-	data, err := a.client.DownloadMediaWithPath(ctx, p.DirectPath, p.FileEncSHA256, p.FileSHA256, p.MediaKey, mediaType, "", false)
+	data, err := a.cli().DownloadMediaWithPath(ctx, p.DirectPath, p.FileEncSHA256, p.FileSHA256, p.MediaKey, mediaType, "", false)
 	if err != nil {
 		return fmt.Errorf("download %s/%s: %w", p.ChatJID, p.MsgID, err)
 	}

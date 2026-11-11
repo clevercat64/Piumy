@@ -58,7 +58,7 @@ func (a *Adapter) React(ctx context.Context, chatJID, senderJID, msgID, reaction
 	if err != nil {
 		return err
 	}
-	_, err = a.client.SendMessage(ctx, chat, a.client.BuildReaction(chat, sender, types.MessageID(msgID), reaction))
+	_, err = a.cli().SendMessage(ctx, chat, a.cli().BuildReaction(chat, sender, types.MessageID(msgID), reaction))
 	return err
 }
 
@@ -74,11 +74,11 @@ func (a *Adapter) SendSticker(ctx context.Context, toJID string, webp []byte) (g
 	if err != nil {
 		return gateway.SendResult{}, err
 	}
-	up, err := a.client.Upload(ctx, webp, wmeow.MediaImage)
+	up, err := a.cli().Upload(ctx, webp, wmeow.MediaImage)
 	if err != nil {
 		return gateway.SendResult{}, err
 	}
-	resp, err := a.client.SendMessage(ctx, jid, &waE2E.Message{
+	resp, err := a.cli().SendMessage(ctx, jid, &waE2E.Message{
 		StickerMessage: &waE2E.StickerMessage{
 			URL:           &up.URL,
 			DirectPath:    &up.DirectPath,
@@ -98,11 +98,11 @@ func (a *Adapter) SendImage(ctx context.Context, toJID string, jpeg []byte, capt
 	if err != nil {
 		return gateway.SendResult{}, err
 	}
-	up, err := a.client.Upload(ctx, jpeg, wmeow.MediaImage)
+	up, err := a.cli().Upload(ctx, jpeg, wmeow.MediaImage)
 	if err != nil {
 		return gateway.SendResult{}, err
 	}
-	resp, err := a.client.SendMessage(ctx, jid, &waE2E.Message{
+	resp, err := a.cli().SendMessage(ctx, jid, &waE2E.Message{
 		ImageMessage: &waE2E.ImageMessage{
 			URL:           &up.URL,
 			DirectPath:    &up.DirectPath,
@@ -156,7 +156,7 @@ func (a *Adapter) SendAudio(ctx context.Context, toJID string, opus []byte, seco
 	// pre-skip, page size) right before upload — never fails, a file it
 	// can't safely rewrite goes out exactly as it came in.
 	opus = mediautil.NormalizeOggOpus(opus)
-	up, err := a.client.Upload(ctx, opus, wmeow.MediaAudio)
+	up, err := a.cli().Upload(ctx, opus, wmeow.MediaAudio)
 	if err != nil {
 		return gateway.SendResult{}, err
 	}
@@ -174,7 +174,7 @@ func (a *Adapter) SendAudio(ctx context.Context, toJID string, opus []byte, seco
 	if seconds > 0 {
 		msg.Seconds = proto.Uint32(uint32(seconds))
 	}
-	resp, err := a.client.SendMessage(ctx, jid, &waE2E.Message{AudioMessage: msg})
+	resp, err := a.cli().SendMessage(ctx, jid, &waE2E.Message{AudioMessage: msg})
 	return gateway.SendResult{MsgID: string(resp.ID), TS: resp.Timestamp.Unix()}, err
 }
 
@@ -208,7 +208,7 @@ func (a *Adapter) SendMedia(ctx context.Context, toJID string, media gateway.Out
 // event, which piumy-gateway's gateway.Inbound doesn't carry today (F4d's
 // media-by-path model was designed against open-wa's webhook, not this).
 func (a *Adapter) DownloadMedia(ctx context.Context, msg *waE2E.Message) ([]byte, error) {
-	return a.client.DownloadAny(ctx, msg)
+	return a.cli().DownloadAny(ctx, msg)
 }
 
 // EditMessage / DeleteMessage: whatsmeow already exposes these as direct,
@@ -222,7 +222,7 @@ func (a *Adapter) DownloadMedia(ctx context.Context, msg *waE2E.Message) ([]byte
 // have WhatsApp accounts — useful before a first outbound to a number
 // nobody has messaged yet.
 func (a *Adapter) IsOnWhatsApp(ctx context.Context, phones []string) ([]types.IsOnWhatsAppResponse, error) {
-	return a.client.IsOnWhatsApp(ctx, phones)
+	return a.cli().IsOnWhatsApp(ctx, phones)
 }
 
 // Group/profile admin — cabled into mcpserver/group_tools.go (ST-E,
@@ -240,7 +240,7 @@ func (a *Adapter) CreateGroup(ctx context.Context, name string, participantJIDs 
 		}
 		participants = append(participants, jid)
 	}
-	return a.client.CreateGroup(ctx, wmeow.ReqCreateGroup{Name: name, Participants: participants})
+	return a.cli().CreateGroup(ctx, wmeow.ReqCreateGroup{Name: name, Participants: participants})
 }
 
 func (a *Adapter) AddParticipant(ctx context.Context, groupJID, participantJID string) ([]types.GroupParticipant, error) {
@@ -252,7 +252,7 @@ func (a *Adapter) AddParticipant(ctx context.Context, groupJID, participantJID s
 	if err != nil {
 		return nil, err
 	}
-	return a.client.UpdateGroupParticipants(ctx, group, []types.JID{participant}, wmeow.ParticipantChangeAdd)
+	return a.cli().UpdateGroupParticipants(ctx, group, []types.JID{participant}, wmeow.ParticipantChangeAdd)
 }
 
 // PromoteParticipants grants group-admin rights (T135, ct-2026-09-03-1546)
@@ -275,7 +275,7 @@ func (a *Adapter) PromoteParticipants(ctx context.Context, groupJID string, part
 		}
 		participants = append(participants, jid)
 	}
-	return a.client.UpdateGroupParticipants(ctx, group, participants, wmeow.ParticipantChangePromote)
+	return a.cli().UpdateGroupParticipants(ctx, group, participants, wmeow.ParticipantChangePromote)
 }
 
 // profilePhotoMaxBytes bounds the payload SetGroupPhoto embeds directly in
@@ -339,7 +339,7 @@ func (a *Adapter) SetGroupPhoto(ctx context.Context, groupJID string, jpeg []byt
 	if err != nil {
 		return "", err
 	}
-	id, err := a.client.SetGroupPhoto(ctx, jid, jpeg)
+	id, err := a.cli().SetGroupPhoto(ctx, jid, jpeg)
 	if err != nil {
 		return "", wrapSetPhotoError(err, jpeg)
 	}
@@ -363,13 +363,13 @@ func (a *Adapter) SetGroupPhoto(ctx context.Context, groupJID string, jpeg []byt
 //
 // nil jpeg removes the photo (whatsmeow's own contract).
 func (a *Adapter) SetProfilePhoto(ctx context.Context, jpeg []byte) (string, error) {
-	if a.client.Store.ID == nil {
+	if a.cli().Store.ID == nil {
 		return "", fmt.Errorf("whatsmeow: no logueado, sin JID propio")
 	}
 	if err := checkPhotoSize(jpeg); err != nil {
 		return "", fmt.Errorf("whatsmeow: %w", err)
 	}
-	id, err := a.client.SetGroupPhoto(ctx, types.EmptyJID, jpeg)
+	id, err := a.cli().SetGroupPhoto(ctx, types.EmptyJID, jpeg)
 	return id, wrapSetPhotoError(err, jpeg)
 }
 
@@ -378,7 +378,7 @@ func (a *Adapter) SetGroupDescription(ctx context.Context, groupJID, description
 	if err != nil {
 		return err
 	}
-	return a.client.SetGroupDescription(ctx, jid, description)
+	return a.cli().SetGroupDescription(ctx, jid, description)
 }
 
 // SetProfileStatus sets the host number's own status/"About" text (boss's
@@ -386,7 +386,7 @@ func (a *Adapter) SetGroupDescription(ctx context.Context, groupJID, description
 // API for that. Wraps SetStatusMessage 1:1, same wrapper shape as the group
 // methods above.
 func (a *Adapter) SetProfileStatus(ctx context.Context, status string) error {
-	return a.client.SetStatusMessage(ctx, types.SetStatusInput{Text: &status})
+	return a.cli().SetStatusMessage(ctx, types.SetStatusInput{Text: &status})
 }
 
 // GetProfileStatus reads the host number's own status/"About" text LIVE
@@ -395,17 +395,17 @@ func (a *Adapter) SetProfileStatus(ctx context.Context, status string) error {
 // pre-fill the edit field instead of showing it blank over an existing
 // value). GetUserInfo is a usync query (the same call the dashboard's
 // Contactos/Números tabs already trigger indirectly for other JIDs); own
-// JID is a.client.Store.ID, nil before pairing. An unset status is a
+// JID is a.cli().Store.ID, nil before pairing. An unset status is a
 // legitimate, common WhatsApp state (most accounts never set one) — this
 // returns "" for that, not an error; info[own] simply being the zero
 // UserInfo if the server's usync response omits our own entry for any
 // reason has the same effect, deliberately not special-cased.
 func (a *Adapter) GetProfileStatus(ctx context.Context) (string, error) {
-	if a.client.Store.ID == nil {
+	if a.cli().Store.ID == nil {
 		return "", fmt.Errorf("whatsmeow: no logueado, sin JID propio")
 	}
-	own := *a.client.Store.ID
-	info, err := a.client.GetUserInfo(ctx, []types.JID{own})
+	own := *a.cli().Store.ID
+	info, err := a.cli().GetUserInfo(ctx, []types.JID{own})
 	if err != nil {
 		return "", err
 	}

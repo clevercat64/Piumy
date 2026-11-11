@@ -2555,13 +2555,41 @@ la única capa que orquesta este sweep.
   long-lived de `New` (jamás cerrado, sin swap), y el mismo `runCtx` de
    `Start`. Diseño auditado por Citrino (msg 558d155d) — ver Fix 2 en la
    sección de contrato M3 abajo.
-- `(*Adapter) QRState() (code string, expiresAt time.Time, expired bool)`
-   (P2, ct-2026-07-24-0015) — live QR-pairing state for GET /api/status.
-   Idempotent. Underlying `qrState` (campo `a.qr`, guardado por `qrMu`):
-   `Code` (código actual), `ExpiresAt` (item.Timeout desde whatsmew),
-   `Expired` (true cuando la ronda terminó sin parear). pairLoop es ahora
-   **una sola ronda**: ya no re-intenta al expirar (P2 mata el auto-spam).
-   `Start()` ya no arranca pairLoop sin sesión — espera a Reconnect.
+- `(*Adapter) QRState() (code string, expiresAt time.Time, expired bool, errCode string)`
+   (P2, ct-2026-07-24-0015; `errCode` en T187, ct-2026-11-11-0953) — live
+   QR-pairing state for GET /api/status. Idempotent. Underlying `qrState`
+   (campo `a.qr`, guardado por `qrMu`): `Code` (código actual), `ExpiresAt`
+   (item.Timeout desde whatsmew), `Expired` (true cuando la ronda terminó
+   sin parear) y `ErrCode` (por qué la ronda no dio QR). Los 4 valores
+   salen de **una sola lectura bajo `qrMu`**: un accessor aparte podría
+   servir el error de otra ronda que el código que lo acompaña. pairLoop es
+   ahora **una sola ronda**: ya no re-intenta al expirar (P2 mata el
+   auto-spam). `Start()` ya no arranca pairLoop sin sesión — espera a
+   Reconnect.
+   - **T187 — `ErrCode` y el device borrado.** `GET /api/status` gana
+     `qr_error` (string, `""` si no hay error). Es un **código estable**
+     que el catálogo del tablero traduce (el modal es T188), nunca el
+     texto de la librería: ese texto es inglés y cambia entre versiones.
+     Un solo valor, `qr_unavailable` (no se pudo abrir la ronda de QR); el
+     error crudo va al log, que es donde se diagnostica. Antes de T187 ese
+     fallo era MUDO y el modal decía «Generando QR…» para siempre.
+     Causa: tras un cierre de sesión externo whatsmeow **borra el device**
+     (`Store.Delete` → `Deleted=true`, `ID=nil`), `Reconnect` pasa su
+     guarda `ID == nil`, `GetQRChannel` no mira `Deleted`, y el fallo
+     aparecía recién en `Connect` (`ErrDeviceDeleted`, antes de tocar la
+     red). `pairLoop` ahora llama `resetDeletedDevice()` antes de pedir el
+     QR: device nuevo del mismo container, client nuevo por `newWAClient`
+     (la **única** construcción del client, compartida con `New`, para que
+     un re-pareo no pierda un flag en silencio) y el viejo jubilado con
+     `RemoveEventHandlers` antes del `Disconnect`. Por eso `a.client` pasó
+     a ser `clientPtr atomic.Pointer[wmeow.Client]`, leído **solo** por
+     `a.cli()`: el swap ocurre mientras los loops de fondo lo están
+     leyendo. NO hay reintento de `ErrDeviceDeleted` en `pairLoop`, y es
+     medido: un device sin parear no se puede borrar
+     (`DeleteDevice` → `ErrDeviceIDMustBeSet`), y uno pareado ya corta en
+     `GetQRChannel` con `ErrQRStoreContainsID`. Si una versión futura de
+     la librería permite ese borrado, `TestDeletingAnUnpairedDeviceCannotHappen`
+     falla y el reintento hay que reponerlo.
 - `(*Adapter) Stop()` / `Connected()` (delega a `client.IsConnected()`,
   sin duplicar estado) / `Inbound() <-chan gateway.Inbound`.
 - `(*Adapter) Paired() bool` (S4, `ct-2026-09-23-1908`) — `client.Store.ID != nil`:

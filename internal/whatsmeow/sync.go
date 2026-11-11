@@ -98,7 +98,7 @@ func (a *Adapter) syncLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if a.client.IsConnected() {
+			if a.cli().IsConnected() {
 				a.syncContacts(ctx)
 			}
 		}
@@ -112,7 +112,7 @@ func (a *Adapter) syncContacts(ctx context.Context) {
 	if a.store == nil {
 		return
 	}
-	contacts, err := a.client.Store.Contacts.GetAllContacts(ctx)
+	contacts, err := a.cli().Store.Contacts.GetAllContacts(ctx)
 	if err != nil {
 		log.Printf("whatsmeow: sync contacts: %v", err)
 		return

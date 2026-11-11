@@ -28,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	wmeow "go.mau.fi/whatsmeow"
@@ -140,7 +141,21 @@ type Config struct {
 // Adapter implements gateway.Gateway against whatsmeow. The zero value is
 // not usable — construct with New.
 type Adapter struct {
-	client    *wmeow.Client
+	// clientPtr holds the live whatsmeow client. A POINTER that can be
+	// swapped, not a fixed field (T187, ct-2026-11-11-0953): when WhatsApp
+	// logs the account out from another device, whatsmeow DELETES the
+	// device from the store (connectionevents.go's Store.Delete on
+	// device_removed/401) — it sets Deleted=true, nils the ID and replaces
+	// every sub-store with NoopStore{ErrDeviceDeleted}. That client can
+	// never connect again (client.go's unlockedConnect returns
+	// ErrDeviceDeleted before touching the network), so re-pairing needs a
+	// NEW client over a NEW device, swapped in while the background loops
+	// (syncLoop, avatarWorkerLoop, mediaBgWorkerLoop) are still reading
+	// it. atomic.Pointer makes that swap safe without putting a lock on
+	// every read site — the same reason corepipeline's bus uses one. Read it
+	// ONLY through a.cli(); the field is named clientPtr so the compiler
+	// catches any site that still expects the old fixed field.
+	clientPtr atomic.Pointer[wmeow.Client]
 	container *sqlstore.Container
 
 	inbound chan gateway.Inbound
@@ -254,10 +269,13 @@ type Adapter struct {
 	reconnectMaxDelay    time.Duration
 	reconnectStableAfter time.Duration
 
-	// connectFn is a.client.Connect, indirected so reconnect_test.go can
-	// drive the reconnect breaker's fail-open property (T99) without a
+	// connectFn connects the LIVE client, indirected so reconnect_test.go
+	// can drive the reconnect breaker's fail-open property (T99) without a
 	// live WhatsApp session — same "inject the external dependency" seam
-	// as agentTracker.pingAgent (mcpserver, T97).
+	// as agentTracker.pingAgent (mcpserver, T97). New wires it as a closure
+	// over a.cli() rather than capturing one client's Connect method: T187
+	// swaps the client, and a captured method would keep dialing the
+	// retired device forever.
 	connectFn func() error
 
 	// reconnectMu guards the WhatsApp reconnect breaker's own state (T99,
@@ -283,7 +301,29 @@ type qrState struct {
 	Code      string
 	ExpiresAt time.Time
 	Expired   bool
+	// ErrCode is why this round produced no QR, "" when there is nothing
+	// wrong (T187, ct-2026-11-11-0953). A STABLE CODE, never the
+	// library's error text: that text is English and changes between
+	// whatsmeow versions, so the dashboard's catalog translates the code
+	// instead. The raw error still goes to the log, which is where a
+	// failure gets diagnosed. Contract with the dashboard (T188): this
+	// surfaces as qr_error in GET /api/status.
+	ErrCode string
 }
+
+// qrErrUnavailable is the ONLY ErrCode value — the pairing round could not
+// be opened at all (GetQRChannel or Connect failed). This is the bug the
+// boss hit: before T187 the modal said "Generando QR…" forever.
+//
+// The design review also proposed a session_reset_failed code for "the
+// device was deleted and a fresh one could not be built". It does not
+// exist because it CANNOT happen: container.NewDevice (sqlstore/
+// container.go:212) only generates keys in memory and returns no error —
+// the session DB is not touched until the pairing itself persists the
+// device, and a failure there surfaces as a failed Connect, i.e. this
+// same code. A second code with no producer would only make the dashboard
+// translate a string nobody can ever see.
+const qrErrUnavailable = "qr_unavailable"
 
 // historySyncStats is Adapter.historySyncStats' value type — see its doc.
 type historySyncStats struct {
@@ -301,6 +341,58 @@ func (a *Adapter) context() context.Context {
 		return a.runCtx
 	}
 	return context.Background()
+}
+
+// cli returns the live whatsmeow client — the ONLY way to read it. See
+// Adapter.clientPtr's doc for why it can change under a caller's feet.
+// A caller that makes several calls in a row should hold the result in a
+// local so it works against ONE client, not two halves of a swap.
+func (a *Adapter) cli() *wmeow.Client {
+	return a.clientPtr.Load()
+}
+
+// setClient swaps in the live client. Called by New and by
+// resetDeletedDevice (T187); tests use it to wire a hand-built Adapter.
+func (a *Adapter) setClient(c *wmeow.Client) {
+	a.clientPtr.Store(c)
+}
+
+// newWAClient builds a whatsmeow client with THIS adapter's full
+// configuration — the single place it lives (T187, ct-2026-11-11-0953).
+// Both New and resetDeletedDevice go through here, so a re-paired session
+// can never silently lose a flag the first one had: that divergence is
+// exactly the bug class this function exists to prevent.
+//
+// Not included here on purpose: wmstore.DeviceProps (Os, PlatformType,
+// RequireFullSync, HistorySyncConfig) is a PACKAGE-level var, not
+// per-client — New sets it once before any pairing, so a client built
+// later inherits it already. See New's own comments for that constraint.
+func newWAClient(deviceStore *wmstore.Device, logger waLog.Logger, handler func(any)) *wmeow.Client {
+	client := wmeow.NewClient(deviceStore, logger)
+	// Anti-"1 tick" fix (ct-2026-07-15, boss report): whatsmeow only sends
+	// delivery receipts with type="inactive" (transmitted, but never
+	// rendered as the second gray tick) unless the client is marked
+	// online — see go.mau.fi/whatsmeow's receipt.go doc on
+	// SetForceActiveDeliveryReceipts. This flips receipts to the normal
+	// type WITHOUT broadcasting an "online" presence to contacts
+	// (SendPresence would do that too, but this account should not look
+	// always-online — anti-ban, same spirit as governor's human pacing).
+	client.SetForceActiveDeliveryReceipts(true)
+	// T99 (ct-2026-08-29-1607): whatsmeow's own auto-reconnect resets its
+	// failure counter on every successful HANDSHAKE
+	// (connectionevents.go's handleConnectSuccess), even one that drops
+	// seconds later — a connect-fall-connect-fall cycle retries with ~0
+	// delay forever (the pattern that cost OpenClaw a 72h account
+	// restriction). Turned off here; reconnect.go's scheduleReconnect
+	// takes over with its OWN counter, which only resets after a
+	// connection survives reconnectStableAfter — see that file's package
+	// doc for the whole design. Verified before this change: LoggedOut/
+	// StreamReplaced/ClientOutdated/device_removed already call
+	// whatsmeow's own expectDisconnect() and never depended on this flag
+	// to stay terminal — turning it off doesn't touch them.
+	client.EnableAutoReconnect = false
+	client.AddEventHandler(handler)
+	return client
 }
 
 // New builds an Adapter: opens whatsmeow's own session store (modernc.org/
@@ -400,30 +492,6 @@ func New(ctx context.Context, cfg Config) (*Adapter, error) {
 		log.Printf("whatsmeow: sin sesión previa en %s — instalación limpia o archivo sin dispositivo pareado", cfg.DBPath)
 	}
 
-	client := wmeow.NewClient(deviceStore, logger)
-	// Anti-"1 tick" fix (ct-2026-07-15, boss report): whatsmeow only sends
-	// delivery receipts with type="inactive" (transmitted, but never
-	// rendered as the second gray tick) unless the client is marked
-	// online — see go.mau.fi/whatsmeow's receipt.go doc on
-	// SetForceActiveDeliveryReceipts. This flips receipts to the normal
-	// type WITHOUT broadcasting an "online" presence to contacts
-	// (SendPresence would do that too, but this account should not look
-	// always-online — anti-ban, same spirit as governor's human pacing).
-	client.SetForceActiveDeliveryReceipts(true)
-	// T99 (ct-2026-08-29-1607): whatsmeow's own auto-reconnect resets its
-	// failure counter on every successful HANDSHAKE (connectionevents.go's
-	// handleConnectSuccess), even one that drops seconds later — a
-	// connect-fall-connect-fall cycle retries with ~0 delay forever (the
-	// pattern that cost OpenClaw a 72h account restriction). Turned off
-	// here; reconnect.go's scheduleReconnect takes over with its OWN
-	// counter, which only resets after a connection survives
-	// reconnectStableAfter — see that file's package doc for the whole
-	// design. Verified before this change: LoggedOut/StreamReplaced/
-	// ClientOutdated/device_removed already call whatsmeow's own
-	// expectDisconnect() and never depended on this flag to stay
-	// terminal — turning it off doesn't touch them.
-	client.EnableAutoReconnect = false
-
 	lowQ := cfg.LowQJPEGQuality
 	if lowQ <= 0 {
 		lowQ = 60
@@ -447,7 +515,6 @@ func New(ctx context.Context, cfg Config) (*Adapter, error) {
 		reconnectStable = 60 * time.Second
 	}
 	a := &Adapter{
-		client:               client,
 		container:            container,
 		inbound:              make(chan gateway.Inbound, inboundBuffer),
 		qrOut:                make(chan string, 4),
@@ -467,8 +534,14 @@ func New(ctx context.Context, cfg Config) (*Adapter, error) {
 		reconnectMaxDelay:    reconnectMax,
 		reconnectStableAfter: reconnectStable,
 	}
-	a.connectFn = client.Connect
-	client.AddEventHandler(a.handleEvent)
+	// The client is built AFTER the Adapter exists: newWAClient needs
+	// a.handleEvent, and a.cli() has to be live before any handler fires.
+	a.setClient(newWAClient(deviceStore, logger, a.handleEvent))
+	// connectFn resolves the client on EVERY call instead of capturing
+	// today's one (T187): resetDeletedDevice swaps the client, and a
+	// captured client.Connect would keep dialing the deleted device
+	// forever. reconnect_test.go still overrides this same seam.
+	a.connectFn = func() error { return a.cli().Connect() }
 	return a, nil
 }
 
@@ -516,13 +589,13 @@ func (a *Adapter) Start(ctx context.Context) error {
 	// nothing on its own.
 	go a.avatarWorkerLoop(ctx)
 
-	if a.client.Store.ID != nil {
+	if a.cli().Store.ID != nil {
 		// T25: mismo motivo que el log de New() — Connect() no logueaba
 		// nada al ser llamado, ni al pedirlo ni al fallar sincrónicamente
 		// (los eventos post-conexión sí loguean, ver handleEvent/
 		// handleDisconnect — esto cubre el hueco ANTES de que exista un
 		// evento).
-		log.Printf("whatsmeow: conectando sesión existente (%s)...", a.client.Store.ID)
+		log.Printf("whatsmeow: conectando sesión existente (%s)...", a.cli().Store.ID)
 		return a.connectOrScheduleRetry(ctx)
 	}
 	log.Println("whatsmeow: sin sesión previa — esperando click en \"Conectar QR\" (Reconnect)")
@@ -547,16 +620,34 @@ func (a *Adapter) pairLoop(ctx context.Context) {
 		a.pairingActive = false
 		a.pairingActiveMu.Unlock()
 	}()
-	if a.client.Store.ID != nil || ctx.Err() != nil {
+	if a.cli().Store.ID != nil || ctx.Err() != nil {
 		return
 	}
-	qrChan, err := a.client.GetQRChannel(ctx)
+	// T187 (ct-2026-11-11-0953): repair the device BEFORE asking for a QR.
+	// A device WhatsApp deleted still passes the ID==nil guard above (its
+	// own Delete nils the ID), and GetQRChannel hands back a channel for
+	// it anyway — qrchan.go never looks at Deleted. The failure landed
+	// only on Connect, which is why this looked like "Generando QR…"
+	// forever until Piumy was restarted.
+	a.resetDeletedDevice()
+	qrChan, err := a.cli().GetQRChannel(ctx)
 	if err != nil {
-		log.Printf("whatsmeow: get QR channel: %v", err)
+		a.setQRError(qrErrUnavailable, fmt.Errorf("get QR channel: %w", err))
 		return
 	}
-	if err := a.client.Connect(); err != nil {
-		log.Printf("whatsmeow: connect: %v", err)
+	// No ErrDeviceDeleted retry here, and that is measured, not an
+	// oversight (T187 — the design review asked for one). For Connect to
+	// hit a deleted device despite the repair above, the logout would have
+	// to land between the two. It cannot: whatsmeow only deletes the
+	// device when the SERVER sends a 401/device_removed, which needs a
+	// live connection of a PAIRED device — and inside pairLoop the device
+	// is unpaired by definition. Were it paired, GetQRChannel would
+	// already have returned ErrQRStoreContainsID above and this line
+	// would never run. If one ever did slip through, it is no longer
+	// silent: the error below reaches the dashboard, and the owner's
+	// retry opens a fresh round that the repair above handles.
+	if err := a.connectFn(); err != nil {
+		a.setQRError(qrErrUnavailable, fmt.Errorf("connect: %w", err))
 		return
 	}
 	for item := range qrChan {
@@ -576,9 +667,9 @@ func (a *Adapter) pairLoop(ctx context.Context) {
 	}
 	// Round ended without pairing (QRChannelTimeout). Mark expired so the
 	// frontend shows "QR expirado" + Refresh button instead of a stale code.
-	if a.client.Store.ID == nil {
+	if a.cli().Store.ID == nil {
 		log.Println("whatsmeow: QR round ended without pairing — marked expired")
-		a.client.Disconnect()
+		a.cli().Disconnect()
 		a.qrMu.Lock()
 		a.qr.Expired = true
 		a.qrMu.Unlock()
@@ -604,7 +695,7 @@ func (a *Adapter) pairLoop(ctx context.Context) {
 // nil-safe (whatsmeow's own convention, mirrors Disconnect), so this needs
 // no extra guard.
 func (a *Adapter) Logout(ctx context.Context) error {
-	if err := a.client.Logout(ctx); err != nil {
+	if err := a.cli().Logout(ctx); err != nil {
 		return err
 	}
 	// Fix 1 salvedad (ct-2026-07-23-0047fixes-ux-del-boton-desconectar, el
@@ -639,7 +730,7 @@ func (a *Adapter) Logout(ctx context.Context) error {
 // clears historySyncStats so GET /api/status doesn't report stale counts
 // from the previous sync window.
 func (a *Adapter) Reconnect(ctx context.Context) error {
-	if a.client.Store.ID != nil {
+	if a.cli().Store.ID != nil {
 		return errors.New("already paired")
 	}
 	a.pairingActiveMu.Lock()
@@ -669,19 +760,69 @@ func (a *Adapter) Reconnect(ctx context.Context) error {
 }
 
 // QRState returns the live QR-pairing state for GET /api/status (P2,
-// ct-2026-07-24-0015): current code, its expiry, and whether the last
-// round ended without pairing.
-func (a *Adapter) QRState() (code string, expiresAt time.Time, expired bool) {
+// ct-2026-07-24-0015): current code, its expiry, whether the last round
+// ended without pairing, and why no QR came out (errCode, T187 — see
+// qrState.ErrCode).
+//
+// All four come from ONE read under the same mutex, deliberately: a
+// separate QRError() accessor could be served a different round than the
+// code it is reported next to.
+func (a *Adapter) QRState() (code string, expiresAt time.Time, expired bool, errCode string) {
 	a.qrMu.Lock()
 	defer a.qrMu.Unlock()
-	return a.qr.Code, a.qr.ExpiresAt, a.qr.Expired
+	return a.qr.Code, a.qr.ExpiresAt, a.qr.Expired, a.qr.ErrCode
+}
+
+// setQRError records why the current pairing round produced no QR, so the
+// dashboard can say it instead of spinning forever (T187). The raw error
+// goes to the log; only the stable code reaches the wire.
+func (a *Adapter) setQRError(code string, err error) {
+	if err != nil {
+		log.Printf("whatsmeow: QR unavailable (%s): %v", code, err)
+	}
+	a.qrMu.Lock()
+	a.qr.ErrCode = code
+	a.qrMu.Unlock()
+}
+
+// resetDeletedDevice repairs the one state a re-pairing cannot survive
+// (T187, ct-2026-11-11-0953): WhatsApp logged the account out from another
+// device, so whatsmeow DELETED this device from the store — Deleted=true,
+// ID=nil, every sub-store replaced by NoopStore{ErrDeviceDeleted}
+// (store.Device.Delete). Such a client returns ErrDeviceDeleted from
+// Connect before it even reaches the network, which is why "Conectar QR"
+// used to hang until Piumy was restarted: a restart called GetFirstDevice,
+// which builds a fresh device, and that is precisely what this does
+// without one.
+//
+// A no-op when the device is healthy, so callers can call it
+// unconditionally before pairing. The old client is retired — handlers
+// removed first so its in-flight QRChannel handler can't push events into
+// an adapter that has already moved on, then disconnected.
+//
+// Returns nothing: container.NewDevice only generates keys in memory and
+// cannot fail (see qrErrUnavailable's doc for the code that therefore
+// does not exist). Reports whether it actually swapped the client, which
+// is what the test asserts on.
+func (a *Adapter) resetDeletedDevice() bool {
+	old := a.cli()
+	if old == nil || !old.Store.Deleted {
+		return false
+	}
+	log.Println("whatsmeow: el dispositivo fue borrado por WhatsApp — creando uno nuevo para el pareo")
+	// Same constructor as boot, on purpose: see newWAClient's doc.
+	fresh := newWAClient(a.container.NewDevice(), waLog.Stdout("whatsmeow", "WARN", true), a.handleEvent)
+	a.setClient(fresh)
+	old.RemoveEventHandlers()
+	old.Disconnect()
+	return true
 }
 
 // Stop disconnects, closes whatsmeow's own session store (releases the
 // SQLite file — otherwise it stays open, and locked, until process exit),
 // and closes Inbound() — idempotent, matching gateway.Gateway's contract.
 func (a *Adapter) Stop() {
-	a.client.Disconnect()
+	a.cli().Disconnect()
 	a.stopOnce.Do(func() {
 		if err := a.container.Close(); err != nil {
 			log.Printf("whatsmeow: close session store: %v", err)
@@ -693,7 +834,7 @@ func (a *Adapter) Stop() {
 // Connected delegates to the client's own tracked state — no reason to
 // duplicate it in a second bool that could drift.
 func (a *Adapter) Connected() bool {
-	return a.client.IsConnected()
+	return a.cli().IsConnected()
 }
 
 // Paired reports whether a WhatsApp account is linked to this session store
@@ -701,7 +842,7 @@ func (a *Adapter) Connected() bool {
 // answers. Read at boot (S4, ct-2026-09-23-1908) to tell a brand-new account
 // that still needs its QR apart from a linked one that is merely reconnecting.
 func (a *Adapter) Paired() bool {
-	return a.client.Store.ID != nil
+	return a.cli().Store.ID != nil
 }
 
 // Inbound streams messages the event handler maps from whatsmeow events.

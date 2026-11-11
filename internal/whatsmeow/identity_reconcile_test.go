@@ -36,7 +36,9 @@ func TestReconcileIdentitiesOnceNoOpWhenSettingDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := &Adapter{store: st, client: client}
+	a := &Adapter{store: st}
+
+	a.setClient(client)
 	a.reconcileIdentitiesOnce(context.Background())
 
 	if _, ok, err := st.GetChat(lidJID); err != nil || !ok {
@@ -70,7 +72,9 @@ func TestReconcileIdentitiesOnceMergesWhenSettingEnabled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := &Adapter{store: st, client: client}
+	a := &Adapter{store: st}
+
+	a.setClient(client)
 	a.reconcileIdentitiesOnce(context.Background())
 
 	if _, ok, err := st.GetChat(lidJID); err != nil || ok {

@@ -141,7 +141,7 @@ func (a *Adapter) connectOrScheduleRetry(ctx context.Context) error {
 }
 
 // reconnectAfter espera delay (o la cancelación de ctx) y dispara UN
-// intento vía connectFn (a.client.Connect en producción — ver Adapter.
+// intento vía connectFn (a.cli().Connect en producción — ver Adapter.
 // connectFn's doc). connectFn devolviendo error significa que el intento
 // falló sincrónicamente (red inalcanzable, etc.) — se reagenda de
 // inmediato con scheduleReconnect, que suma otro fallo y recalcula el

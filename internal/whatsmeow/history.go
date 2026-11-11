@@ -51,7 +51,7 @@ func (a *Adapter) handleHistorySync(evt *events.HistorySync) {
 		}
 		msgs := conv.GetMessages()
 		for _, histMsg := range msgs {
-			msgEvt, err := a.client.ParseWebMessage(chatJID, histMsg.GetMessage())
+			msgEvt, err := a.cli().ParseWebMessage(chatJID, histMsg.GetMessage())
 			if err != nil {
 				log.Printf("whatsmeow: history sync: parse message in %s: %v", chatJID, err)
 				continue

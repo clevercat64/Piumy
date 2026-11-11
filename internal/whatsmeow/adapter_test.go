@@ -93,7 +93,7 @@ func TestStartDoesNotBlockWhenUnpaired(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.client.Store.ID != nil {
+	if a.cli().Store.ID != nil {
 		t.Fatal("a fresh device store should be unpaired (ID == nil) — test setup is wrong")
 	}
 
@@ -237,7 +237,7 @@ func TestNewLogsExistingSessionFound(t *testing.T) {
 	}
 	t.Cleanup(a.Stop)
 
-	if a.client.Store.ID == nil {
+	if a.cli().Store.ID == nil {
 		t.Fatal("test setup is wrong — seeded device should have a non-nil Store.ID")
 	}
 	if !strings.Contains(buf.String(), "sesión previa encontrada") || !strings.Contains(buf.String(), "5550000000000") {
@@ -280,11 +280,11 @@ func TestRecordOwnIdentityWithEmptyPushNameLeavesNameBlank(t *testing.T) {
 	}
 	t.Cleanup(a.Stop)
 
-	if a.client.Store.ID == nil {
+	if a.cli().Store.ID == nil {
 		t.Fatal("test setup is wrong — seeded device should be paired (Store.ID != nil)")
 	}
-	if a.client.Store.PushName != "" {
-		t.Fatalf("test setup is wrong — seedFakeDevice wrote push_name=\"\", got Store.PushName = %q", a.client.Store.PushName)
+	if a.cli().Store.PushName != "" {
+		t.Fatalf("test setup is wrong — seedFakeDevice wrote push_name=\"\", got Store.PushName = %q", a.cli().Store.PushName)
 	}
 
 	a.recordOwnIdentity() // what handleConnected calls on every *events.Connected
@@ -322,8 +322,8 @@ func TestRecordOwnIdentityPreservesKnownNameWhenPushNameEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(a.Stop)
-	if a.client.Store.PushName != "" {
-		t.Fatalf("test setup is wrong — want Store.PushName empty, got %q", a.client.Store.PushName)
+	if a.cli().Store.PushName != "" {
+		t.Fatalf("test setup is wrong — want Store.PushName empty, got %q", a.cli().Store.PushName)
 	}
 
 	a.recordOwnIdentity()
@@ -361,10 +361,10 @@ func TestRecordOwnIdentityStripsDeviceSuffixBeforeMarkingOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(a.Stop)
-	if a.client.Store.ID == nil {
+	if a.cli().Store.ID == nil {
 		t.Fatal("test setup is wrong — seeded device should be paired (Store.ID != nil)")
 	}
-	if a.client.Store.ID.Device == 0 {
+	if a.cli().Store.ID.Device == 0 {
 		t.Fatal("test setup is wrong — want a NONZERO device (the real cut was :15), got 0 — this would not reproduce the bug")
 	}
 

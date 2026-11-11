@@ -136,7 +136,8 @@ func TestHandleMessageFromMeGuard(t *testing.T) {
 				// non-matching-JID coincidence.
 				client.Store.ID = nil
 			}
-			a := &Adapter{inbound: make(chan gateway.Inbound, 4), client: client}
+			a := &Adapter{inbound: make(chan gateway.Inbound, 4)}
+			a.setClient(client)
 
 			evt := &events.Message{
 				Info: types.MessageInfo{
@@ -250,7 +251,8 @@ func TestResolveChatJIDFallsBackToGetPNForLID(t *testing.T) {
 	if err := client.Store.LIDs.PutLIDMapping(context.Background(), lid, number); err != nil {
 		t.Fatal(err)
 	}
-	a := &Adapter{inbound: make(chan gateway.Inbound, 1), client: client}
+	a := &Adapter{inbound: make(chan gateway.Inbound, 1)}
+	a.setClient(client)
 	info := types.MessageInfo{MessageSource: types.MessageSource{
 		Chat: lid, Sender: lid, AddressingMode: types.AddressingModeLID,
 	}}
@@ -266,7 +268,8 @@ func TestResolveChatJIDFallsBackToGetPNForLID(t *testing.T) {
 // under the raw @lid, same as today.
 func TestResolveChatJIDFallsBackToRawJIDWhenUnresolved(t *testing.T) {
 	client := newTestWmeowClient(t)
-	a := &Adapter{inbound: make(chan gateway.Inbound, 1), client: client}
+	a := &Adapter{inbound: make(chan gateway.Inbound, 1)}
+	a.setClient(client)
 	lid := types.NewJID("444", "lid")
 	info := types.MessageInfo{MessageSource: types.MessageSource{
 		Chat: lid, Sender: lid, AddressingMode: types.AddressingModeLID,
@@ -387,7 +390,8 @@ func TestHandleMessageFromMeNoteToSelfResolvesViaRecipientAlt(t *testing.T) {
 
 	client := newTestWmeowClient(t)
 	client.Store.ID = &own
-	a := &Adapter{inbound: make(chan gateway.Inbound, 4), client: client}
+	a := &Adapter{inbound: make(chan gateway.Inbound, 4)}
+	a.setClient(client)
 
 	evt := &events.Message{
 		Info: types.MessageInfo{
@@ -505,7 +509,8 @@ func TestHandleMessagePlainTextHasEmptyReplyFields(t *testing.T) {
 // download deterministically, no network touched — downloadAndStoreMedia
 // still returns (mime, caption) on that failure path (media.go's own doc).
 func TestHandleMessageMediaSetsTypeToMimeAndTextToCaption(t *testing.T) {
-	a := &Adapter{inbound: make(chan gateway.Inbound, 4), mediaDir: t.TempDir(), client: newTestWmeowClient(t)}
+	a := &Adapter{inbound: make(chan gateway.Inbound, 4), mediaDir: t.TempDir()}
+	a.setClient(newTestWmeowClient(t))
 	evt := &events.Message{
 		Info: types.MessageInfo{
 			MessageSource: types.MessageSource{Chat: types.NewJID("123", "s.whatsapp.net")},
@@ -634,8 +639,9 @@ func TestHandleMessageDownloadsMediaRegardlessOfWhitelist(t *testing.T) {
 
 	a := &Adapter{
 		inbound: make(chan gateway.Inbound, 4), mediaDir: t.TempDir(),
-		client: newTestWmeowClient(t), store: st, router: rt,
+		store: st, router: rt,
 	}
+	a.setClient(newTestWmeowClient(t))
 	evt := &events.Message{
 		Info: types.MessageInfo{
 			MessageSource: types.MessageSource{Chat: types.NewJID("999", "g.us")},
@@ -769,7 +775,8 @@ func TestRecordOwnIdentityMergesDeviceSuffixedOwnChat(t *testing.T) {
 	defer st.Close()
 	client := newTestWmeowClient(t)
 	sm := state.NewManager(filepath.Join(t.TempDir(), "status.json"), 8)
-	a := &Adapter{inbound: make(chan gateway.Inbound, 4), store: st, state: sm, client: client}
+	a := &Adapter{inbound: make(chan gateway.Inbound, 4), store: st, state: sm}
+	a.setClient(client)
 
 	clean := client.Store.ID.ToNonAD().String()
 	// newTestWmeowClient's own Store.ID carries no device suffix (Device
@@ -1013,7 +1020,7 @@ func TestGroupInfoEventAddsJoinedParticipants(t *testing.T) {
 // the contract's own non-negotiable: a photo-change event must mark the
 // cached avatar stale — NextCheckAt pulled to "due now" — so the EXISTING
 // paced path re-checks it on its own schedule, never fetch anything
-// itself. a.client is left nil on purpose: any code path that tried to
+// itself. a.cli() is left nil on purpose: any code path that tried to
 // call GetProfilePictureInfo/download here would nil-panic, so a clean
 // pass is itself proof no download was attempted — same technique
 // TestCheckAvatarSkipsWhenStillFresh already uses in avatar_test.go.
@@ -1031,7 +1038,7 @@ func TestPictureEventInvalidatesAvatarWithoutDownloading(t *testing.T) {
 	if err := st.UpsertAvatar(seeded); err != nil {
 		t.Fatal(err)
 	}
-	a := &Adapter{inbound: make(chan gateway.Inbound, 4), store: st} // a.client nil — see doc above
+	a := &Adapter{inbound: make(chan gateway.Inbound, 4), store: st} // a.cli() nil — see doc above
 
 	a.handleEvent(&events.Picture{JID: types.NewJID("555000000092", "s.whatsapp.net"), PictureID: "new-pic"})
 
@@ -1783,7 +1790,8 @@ func TestResolveSenderJIDFallsBackToGetPNForLID(t *testing.T) {
 	if err := client.Store.LIDs.PutLIDMapping(context.Background(), lid, number); err != nil {
 		t.Fatal(err)
 	}
-	a := &Adapter{inbound: make(chan gateway.Inbound, 1), client: client}
+	a := &Adapter{inbound: make(chan gateway.Inbound, 1)}
+	a.setClient(client)
 	src := types.MessageSource{
 		Chat: types.NewJID("999", "g.us"), Sender: lid,
 		IsGroup: true, AddressingMode: types.AddressingModeLID,
@@ -1801,7 +1809,8 @@ func TestResolveSenderJIDFallsBackToGetPNForLID(t *testing.T) {
 // applies to the chat.
 func TestResolveSenderJIDFallsBackToRawJIDWhenUnresolved(t *testing.T) {
 	client := newTestWmeowClient(t)
-	a := &Adapter{inbound: make(chan gateway.Inbound, 1), client: client}
+	a := &Adapter{inbound: make(chan gateway.Inbound, 1)}
+	a.setClient(client)
 	lid := types.NewJID("444", "lid")
 	src := types.MessageSource{
 		Chat: types.NewJID("999", "g.us"), Sender: lid,

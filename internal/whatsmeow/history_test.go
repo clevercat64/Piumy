@@ -506,7 +506,8 @@ func TestPersistHistoryMessageResolvesLIDChatViaGetPNForLID(t *testing.T) {
 	if err := client.Store.LIDs.PutLIDMapping(context.Background(), lid, number); err != nil {
 		t.Fatal(err)
 	}
-	a := &Adapter{inbound: make(chan gateway.Inbound, 4), store: st, client: client}
+	a := &Adapter{inbound: make(chan gateway.Inbound, 4), store: st}
+	a.setClient(client)
 
 	evt := &events.Message{
 		Info: types.MessageInfo{
@@ -545,7 +546,7 @@ func TestPersistHistoryMessageNilStoreIsNoOp(t *testing.T) {
 // TestHandleHistorySyncPushNameChunkSchedulesContactsSync is the first half
 // of ct-2026-07-31's fix ("no llegan contactos en una instalación nueva"):
 // a PUSH_NAME chunk has zero Conversations (the loop over
-// evt.Data.GetConversations() never runs, so a.client can safely stay nil
+// evt.Data.GetConversations() never runs, so a.cli() can safely stay nil
 // here — this chunk shape never reaches ParseWebMessage), but it IS the
 // real signal that whatsmeow just wrote push names into its own local
 // Store.Contacts (the library's handleHistoricalPushNames runs before this
@@ -585,7 +586,8 @@ func TestHandleHistorySyncConversationsChunkDoesNotScheduleContactsSync(t *testi
 		t.Fatal(err)
 	}
 	defer st.Close()
-	a := &Adapter{inbound: make(chan gateway.Inbound, 4), store: st, client: newTestWmeowClient(t), contactsSyncDebounce: time.Hour}
+	a := &Adapter{inbound: make(chan gateway.Inbound, 4), store: st, contactsSyncDebounce: time.Hour}
+	a.setClient(newTestWmeowClient(t))
 
 	evt := &events.HistorySync{
 		Data: &waHistorySync.HistorySync{

@@ -142,12 +142,14 @@ type Reconnecter interface {
 }
 
 // QRStatus exposes the live QR-pairing state for GET /api/status (P2,
-// ct-2026-07-24-0015): current code string, its expiry time, and whether
-// the last round ended without pairing (qr_expired). whatsmeow.Adapter.
-// QRState satisfies this. nil -> fields report zero values, same
-// degrade-one-piece convention as every other optional Deps field.
+// ct-2026-07-24-0015): current code string, its expiry time, whether the
+// last round ended without pairing (qr_expired), and why no QR came out
+// (qr_error, T187 — a stable code, not the library's error text; "" when
+// nothing is wrong). whatsmeow.Adapter.QRState satisfies this. nil ->
+// fields report zero values, same degrade-one-piece convention as every
+// other optional Deps field.
 type QRStatus interface {
-	QRState() (code string, expiresAt time.Time, expired bool)
+	QRState() (code string, expiresAt time.Time, expired bool, errCode string)
 }
 
 // HistorySyncProgress exposes the live passive full-sync visibility signal

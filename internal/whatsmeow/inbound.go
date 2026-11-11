@@ -226,7 +226,7 @@ func (a *Adapter) handleKeepAliveTimeout(v *events.KeepAliveTimeout) {
 		return
 	}
 	log.Printf("whatsmeow: keepalive sin éxito hace %s — cerrando el socket zombie y reintentando", time.Since(v.LastSuccess).Round(time.Second))
-	a.client.Disconnect()
+	a.cli().Disconnect()
 	a.scheduleReconnect(a.context())
 }
 
@@ -261,7 +261,7 @@ func (a *Adapter) handleConnected() {
 	// on a potentially long, deliberately slow sweep. Placed before the
 	// groups fetch below so a GetJoinedGroups failure never skips it.
 	go a.syncContacts(a.context())
-	groups, err := a.client.GetJoinedGroups(context.Background())
+	groups, err := a.cli().GetJoinedGroups(context.Background())
 	if err != nil {
 		log.Printf("whatsmeow: GetJoinedGroups after connect: %v", err)
 		return
@@ -283,11 +283,11 @@ func (a *Adapter) handleConnected() {
 // No-op if not connected (reset without a live session has nothing to
 // re-sync from).
 func (a *Adapter) KickResync() {
-	if a.client == nil || !a.client.IsConnected() {
+	if a.cli() == nil || !a.cli().IsConnected() {
 		return
 	}
 	go a.syncContacts(a.context())
-	groups, err := a.client.GetJoinedGroups(context.Background())
+	groups, err := a.cli().GetJoinedGroups(context.Background())
 	if err != nil {
 		log.Printf("whatsmeow: KickResync: GetJoinedGroups: %v", err)
 		return
@@ -332,7 +332,7 @@ func (a *Adapter) clearErrorState() {
 // recordOwnIdentity mirrors the linked account's own JID + display name
 // into state.Status — GET /api/status's own_number/name (ct-2026-07-10-2312).
 // Split out from clearErrorState so that one stays testable without a live
-// client; this one needs a.client.Store, only available post-connect.
+// client; this one needs a.cli().Store, only available post-connect.
 //
 // T17 (ct-2026-08-05-1240, Part 1): OwnName is only overwritten when
 // Store.PushName is non-empty — same "never blank a known value" guard
@@ -352,7 +352,7 @@ func (a *Adapter) clearErrorState() {
 // unconditional: a JID never "un-happens" once paired, so the freshest
 // value always wins.
 func (a *Adapter) recordOwnIdentity() {
-	if a.state == nil || a.client.Store.ID == nil {
+	if a.state == nil || a.cli().Store.ID == nil {
 		return
 	}
 	// StripDeviceSuffix (T45, ct-2026-08-10-1424): client.Store.ID is the
@@ -368,8 +368,8 @@ func (a *Adapter) recordOwnIdentity() {
 	// matches zero rows, silently — the chat exists, clean, but never gets
 	// marked owner. Normalizing store-side alone isn't enough once a
 	// second call in the same caller reuses the un-normalized variable.
-	ownJID := store.StripDeviceSuffix(a.client.Store.ID.String())
-	ownName := a.client.Store.PushName
+	ownJID := store.StripDeviceSuffix(a.cli().Store.ID.String())
+	ownName := a.cli().Store.PushName
 	_ = a.state.Update(func(s *state.Status) {
 		s.OwnJID = ownJID
 		if ownName != "" {
@@ -533,10 +533,10 @@ func (a *Adapter) ResolvePN(ctx context.Context, lidJID string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	if a.client == nil || a.client.Store == nil || a.client.Store.LIDs == nil {
+	if a.cli() == nil || a.cli().Store == nil || a.cli().Store.LIDs == nil {
 		return "", nil
 	}
-	pn, err := a.client.Store.LIDs.GetPNForLID(ctx, jid)
+	pn, err := a.cli().Store.LIDs.GetPNForLID(ctx, jid)
 	if err != nil {
 		return "", err
 	}
@@ -621,10 +621,10 @@ func (a *Adapter) resolveChatJID(src types.MessageSource) types.JID {
 	if alt.Server == types.DefaultUserServer && !alt.IsEmpty() {
 		return alt.ToNonAD()
 	}
-	if a.client == nil || a.client.Store == nil || a.client.Store.LIDs == nil {
+	if a.cli() == nil || a.cli().Store == nil || a.cli().Store.LIDs == nil {
 		return src.Chat
 	}
-	pn, err := a.client.Store.LIDs.GetPNForLID(context.Background(), src.Chat)
+	pn, err := a.cli().Store.LIDs.GetPNForLID(context.Background(), src.Chat)
 	if err != nil || pn.User == "" {
 		return src.Chat // not resolved yet — stays @lid, same as today
 	}
@@ -677,12 +677,12 @@ func (a *Adapter) resolveSenderJID(src types.MessageSource) types.JID {
 	if src.SenderAlt.Server == types.DefaultUserServer && !src.SenderAlt.IsEmpty() {
 		return src.SenderAlt.ToNonAD()
 	}
-	if a.client == nil || a.client.Store == nil || a.client.Store.LIDs == nil {
+	if a.cli() == nil || a.cli().Store == nil || a.cli().Store.LIDs == nil {
 		return src.Sender
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), resolveSenderTimeout)
 	defer cancel()
-	pn, err := a.client.Store.LIDs.GetPNForLID(ctx, src.Sender)
+	pn, err := a.cli().Store.LIDs.GetPNForLID(ctx, src.Sender)
 	if err != nil || pn.User == "" {
 		return src.Sender
 	}
@@ -731,10 +731,10 @@ func (a *Adapter) resolveSenderJID(src types.MessageSource) types.JID {
 func (a *Adapter) handleMessage(evt *events.Message) {
 	fromMe := false
 	if evt.Info.IsFromMe {
-		if a.client == nil || a.client.Store.ID == nil || isOwnDevice(evt.Info.Sender, *a.client.Store.ID) {
+		if a.cli() == nil || a.cli().Store.ID == nil || isOwnDevice(evt.Info.Sender, *a.cli().Store.ID) {
 			return
 		}
-		if !isSelfChat(evt.Info.Chat, *a.client.Store.ID) {
+		if !isSelfChat(evt.Info.Chat, *a.cli().Store.ID) {
 			fromMe = true // T100: the owner answered a real contact from another device
 		}
 	}

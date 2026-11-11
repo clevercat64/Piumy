@@ -64,7 +64,7 @@ func TestRequestAvatarNilStoreIsNoOp(t *testing.T) {
 // a freshly-sampled next_check_at.
 func TestCheckAvatarSkipsWhenStillFresh(t *testing.T) {
 	st := openTestAvatarStore(t)
-	a := &Adapter{store: st} // a.client is nil — proves the skip never reaches it
+	a := &Adapter{store: st} // a.cli() is nil — proves the skip never reaches it
 	jid := "55500000021@s.whatsapp.net"
 	want := store.Avatar{
 		JID: jid, PictureID: "pic-1", Path: "cached.jpg",
@@ -99,7 +99,8 @@ func TestCheckAvatarSkipsWhenStillFresh(t *testing.T) {
 func TestCheckAvatarCapsStaleScheduleForOwnJID(t *testing.T) {
 	st := openTestAvatarStore(t)
 	client := newTestWmeowClient(t)
-	a := &Adapter{store: st, client: client}
+	a := &Adapter{store: st}
+	a.setClient(client)
 	ownJID := client.Store.ID.ToNonAD().String()
 
 	now := time.Now()
@@ -110,7 +111,7 @@ func TestCheckAvatarCapsStaleScheduleForOwnJID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a.checkAvatar(context.Background(), ownJID) // a.client is non-nil but never dials out — this must still not try
+	a.checkAvatar(context.Background(), ownJID) // a.cli() is non-nil but never dials out — this must still not try
 
 	got, ok, err := st.GetAvatar(ownJID)
 	if err != nil || !ok {
@@ -135,7 +136,8 @@ func TestCheckAvatarCapsStaleScheduleForOwnJID(t *testing.T) {
 func TestCheckAvatarDoesNotCapFreshScheduleForOtherJID(t *testing.T) {
 	st := openTestAvatarStore(t)
 	client := newTestWmeowClient(t)
-	a := &Adapter{store: st, client: client}
+	a := &Adapter{store: st}
+	a.setClient(client)
 	other := "555000001@s.whatsapp.net"
 
 	want := store.Avatar{
@@ -270,7 +272,8 @@ func TestAvatarRecheckWindowRespectsKVOverride(t *testing.T) {
 func TestRecheckWindowForOwnJIDUsesShortWindow(t *testing.T) {
 	st := openTestAvatarStore(t)
 	client := newTestWmeowClient(t)
-	a := &Adapter{store: st, client: client}
+	a := &Adapter{store: st}
+	a.setClient(client)
 	ownJID := client.Store.ID.ToNonAD().String()
 
 	got := a.recheckWindowFor(ownJID)
@@ -298,7 +301,8 @@ func TestRecheckWindowForOwnJIDUsesShortWindow(t *testing.T) {
 func TestRecheckWindowForOwnJIDWithDeviceSuffixUsesShortWindow(t *testing.T) {
 	st := openTestAvatarStore(t)
 	client := newTestWmeowClient(t)
-	a := &Adapter{store: st, client: client}
+	a := &Adapter{store: st}
+	a.setClient(client)
 	withSuffix := types.JID{User: client.Store.ID.User, Device: 15, Server: client.Store.ID.Server}
 
 	got := a.recheckWindowFor(withSuffix.String())
@@ -320,7 +324,8 @@ func TestRecheckWindowForOwnJIDWithDeviceSuffixUsesShortWindow(t *testing.T) {
 func TestCheckAvatarCapsStaleScheduleForOwnJIDWithDeviceSuffix(t *testing.T) {
 	st := openTestAvatarStore(t)
 	client := newTestWmeowClient(t)
-	a := &Adapter{store: st, client: client}
+	a := &Adapter{store: st}
+	a.setClient(client)
 	withSuffix := types.JID{User: client.Store.ID.User, Device: 15, Server: client.Store.ID.Server}
 	suffixedJID := withSuffix.String()
 
@@ -355,7 +360,8 @@ func TestCheckAvatarCapsStaleScheduleForOwnJIDWithDeviceSuffix(t *testing.T) {
 func TestRecheckWindowForOtherJIDUsesContactsWindow(t *testing.T) {
 	st := openTestAvatarStore(t)
 	client := newTestWmeowClient(t)
-	a := &Adapter{store: st, client: client}
+	a := &Adapter{store: st}
+	a.setClient(client)
 
 	want := a.avatarRecheckWindow()
 	got := a.recheckWindowFor("555000001@s.whatsapp.net")
@@ -368,13 +374,13 @@ func TestRecheckWindowForOtherJIDUsesContactsWindow(t *testing.T) {
 }
 
 // TestRecheckWindowForNilClientUsesContactsWindow: checkAvatar's caller
-// (avatarWorkerLoop) already guards a.client via IsConnected() before
-// reaching this code in production, but a.client is nil in some existing
+// (avatarWorkerLoop) already guards a.cli() via IsConnected() before
+// reaching this code in production, but a.cli() is nil in some existing
 // tests (TestCheckAvatarSkipsWhenStillFresh) — recheckWindowFor must not
 // panic dereferencing a nil client, it just can't be the own-jid case.
 func TestRecheckWindowForNilClientUsesContactsWindow(t *testing.T) {
 	st := openTestAvatarStore(t)
-	a := &Adapter{store: st} // a.client is nil
+	a := &Adapter{store: st} // a.cli() is nil
 
 	got := a.recheckWindowFor("555000001@s.whatsapp.net") // must not panic
 	want := a.avatarRecheckWindow()
@@ -478,7 +484,7 @@ func TestAvatarWorkerLoopPacesRequestsWithVariableGaps(t *testing.T) {
 // socket (verified against the vendored client.go — IsConnected() is
 // nil-receiver-safe and returns false for any client without one,
 // TestAvatarWorkerLoopPacesRequestsWithVariableGaps above already relies
-// on exactly that to run with a.client == nil without panicking) — there
+// on exactly that to run with a.cli() == nil without panicking) — there
 // is no way to fake "connected" in a unit test, on purpose: a real
 // connection is a real network dependency this suite doesn't have. That
 // boundary is the honest edge of what a test can prove; everything AFTER
@@ -489,11 +495,12 @@ func TestRequestAvatarThroughRealWorkerLoopReachesConnectivityGate(t *testing.T)
 	st := openTestAvatarStore(t)
 	client := newTestWmeowClient(t) // real client, deliberately unconnected — no socket
 	a := &Adapter{
-		store: st, client: client,
+		store:          st,
 		avatarQueue:    make(chan string, 8),
 		actionDelayMin: 5 * time.Millisecond,
 		actionDelayMax: 15 * time.Millisecond,
 	}
+	a.setClient(client)
 	withSuffix := types.JID{User: client.Store.ID.User, Device: 15, Server: client.Store.ID.Server}
 	jid := withSuffix.String()
 

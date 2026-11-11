@@ -142,14 +142,14 @@ func (a *Adapter) recheckWindowFor(jid string) governor.DelayWindow {
 // raw string equality. See recheckWindowFor's own doc for why: the
 // caller's jid isn't guaranteed to already be device-suffix-free.
 func (a *Adapter) isOwnJID(jid string) bool {
-	if a.client == nil || a.client.Store.ID == nil {
+	if a.cli() == nil || a.cli().Store.ID == nil {
 		return false
 	}
 	parsed, err := types.ParseJID(jid)
 	if err != nil {
 		return false
 	}
-	own := a.client.Store.ID.ToNonAD()
+	own := a.cli().Store.ID.ToNonAD()
 	got := parsed.ToNonAD()
 	return got.User == own.User && got.Server == own.Server
 }
@@ -196,7 +196,7 @@ func (a *Adapter) avatarWorkerLoop(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			if !a.client.IsConnected() || a.killSwitchActive() {
+			if !a.cli().IsConnected() || a.killSwitchActive() {
 				continue // dropped; the next view re-requests
 			}
 			a.checkAvatar(ctx, jid)
@@ -255,7 +255,7 @@ func (a *Adapter) checkAvatar(ctx context.Context, jid string) {
 	}
 	nextCheckAt := now.Add(a.recheckWindowFor(jid).Random()).Unix()
 
-	info, err := a.client.GetProfilePictureInfo(ctx, parsed, params)
+	info, err := a.cli().GetProfilePictureInfo(ctx, parsed, params)
 	switch {
 	case errors.Is(err, wmeow.ErrProfilePictureNotSet):
 		// Confirmed: no photo (possibly a CHANGE from before — the user

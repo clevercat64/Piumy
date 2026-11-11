@@ -115,7 +115,8 @@ func TestDownloadNextPendingMediaPicksGloballyOldest(t *testing.T) {
 	if err := st.AddMediaPending(store.MediaPending{ChatJID: "1@c.us", MsgID: "old", Mime: "image/jpeg", Kind: "photo", TS: 100}); err != nil {
 		t.Fatal(err)
 	}
-	a := &Adapter{store: st, mediaDir: t.TempDir(), client: newTestWmeowClient(t)}
+	a := &Adapter{store: st, mediaDir: t.TempDir()}
+	a.setClient(newTestWmeowClient(t))
 
 	a.downloadNextPendingMedia(context.Background())
 
@@ -153,7 +154,8 @@ func TestDownloadNextPendingMediaGivesUpAfterMaxAttempts(t *testing.T) {
 	if err := st.AddMediaPending(store.MediaPending{ChatJID: "2@c.us", MsgID: "fresh", Mime: "image/jpeg", Kind: "photo", TS: 200}); err != nil {
 		t.Fatal(err)
 	}
-	a := &Adapter{store: st, mediaDir: t.TempDir(), client: newTestWmeowClient(t)}
+	a := &Adapter{store: st, mediaDir: t.TempDir()}
+	a.setClient(newTestWmeowClient(t))
 
 	for i := 0; i < store.MaxMediaPendingAttempts; i++ {
 		a.downloadNextPendingMedia(context.Background())

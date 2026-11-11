@@ -32,7 +32,7 @@ func (a *Adapter) mediaBgWorkerLoop(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		if !a.client.IsConnected() || a.killSwitchActive() {
+		if !a.cli().IsConnected() || a.killSwitchActive() {
 			continue
 		}
 		a.downloadNextPendingMedia(ctx)

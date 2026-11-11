@@ -144,7 +144,7 @@ func TestBackfillContactsRespectsCancellation(t *testing.T) {
 
 // TestSyncContactsNilStoreIsNoOp confirms the nil-safe convention (same as
 // seedGroups): without a store, syncContacts must return before ever
-// touching a.client — safe to call even with neither wired, same as every
+// touching a.cli() — safe to call even with neither wired, same as every
 // other optional-dependency guard in this package.
 func TestSyncContactsNilStoreIsNoOp(t *testing.T) {
 	a := &Adapter{}
@@ -226,11 +226,11 @@ func debounceBurstOnce(t *testing.T) bool {
 	client.Store.Contacts = counter
 	a := &Adapter{
 		store:                st,
-		client:               client,
 		actionDelayMin:       time.Millisecond,
 		actionDelayMax:       2 * time.Millisecond,
 		contactsSyncDebounce: debounce,
 	}
+	a.setClient(client)
 
 	jid := types.NewJID("111", "s.whatsapp.net")
 

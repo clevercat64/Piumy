@@ -322,8 +322,8 @@ func TestDownloadAndStoreMediaFailureCapturesPending(t *testing.T) {
 	a := &Adapter{
 		store:    st,
 		mediaDir: t.TempDir(),
-		client:   newTestWmeowClient(t),
 	}
+	a.setClient(newTestWmeowClient(t))
 
 	evt := &events.Message{
 		Message: &waE2E.Message{ImageMessage: &waE2E.ImageMessage{
@@ -417,7 +417,8 @@ func TestDownloadMediaPendingDownloadFailureLeavesRowIntact(t *testing.T) {
 	if err := st.AddMediaPending(p); err != nil {
 		t.Fatal(err)
 	}
-	a := &Adapter{store: st, mediaDir: t.TempDir(), client: newTestWmeowClient(t)}
+	a := &Adapter{store: st, mediaDir: t.TempDir()}
+	a.setClient(newTestWmeowClient(t))
 
 	if err := a.downloadMediaPending(context.Background(), p); err == nil {
 		t.Fatal("downloadMediaPending with an empty DirectPath: want an error")

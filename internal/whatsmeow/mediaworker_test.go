@@ -29,7 +29,9 @@ func TestFetchPendingMediaParallelOnlyThisChat(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := &Adapter{store: st, mediaDir: t.TempDir(), client: newTestWmeowClient(t)}
+	a := &Adapter{store: st, mediaDir: t.TempDir()}
+
+	a.setClient(newTestWmeowClient(t))
 	a.fetchPendingMediaParallel(context.Background(), "1@c.us")
 
 	got, ok, err := st.GetMediaPending("1@c.us", "img1")
@@ -65,7 +67,9 @@ func TestFetchPendingMediaParallelDrainsMultipleItems(t *testing.T) {
 		}
 	}
 
-	a := &Adapter{store: st, mediaDir: t.TempDir(), client: newTestWmeowClient(t)}
+	a := &Adapter{store: st, mediaDir: t.TempDir()}
+
+	a.setClient(newTestWmeowClient(t))
 	a.fetchPendingMediaParallel(context.Background(), chat)
 
 	for _, id := range []string{"a", "b", "c", "d", "e"} {
@@ -99,7 +103,9 @@ func TestFetchPendingMediaParallelSkipsRowsAtAttemptsCap(t *testing.T) {
 		}
 	}
 
-	a := &Adapter{store: st, mediaDir: t.TempDir(), client: newTestWmeowClient(t)}
+	a := &Adapter{store: st, mediaDir: t.TempDir()}
+
+	a.setClient(newTestWmeowClient(t))
 	a.fetchPendingMediaParallel(context.Background(), chat)
 
 	got, ok, err := st.GetMediaPending(chat, "capped")
@@ -127,7 +133,8 @@ func TestFetchPendingMediaParallelRespectsKillSwitch(t *testing.T) {
 
 	gov := governor.NewLimiter(10, time.Minute)
 	gov.SetKill(true)
-	a := &Adapter{store: st, governor: gov, mediaDir: t.TempDir(), client: newTestWmeowClient(t)}
+	a := &Adapter{store: st, governor: gov, mediaDir: t.TempDir()}
+	a.setClient(newTestWmeowClient(t))
 
 	done := make(chan struct{})
 	go func() {
@@ -210,7 +217,8 @@ func TestFetchOnePendingMediaInFlightIsNotCountedAsFailure(t *testing.T) {
 	if err := st.AddMediaPending(p); err != nil {
 		t.Fatal(err)
 	}
-	a := &Adapter{store: st, mediaDir: t.TempDir(), client: newTestWmeowClient(t)}
+	a := &Adapter{store: st, mediaDir: t.TempDir()}
+	a.setClient(newTestWmeowClient(t))
 
 	if !a.claimMediaDownload(p.ChatJID, p.MsgID) {
 		t.Fatal("claimMediaDownload: want true on a fresh claim")

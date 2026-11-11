@@ -122,13 +122,19 @@ func (d Deps) handleStatus(w http.ResponseWriter, r *http.Request) {
 	var qrCode string
 	var qrExpiresAt int64
 	var qrExpired bool
+	// qr_error (T187, ct-2026-11-11-0953): why no QR came out, so the modal
+	// can say it instead of spinning on "Generando QR…" forever. A stable
+	// code the dashboard's catalog translates, never the library's own
+	// English error text.
+	var qrError string
 	if d.QRStatus != nil {
-		code, expiresAt, expired := d.QRStatus.QRState()
+		code, expiresAt, expired, errCode := d.QRStatus.QRState()
 		qrCode = code
 		if !expiresAt.IsZero() {
 			qrExpiresAt = expiresAt.Unix()
 		}
 		qrExpired = expired
+		qrError = errCode
 	}
 
 	// account/account_color (S3, ct-2026-09-20-1202): config.ColorForAccount
@@ -173,6 +179,7 @@ func (d Deps) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"qr_code":       qrCode,
 		"qr_expires_at": qrExpiresAt,
 		"qr_expired":    qrExpired,
+		"qr_error":      qrError,
 
 		// The label, not the raw id (S5, ct-2026-09-23-2038): WhatsApp name and
 		// number tail once linked. The color stays derived from the id above.

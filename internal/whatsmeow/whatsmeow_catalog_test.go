@@ -133,7 +133,8 @@ func TestWrapSetPhotoErrorNilIsNil(t *testing.T) {
 // TestSetGroupPhotoRejectsOversizedImageBeforeParsingJID confirms the guard
 // runs inside the real method, not just in the standalone helper.
 func TestSetGroupPhotoRejectsOversizedImageBeforeParsingJID(t *testing.T) {
-	a := &Adapter{client: newTestWmeowClient(t)}
+	a := &Adapter{}
+	a.setClient(newTestWmeowClient(t))
 	big := make([]byte, profilePhotoMaxBytes+1)
 	_, err := a.SetGroupPhoto(context.Background(), "123@g.us", big)
 	if err == nil {
@@ -153,7 +154,8 @@ func TestSetGroupPhotoRejectsOversizedImageBeforeParsingJID(t *testing.T) {
 // seam to see the stanza, and comparing against our own types.EmptyJID would
 // measure the code against itself. That part is proven by the owner's smoke.
 func TestSetProfilePhotoRefusesWithoutOwnJID(t *testing.T) {
-	a := &Adapter{client: newTestWmeowClient(t)}
+	a := &Adapter{}
+	a.setClient(newTestWmeowClient(t))
 	_, err := a.SetProfilePhoto(context.Background(), []byte("whatever"))
 	if err == nil {
 		t.Fatal("SetProfilePhoto with no own JID: want an error")
