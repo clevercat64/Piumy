@@ -115,6 +115,11 @@ CREATE TABLE IF NOT EXISTS avatars (
 // columnMigrations backfills columns added after the initial schema onto
 // chats/messages/outbox tables that may already exist on a deployed DB
 // (CREATE TABLE IF NOT EXISTS is a no-op there — it never adds columns).
+//
+// Additive only. Open() takes no copy of piumy.db before migrating, so a
+// DROP, a RENAME or a create-copy-drop here would destroy owner data on
+// upgrade with nothing to restore from. TestNoDestructiveMigration
+// (schema_test.go) fails on one and says what to do instead.
 var columnMigrations = []string{
 	`ALTER TABLE chats ADD COLUMN active INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE chats ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`,
