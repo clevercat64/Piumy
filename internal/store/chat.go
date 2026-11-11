@@ -919,18 +919,27 @@ func (s *Store) EffectiveConfigLevelDefault(settingKey string) (string, error) {
 // this stays silently re-appliable until a real owner decision freezes it.
 func (s *Store) applyConfigLevelDefault(jid, level string) error {
 	jid = StripDeviceSuffix(jid)
+	// T201: the caller's own SELECT of config_level_source (TouchChat's
+	// applyOriginDefaultIfUnset) and this UPDATE are two separate
+	// statements — a concurrent manual write (SetActive/SetConfigLevel/
+	// SetConfirmationMode) landing in between them used to get clobbered
+	// right back to the origin default, because the UPDATE never looked at
+	// config_level_source itself. The `AND ... <> 'manual'` below makes
+	// THIS statement the one that decides, atomically, instead of trusting
+	// a read that can go stale mid-flight.
+	const notManual = `AND COALESCE(config_level_source,'default') <> 'manual'`
 	switch level {
 	case "auto":
-		_, err := s.db.Exec(`UPDATE chats SET active = 1, confirmation_mode = 'none' WHERE jid = ?`, jid)
+		_, err := s.db.Exec(`UPDATE chats SET active = 1, confirmation_mode = 'none' WHERE jid = ? `+notManual, jid)
 		return err
 	case "confirm":
-		_, err := s.db.Exec(`UPDATE chats SET active = 1, confirmation_mode = 'always' WHERE jid = ?`, jid)
+		_, err := s.db.Exec(`UPDATE chats SET active = 1, confirmation_mode = 'always' WHERE jid = ? `+notManual, jid)
 		return err
 	case "unattended":
-		_, err := s.db.Exec(`UPDATE chats SET active = 0 WHERE jid = ?`, jid)
+		_, err := s.db.Exec(`UPDATE chats SET active = 0 WHERE jid = ? `+notManual, jid)
 		return err
 	case "ignored":
-		_, err := s.db.Exec(`UPDATE chats SET status = 'ignored', active = 0 WHERE jid = ?`, jid)
+		_, err := s.db.Exec(`UPDATE chats SET status = 'ignored', active = 0 WHERE jid = ? `+notManual, jid)
 		return err
 	default:
 		return fmt.Errorf("store: invalid config level default %q, want auto|confirm|unattended|ignored", level)

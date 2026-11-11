@@ -822,6 +822,85 @@ func TestApplyOriginDefaultFallsBackToUnattendedWhenKVUnset(t *testing.T) {
 	}
 }
 
+// TestApplyConfigLevelDefaultRespectsManualOverride is T201 (origin:
+// Bernstein, T191 e2e — TestKillSwitchBlocksSend caía 1-3/20 even on a quiet
+// machine). applyOriginDefaultIfUnset (TouchChat, every message) decides
+// whether to re-apply the origin default with a SELECT of
+// config_level_source, THEN — a separate statement, no transaction binding
+// the two — calls applyConfigLevelDefault to write it. A concurrent manual
+// write (SetActive/SetConfigLevel/SetConfirmationMode, all of which mark
+// config_level_source 'manual' in the same statement) that lands between
+// that SELECT and this UPDATE never gets re-checked by the UPDATE itself, so
+// it gets silently clobbered back to the origin default. This test isolates
+// the clobbering half: skip the SELECT (it isn't the bug) and call
+// applyConfigLevelDefault directly on a chat ALREADY marked manual, one case
+// per level — today (HEAD) every case overwrites the owner's decision
+// anyway, because the UPDATE doesn't look at config_level_source at all.
+func TestApplyConfigLevelDefaultRespectsManualOverride(t *testing.T) {
+	cases := []struct {
+		name  string
+		level string
+		// setup builds a manual baseline this level's UPDATE would
+		// otherwise overwrite — different from what the level itself sets,
+		// so a clobber is never mistaken for a coincidence.
+		setup func(s *Store, jid string) error
+	}{
+		{"auto", "auto", func(s *Store, jid string) error {
+			if err := s.SetActive(jid, false); err != nil {
+				return err
+			}
+			return s.SetConfirmationMode(jid, "always")
+		}},
+		{"confirm", "confirm", func(s *Store, jid string) error {
+			if err := s.SetActive(jid, false); err != nil {
+				return err
+			}
+			return s.SetConfirmationMode(jid, "none")
+		}},
+		{"unattended", "unattended", func(s *Store, jid string) error {
+			return s.SetActive(jid, true)
+		}},
+		{"ignored", "ignored", func(s *Store, jid string) error {
+			if err := s.SetActive(jid, true); err != nil {
+				return err
+			}
+			return s.SetStatus(jid, "whitelist")
+		}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := openTestStore(t)
+			jid := "555000050@s.whatsapp.net"
+			if err := s.TouchChat(jid, "Alguien", 1); err != nil {
+				t.Fatalf("TouchChat: %v", err)
+			}
+			if err := tc.setup(s, jid); err != nil {
+				t.Fatalf("setup: %v", err)
+			}
+			before, ok, err := s.GetChat(jid)
+			if err != nil || !ok {
+				t.Fatalf("GetChat before: ok=%v err=%v", ok, err)
+			}
+			if before.ConfigLevelSource != "manual" {
+				t.Fatalf("precondition: config_level_source = %q, want manual", before.ConfigLevelSource)
+			}
+
+			if err := s.applyConfigLevelDefault(jid, tc.level); err != nil {
+				t.Fatalf("applyConfigLevelDefault(%q): %v", tc.level, err)
+			}
+
+			after, ok, err := s.GetChat(jid)
+			if err != nil || !ok {
+				t.Fatalf("GetChat after: ok=%v err=%v", ok, err)
+			}
+			if after.Active != before.Active || after.ConfirmationMode != before.ConfirmationMode || after.Status != before.Status {
+				t.Errorf("applyConfigLevelDefault(%q) on an already-manual chat changed it: before=%+v after=%+v — a manual decision must never be clobbered by the origin default (T201)", tc.level, before, after)
+			}
+		})
+	}
+}
+
 // TestEffectiveConfigLevelDefault (ct-2026-07-22-2100): unset -> "unattended"
 // (the safety default); an explicitly-configured value passes through
 // unchanged.
