@@ -4,4 +4,4 @@ Piumy se conecta a WhatsApp por una vía no oficial. WhatsApp puede limitar, sus
 
 Los mensajes que salgan de tu cuenta son tu responsabilidad, los escribas tú o los escriba un agente automático en tu nombre.
 
-Tus datos se quedan en tu computador. Piumy guarda las conversaciones, reglas y la sesión de WhatsApp localmente. No se envía nada a ningún servidor nuestro, porque no hay ninguno.
+Tus datos se quedan en tu computador. Piumy guarda las conversaciones, reglas y la sesión de WhatsApp localmente. No se envía nada a ningún servidor nuestro, salvo los reportes de drift que tú actives en Opciones: vienen apagados y nunca llevan chats, números ni nombres.

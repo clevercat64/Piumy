@@ -266,7 +266,30 @@ type Config struct {
 	SMTPUser string
 	SMTPPass string
 	SMTPFrom string
+
+	// DriftReports / DriftReportURL (T174a, ct-2026-11-10-210158): whether
+	// Piumy may send the maintainers a short anonymous note when its own
+	// picture of the world differs from reality (internal/driftreport — what
+	// can and cannot leave is fixed in code there). This is only the DEFAULT:
+	// the owner's switch in the dashboard (store.SettingDriftReports) wins, and
+	// PIUMY_DRIFT_REPORTS sets the default for a machine nobody will click on.
+	// PIUMY_DRIFT_REPORT_URL points it elsewhere.
+	DriftReports   bool
+	DriftReportURL string
 }
+
+// driftReportsDefault is the ONE place the on/off default lives (T174a).
+// false = reports are the owner's opt-in: nothing leaves until they switch it
+// on in the dashboard. The boss decided it (2026-11-10, verbatim: "los
+// reportes de drift son opcionales y el usuario los envía por voluntad
+// propia"), which is also what keeps the EULA, the installer's welcome screen,
+// the README and the web honest about "no data leaves your machine". Kept as
+// a single constant so that decision stays one line.
+const driftReportsDefault = false
+
+// driftReportURLDefault is where CleverCoder's report endpoint lives; the URL
+// is config, not code, so a self-hoster or a test can point it elsewhere.
+const driftReportURLDefault = "https://clevercoder.app/lic/report"
 
 func env(k, def string) string {
 	if v := os.Getenv(k); v != "" {
@@ -303,6 +326,17 @@ func envDuration(k string, def time.Duration) time.Duration {
 	if v := os.Getenv(k); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			return d
+		}
+	}
+	return def
+}
+
+// envBool: anything strconv.ParseBool accepts (1/0, true/false, t/f...). An
+// unset or unparseable value keeps def — a typo must never flip a switch.
+func envBool(k string, def bool) bool {
+	if v := os.Getenv(k); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
 		}
 	}
 	return def
@@ -442,6 +476,9 @@ func Load() (Config, error) {
 		SMTPUser: os.Getenv("PIUMY_SMTP_USER"),
 		SMTPPass: os.Getenv("PIUMY_SMTP_PASS"),
 		SMTPFrom: os.Getenv("PIUMY_SMTP_FROM"),
+
+		DriftReports:   envBool("PIUMY_DRIFT_REPORTS", driftReportsDefault),
+		DriftReportURL: env("PIUMY_DRIFT_REPORT_URL", driftReportURLDefault),
 	}
 	return cfg, nil
 }

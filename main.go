@@ -19,6 +19,7 @@ import (
 	"piumy-gateway/internal/capipush"
 	"piumy-gateway/internal/config"
 	"piumy-gateway/internal/corepipeline"
+	"piumy-gateway/internal/driftreport"
 	"piumy-gateway/internal/eventbus"
 	"piumy-gateway/internal/governor"
 	"piumy-gateway/internal/gwlog"
@@ -30,6 +31,7 @@ import (
 	"piumy-gateway/internal/sessionbackup"
 	"piumy-gateway/internal/state"
 	"piumy-gateway/internal/store"
+	"piumy-gateway/internal/version"
 	"piumy-gateway/internal/whatsmeow"
 )
 
@@ -380,6 +382,19 @@ func main() {
 	if cfg.DefaultTerminalID == "" {
 		log.Printf("capipush: WARNING — PIUMY_DEFAULT_TERMINAL_ID vacío: los mensajes del dueño (is_boss) no van a poder despacharse hasta que se setee")
 	}
+	// Drift reports (T174a, ct-2026-11-10-210158) are the owner's opt-in: the
+	// switch is asked on EVERY report (the dashboard flips it while Piumy runs;
+	// the stored choice wins, cfg.DriftReports — off — is only the default).
+	// What a report may carry is closed in code inside internal/driftreport.
+	// dataDir was already resolved by config.Load; "" would keep it off.
+	driftDataDir, _ := config.DataDir()
+	drift := driftreport.New(driftreport.Config{
+		Enabled: func() bool { return s.SettingBool(store.SettingDriftReports, cfg.DriftReports) },
+		URL:     cfg.DriftReportURL,
+		Version: version.Version,
+		DataDir: driftDataDir,
+		KV:      s,
+	})
 	pusher := capipush.New(s, rt, gate, injector, capipush.Config{
 		PortFallback: cfg.DefaultTerminalID,
 		Weights: store.UsageWeights{
@@ -425,6 +440,7 @@ func main() {
 	// agent (get_status embeds Status) — sm is state.Manager, unrelated to
 	// its OWN independent "swamped" mood threshold (cfg.SwampedAt above).
 	pusher.SetState(sm)
+	pusher.SetDrift(drift)
 
 	// onAgentUpsert/onAgentDelete (ct-2026-07-29, agentes paso 1): the ONE
 	// hot-reload effect a secondary agent's credentials changing (or the
@@ -638,7 +654,8 @@ func main() {
 	// ("database is closed"); harmless-but-logged under the MVP config
 	// (backup off), a real race under load.
 	var bg sync.WaitGroup
-	for _, run := range []func(context.Context){pusher.Run, bk.RunPeriodic} {
+	watchWhatsApp := func(ctx context.Context) { driftreport.WatchWhatsApp(ctx, sm, drift) }
+	for _, run := range []func(context.Context){pusher.Run, bk.RunPeriodic, watchWhatsApp} {
 		bg.Add(1)
 		go func(r func(context.Context)) { defer bg.Done(); r(ctx) }(run)
 	}
@@ -677,6 +694,10 @@ func main() {
 		// "not yet touched from here" fallback (see restapi.Deps' own doc).
 		DefaultDispatchDebounce:    cfg.DispatchDebounce,
 		DefaultMaxDispatchDebounce: cfg.MaxDispatchDebounce,
+		// DriftReportsDefault (T174a): what the opt-in switch shows until the
+		// owner touches it — their stored choice always wins.
+		DriftReportsDefault: cfg.DriftReports,
+		DriftReportURL:      cfg.DriftReportURL,
 		// Injectors: pusher's own injectors map (RegisterInjector/
 		// OnAgentUpsert below already keep it current) — the per-agent ping
 		// (M2, ct-2026-07-22-1301) resolves THAT agent's injector through

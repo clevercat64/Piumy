@@ -27,6 +27,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"piumy-gateway/internal/driftreport"
 	"piumy-gateway/internal/i18n"
 	"piumy-gateway/internal/mcpserver"
 	"piumy-gateway/internal/router"
@@ -188,6 +189,12 @@ type Config struct {
 	// deferral). Zero/negative falls back to 5m. Overridden live by
 	// store.SettingCapipushMaxDispatchDebounce (T90, ct-2026-08-28-1350).
 	MaxDispatchDebounce time.Duration
+	// DriftSustainedAfter (T174a, ct-2026-11-10-210158) is how long held
+	// dispatches or a failing antenna must last before capipush reports them
+	// as drift (see drift.go) — long enough that a boot with the antenna not
+	// yet configured does not spend a report window. Overridden live by
+	// store.SettingDriftSustainedAfter. Zero/negative falls back to 10 minutes.
+	DriftSustainedAfter time.Duration
 }
 
 func (c Config) withDefaults() Config {
@@ -214,6 +221,9 @@ func (c Config) withDefaults() Config {
 	}
 	if c.MaxDispatchDebounce <= 0 {
 		c.MaxDispatchDebounce = 5 * time.Minute
+	}
+	if c.DriftSustainedAfter <= 0 {
+		c.DriftSustainedAfter = 10 * time.Minute
 	}
 	return c
 }
@@ -326,6 +336,12 @@ type Pusher struct {
 	// sweep — recordChannelRecovered clears the whole per-terminalID map so
 	// a LATER cut can notify again.
 	channelDownNotified map[string]map[string]bool
+
+	// drift / retention back the drift reports (T174a, ct-2026-11-10-210158) —
+	// see drift.go. drift nil = no reports (tests, or a build that never wires
+	// it); retention is sweepOnce-only state, same single-goroutine convention.
+	drift     *driftreport.Reporter
+	retention retention
 }
 
 // New builds a Pusher. injector is the initial Injector for PortFallback
@@ -605,6 +621,7 @@ func (p *Pusher) sweepOnce() {
 
 	p.pruneStaleState(pending)
 	now := time.Now()
+	p.beginRetentionSweep(swamped)
 	for key, burst := range pending {
 		chatJID, sender := key.ChatJID, key.Sender
 		if swamped {
@@ -635,6 +652,7 @@ func (p *Pusher) sweepOnce() {
 			log.Printf("capipush: dispatch %s: %v", chatJID, err)
 		}
 	}
+	p.reportRetention()
 }
 
 // signalBackpressure mirrors the swamped state into state.Status (S3,
@@ -698,6 +716,7 @@ func (p *Pusher) recordChannelDown(terminalID, chatJID, level string, cause erro
 		p.channelDownSince[terminalID] = time.Now()
 		log.Printf("capipush: canal caído terminal=%s (detectado en chat=%s, nivel=%s): %v", terminalID, chatJID, level, cause)
 	}, nil)
+	p.reportChannelDown(terminalID)
 }
 
 // recordChannelRecovered logs how long the channel was down and how many
@@ -1215,6 +1234,7 @@ func (p *Pusher) dispatch(chatJID, sender string, burst []store.Message) error {
 		}
 	}
 	if terminalID == "" {
+		p.retention.noRoute++
 		return fmt.Errorf("no terminal_id for %s (no route, no port fallback configured)", chatJID)
 	}
 	// ct-2026-07-13-1822: LogInjector = sin antena real. Skip sin gate
@@ -1243,6 +1263,7 @@ func (p *Pusher) dispatch(chatJID, sender string, burst []store.Message) error {
 			log.Printf("capipush: terminal %s (destino de un reply) sin antena registrada — aviso encolado a %s", terminalID, chatJID)
 			return p.notifyAgentUnreachable(chatJID, terminalID, burst)
 		}
+		p.retention.noAntenna++
 		p.logTransition("noAntenna:"+terminalID, true, func() {
 			log.Printf("capipush: terminal %s sin antena registrada — despacho retenido (chat %s queda en PendingDedicated para MCP-pull)", terminalID, chatJID)
 		}, nil)

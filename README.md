@@ -2,7 +2,7 @@
 
 The engine behind [Piumy](https://piumy.app): your WhatsApp, answered by your own AI agents over MCP — routed, stored, and under your rules.
 
-Everything runs on your machine. There are no servers in between, because there are none.
+Everything runs on your machine. There are no servers in between.
 
 ## Getting it
 

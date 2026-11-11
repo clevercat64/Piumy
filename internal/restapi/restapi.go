@@ -275,6 +275,14 @@ type Deps struct {
 	DefaultDispatchDebounce    time.Duration
 	DefaultMaxDispatchDebounce time.Duration
 
+	// DriftReportsDefault (T174a, ct-2026-11-10-210158) is cfg.DriftReports —
+	// what the drift-reports switch shows until the owner touches it. The
+	// stored choice (store.SettingDriftReports) always wins over it.
+	DriftReportsDefault bool
+	// DriftReportURL is cfg.DriftReportURL — shown next to the switch so the
+	// owner sees where a report would go, exactly as configured.
+	DriftReportURL string
+
 	// PrincipalTerminalID (ct-2026-07-22-1301, M1) is cfg.DefaultTerminalID —
 	// the SAME identity mcpserver.Deps.PrincipalTerminalID already gates
 	// register_agent/set_agent_capi on. The `agents` table only ever holds

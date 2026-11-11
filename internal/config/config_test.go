@@ -191,3 +191,47 @@ func TestDispatchDelayEnv(t *testing.T) {
 		}
 	})
 }
+
+// TestDriftReportsSwitchAndURL (T174a, ct-2026-11-10-210158): the on/off
+// default lives in ONE constant (driftReportsDefault) so the owner's pending
+// opt-in-or-on decision is a one-line change — which is why this test checks
+// "unset follows the constant", never a hardcoded true.
+func TestDriftReportsSwitchAndURL(t *testing.T) {
+	t.Setenv("PIUMY_DATA_DIR", t.TempDir())
+	load := func(t *testing.T, reports, url string) Config {
+		t.Helper()
+		t.Setenv("PIUMY_DRIFT_REPORTS", reports)
+		t.Setenv("PIUMY_DRIFT_REPORT_URL", url)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cfg
+	}
+
+	cfg := load(t, "", "")
+	if cfg.DriftReports != driftReportsDefault {
+		t.Errorf("unset: DriftReports = %v, want the single default constant (%v)", cfg.DriftReports, driftReportsDefault)
+	}
+	// Literal on purpose: this is the address CleverCoder's server listens on.
+	if cfg.DriftReportURL != "https://clevercoder.app/lic/report" {
+		t.Errorf("default URL = %q", cfg.DriftReportURL)
+	}
+
+	for _, v := range []string{"0", "false", "False"} {
+		if load(t, v, "").DriftReports {
+			t.Errorf("PIUMY_DRIFT_REPORTS=%q must switch reports off", v)
+		}
+	}
+	for _, v := range []string{"1", "true"} {
+		if !load(t, v, "").DriftReports {
+			t.Errorf("PIUMY_DRIFT_REPORTS=%q must switch reports on", v)
+		}
+	}
+	if got := load(t, "maybe", "").DriftReports; got != driftReportsDefault {
+		t.Errorf("a typo (%q) flipped the switch to %v: it must keep the default", "maybe", got)
+	}
+	if got := load(t, "", "http://127.0.0.1:9/lic/report").DriftReportURL; got != "http://127.0.0.1:9/lic/report" {
+		t.Errorf("PIUMY_DRIFT_REPORT_URL ignored: %q", got)
+	}
+}

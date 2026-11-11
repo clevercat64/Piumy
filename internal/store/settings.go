@@ -111,6 +111,20 @@ const (
 	SettingCapipushDispatchDebounce    = "capipush_dispatch_debounce"
 	SettingCapipushMaxDispatchDebounce = "capipush_max_dispatch_debounce"
 
+	// SettingDriftSustainedAfter (T174a, ct-2026-11-10-210158) — how long a
+	// held-dispatch or failing-antenna condition has to last before capipush
+	// hands it to driftreport. Without it, a boot with the antenna not yet
+	// configured (the first sweep, ~5 s in) would spend that kind's whole
+	// 6–9 h report window and hide a real 3 h outage later. See
+	// capipush.Config.DriftSustainedAfter for the code-level fallback.
+	SettingDriftSustainedAfter = "drift_sustained_after"
+
+	// SettingDriftReports (T174a) is the owner's switch for drift reports,
+	// flipped from the dashboard while Piumy runs. Unset means "use the default"
+	// (config.Config.DriftReports: off unless PIUMY_DRIFT_REPORTS says
+	// otherwise) — a stored "0" or "1" is the owner's explicit choice.
+	SettingDriftReports = "drift_reports"
+
 	// SettingActivationSweepWindow (S8, ct-2026-07-30-031126) overrides
 	// SetActive's own backlog-sweep reach on a genuine inactive→active
 	// transition: messages OLDER than `now - window` get marked handled

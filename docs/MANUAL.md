@@ -102,6 +102,16 @@ solo los campos que sus propios paquetes necesitan.
   T11, abajo). Ya no falla si falta `PIUMY_DB_PATH` — ver T169 justo abajo,
   que le sacó ese caso especial junto con el resto de los defaults
   relativos.
+- **T174a (ct-2026-11-10-210158) — reportes de drift, APAGADOS por defecto.**
+  `Config.DriftReports` (`PIUMY_DRIFT_REPORTS`) y `Config.DriftReportURL`
+  (`PIUMY_DRIFT_REPORT_URL`, por defecto `https://clevercoder.app/lic/report`).
+  El valor por defecto vive en UNA sola constante, `driftReportsDefault`
+  (`false`, decisión del boss: los reportes son opcionales y el usuario los
+  envía por voluntad propia). Es solo el DEFAULT: el interruptor del dueño
+  (`store.SettingDriftReports`) gana siempre — ver `driftreport`. `envBool`
+  es nuevo (`strconv.ParseBool`; un valor ilegible deja el default: un typo
+  nunca da vuelta un interruptor). Como el resto, `piumy-config.json` lo
+  aplica sin código extra.
 - **T169 (ct-2026-09-19-1433) — cada ruta de datos cuelga de `DataDir()`,
   nunca del directorio de trabajo.** Boss verbatim, la causa raíz de los
   datos personales en el repo: *"el problema es que no separaron el
@@ -8170,7 +8180,120 @@ propio que describen se sacó en T28, ver `docs/T28-DIAGRAMA-CAPI-SIN-CIFRADO.md
   desactiva el chequeo). `dispatch` registra `store.AddUsage{InChars,
   Messages:1}` por cada dispatch — el contador de "input" del blend.
 
+- **T174a (ct-2026-11-10-210158) — dos enganches de drift (`drift.go`).**
+  capipush es quien se entera de dos de los tres drifts y solo MIDE cuánto
+  lleva la condición; si sale, cómo y qué lleva es de `driftreport`.
+  (a) *Despachos retenidos*: `dispatch` cuenta (`retention.noRoute` en el
+  "no terminal_id … no route", `retention.noAntenna` en la retención sin
+  antena; el caso reply no, ya avisa al dueño) y `sweepOnce` evalúa UNA vez
+  al final del bucle (`reportRetention`): `since` marca cuándo empezó la
+  retención y reporta al sostenerse ≥ umbral. Un barrido *saturado* (los
+  chats no-boss se saltan — justo lo que causa la falta de antena) no puede
+  leerse como "la antena volvió": no reinicia el reloj (`partial`).
+  (b) *Antena registrada que falla*: `recordChannelDown` ya llevaba
+  `channelDownSince`/`channelDownFails`; `reportChannelDown` los reutiliza.
+  El umbral (`Config.DriftSustainedAfter`, 10 min; vivo por
+  `store.SettingDriftSustainedAfter`) evita que un arranque con la antena aún
+  sin configurar (el log sale en el primer barrido, ~5 s) gaste la ventana de
+  6–9 h del tipo y tape un corte real. `SetDrift(*Reporter)` cablea; sin él, o
+  con el interruptor apagado, los enganches no hacen ni la contabilidad.
+
 ---
+
+## driftreport — `internal/driftreport`
+
+Rol: un aviso corto y ANÓNIMO a los desarrolladores cuando lo que Piumy cree
+difiere de lo que pasa de verdad (T174a, `ct-2026-11-10-210158`; diagrama en
+`docs/T174A-DRIFT-REPORT.md`). **Es voluntario: viene APAGADO y solo sale si
+el dueño lo enciende** — decisión del boss, 2026-11-10, verbatim: *"los
+reportes de drift son opcionales y el usuario los envía por voluntad
+propia"*. Una sola responsabilidad: recibir un `Event`, decidir si puede
+salir y mandarlo. Detectar el drift es de quien ya conoce el estado
+(`capipush`, `WatchWhatsApp`); este paquete nunca lee el estado de Piumy.
+
+**Qué sale** — y es lo único que el código PUEDE mandar: el tipo de problema,
+cuántas veces ocurrió, cuánto duró, la versión de Piumy, el sistema operativo
+y la arquitectura (`GOOS/GOARCH`), y un identificador aleatorio de la
+instalación (`machine-id`, un GUID). **Qué nunca sale**: ningún número de
+teléfono, JID, nombre, contacto, mensaje ni chat, ninguna ruta de disco ni
+clave. No es una convención: `Event` solo tiene `Kind` y `Cause` (vocabularios
+cerrados — una causa desconocida se REEMPLAZA por `unknown`, no se reenvía),
+un conteo y una duración; no hay un campo de texto libre por donde pueda
+colarse nada, y el título es fijo por tipo. Tests: con identificadores `555`
+plantados en el chat, la ruta y el error del inyector, la petición HTTP real
+(contra un `httptest`) no contiene ni uno.
+
+- **Los tres tipos** (`Kind`): `dispatch_retained` (despachos retenidos porque
+  la ruta o el agente no tiene antena — `capipush`), `wa_disconnected`
+  (WhatsApp sin conexión más de una ventana aleatoria de 20 a 40 min —
+  `WatchWhatsApp`), `antenna_failing` (despachos que fallan contra una antena
+  registrada — `capipush`). `Cause` es el motivo en un conjunto cerrado
+  (`no_route`, `no_antenna`, `wa_down`, `wa_replaced`, `wa_halted`,
+  `send_failing`, `unknown`).
+- **El interruptor** — `Config.Enabled func() bool`, que se CONSULTA en cada
+  reporte (el tablero lo cambia con Piumy corriendo): `main.go` lo cablea a
+  `store.SettingBool(store.SettingDriftReports, cfg.DriftReports)`. La
+  elección guardada del dueño gana; `cfg.DriftReports` (apagado, salvo
+  `PIUMY_DRIFT_REPORTS`) es solo el default. **Apagado = cero efectos**: no
+  lee el KV, no crea `machine-id`, no hace ninguna petición. Un `Reporter`
+  `nil`, o sin URL / carpeta de datos / KV, es inerte.
+- **El tope, en código y persistido** — un reporte por tipo cada 6 a 9 h
+  (ventana aleatoria, nunca fija) y como máximo 3 por ventana móvil de 24 h
+  por instalación (el servidor comparte un tope de 200/día con los avisos de
+  ventas del boss: un Piumy en bucle los dejaría sin ellos). Se guarda en la
+  tabla `kv` (`drift_report_state`; `ResetMessagingData` no la toca, así que
+  "partir de 0" no lo reinicia). Guarda el `next_allowed` YA sorteado, no el
+  último envío: re-sortear al leer dejaría que un bucle de reinicios tirara
+  los dados hasta caer temprano. El cupo se reserva (y persiste) ANTES de
+  enviar: un envío que falla no se reintenta y un reinicio a mitad de envío no
+  lo duplica. Si el tope no se puede leer o persistir, no se envía.
+- **Envío** — `POST` JSON `{type:"piumy-drift", title, body, email:null,
+  app_version, machine_id, timestamp, token}` a `Config.URL`; `timestamp` UTC
+  `yyyy-MM-ddTHH:mm:ssZ`; `token` = primeros 12 hex de
+  `sha256("cc-rpt-v1-3a9f7e21|"+timestamp+"|"+title)`. **El token es un filtro
+  de ruido, NO autenticación**: este código es público (AGPL), cualquiera puede
+  calcularlo; el servidor no debe fiarse de él. Asíncrono (nunca frena el
+  barrido), con plazo de 10 s; un fallo se loguea y se descarta, sin reintento.
+- **`machine-id`** — `<DataDir>/machine-id`, en la raíz y no en `secrets/`
+  (es un identificador, no una credencial), ni en la DB (`sessionbackup`
+  respalda la DB entera: un restore en otra máquina clonaría el id). Se crea
+  una sola vez, la primera vez que un reporte está por salir. Con
+  `PIUMY_ACCOUNT`, `DataDir()` suma `accounts/<slug>`: cada cuenta tiene su id
+  y su tope.
+- **`WatchWhatsApp(ctx, src, r)`** — lee `state.Status.WAConnected` cada
+  minuto, no engancha `whatsmeow`: ningún enganche único lo ve todo
+  (`scheduleReconnect` no ve las caídas terminales — LoggedOut,
+  StreamReplaced, ClientOutdated, ConnectFailure —, y `handleDisconnect` no ve
+  un arranque sin red). La ventana de 20–40 min se sortea por caída. Un
+  "no pareado" (`ShowQR`, mood `qr`, `OwnJID` vacío) no es drift. Con el
+  interruptor apagado NO observa: si el dueño lo enciende en plena caída, el
+  reloj arranca ahí (el reporte no afirma una duración que nadie midió).
+- **Cómo se enciende** — hoy: `POST /api/admin/drift-reports {"enabled":true}`
+  (`restapi/drift.go`; `GET` devuelve `{enabled, url}`, `url` es el destino
+  tal cual está configurado) o `PIUMY_DRIFT_REPORTS=1` para una máquina que
+  nadie va a tocar. El control del tablero, con "qué sale / qué nunca sale"
+  al lado del interruptor, llega con el rediseño T172b (el fragmento listo
+  está en `docs/T174A-DRIFT-REPORT.md`); **hasta entonces el interruptor no
+  tiene pantalla**.
+- **Los textos publicados que prometen "ningún servidor nuestro"** (decisión del
+  boss: *"no debería cambiarse nada a no ser que el texto siga sin calzar"* con
+  "opcional y voluntario"). Con el opt-in, dos afirmaban un absoluto que deja de
+  ser cierto cuando el usuario enciende el reporte y se corrigieron en el mismo
+  commit: `installer/windows/eula.txt:7` (lo muestra el setup de Windows y
+  `install.sh`) y `web/index.html:521` (ES y EN), que ahora dicen que lo único
+  que puede salir es un reporte de drift opcional que el usuario enciende y que
+  nunca lleva chats, números ni nombres; `README.md:5` perdió ", because there
+  are none". `installer/windows/piumy.iss:995` ("No hay servidores de por
+  medio") no cambió: los reportes no están en el camino de los mensajes. **Si
+  `config.driftReportsDefault` pasa a `true`, hay que volver a revisar esos
+  cuatro textos.**
+- **Probado**: tope por tipo, ventana móvil de 24 h (no día de calendario),
+  persistencia y ventana sin re-sortear tras reiniciar, apagado sin rastro,
+  interruptor leído en vivo, fallo de envío descartado sin reintento, no
+  bloqueo ante un servidor lento (sin plazos de reloj: bajo carga eran
+  frágiles), token contra un vector calculado con `sha256sum` (no con el mismo
+  código) y datos `555` de punta a punta. Se verificó con sabotaje que los
+  tests pueden fallar (cada regla rota a propósito hizo caer al menos uno).
 
 ## i18n — `internal/i18n`
 
@@ -8470,6 +8593,16 @@ DB-admin/draft-approval (F4c) + el seam de tokens (F4d) — admin directo
 del dueño desde la LAN, sin agente de por medio. Grupo/perfil NO están acá
 (solo MCP, F4c).
 
+- **T174a (ct-2026-11-10-210158) — `GET`/`POST /api/admin/drift-reports`
+  (`drift.go`).** El interruptor de los reportes de drift, opcionales y
+  apagados por defecto. `GET` → `{enabled, url}`: `enabled` es el valor
+  EFECTIVO (la elección guardada del dueño, o `Deps.DriftReportsDefault` =
+  `cfg.DriftReports`), `url` el destino configurado. `POST {"enabled": bool}`
+  lo guarda en `store.SettingDriftReports`, el mismo ajuste que
+  `driftreport.Reporter` consulta en cada reporte: aplica en el acto, sin
+  reiniciar. Un cuerpo sin `enabled` se rechaza con 400 (no se lee como
+  "apagado"). Misma autenticación que el resto de `/api/admin/*`. Ver
+  `driftreport`: qué sale y qué nunca sale.
 - `handleEvents` (ct-2026-07-24-0527, auto-refresco del dashboard): el
   heartbeat de 20s (mantiene vivo un proxy/load-balancer) pasó de ser un
   comentario SSE crudo (`: keep-alive\n\n`, invisible para

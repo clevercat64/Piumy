@@ -166,6 +166,11 @@ func (d Deps) registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/dispatch-debounce", d.auth(d.handleGetDispatchDebounce))
 	mux.HandleFunc("POST /api/admin/dispatch-debounce", d.auth(d.handleSetDispatchDebounce))
 
+	// Drift reports (T174a, ct-2026-11-10-210158) — the owner's opt-in switch,
+	// see drift.go. Off until they switch it on.
+	mux.HandleFunc("GET /api/admin/drift-reports", d.auth(d.handleGetDriftReports))
+	mux.HandleFunc("POST /api/admin/drift-reports", d.auth(d.handleSetDriftReports))
+
 	// Estado/"About" de WhatsApp (T92, ct-2026-08-28 — el mismo
 	// GroupProfile.SetProfileStatus que set_profile_status (MCP) ya usa,
 	// solo un segundo entry point; T96, ct-2026-08-28-1743 — la mitad que
