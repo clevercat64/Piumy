@@ -10840,11 +10840,20 @@ es un paso aparte, conjunto con el boss (no en `main.go`).
     fallara y por eso se agregó el caso de la copia corrupta. Los permisos 600
     no se miden en Windows (NTFS no respeta `chmod`; el arnés lo detecta con
     un archivo canario y lo dice, en vez de medir el sistema de archivos).
-    **Sin probar** (necesita una máquina real): que systemd y launchd acepten
-    los archivos de servicio que escribe, `launchctl bootstrap`/`kickstart`, el
-    `xattr` de cuarentena, `od`/`sed` de BSD, las preguntas interactivas (EULA
-    y clave: piden terminal) y el arranque del binario real. `shellcheck` no
-    estaba disponible: no se corrió.
+    **Probado en un Linux real** (T176, 2026-11-11: Ubuntu 24.04 en WSL2,
+    systemd 255, usuario normal — `install.sh` se niega a correr como root y
+    WSL entrega `root`, hubo que crear un usuario): la ruta de ACTUALIZACIÓN
+    sobre un `piumy-config.json` existente y sin terminal — systemd aceptó el
+    unit que escribe, `enable` + `restart`, `wait_for_dashboard`, claves
+    intactas —, con un servicio de mentira en lugar del binario de Piumy (no
+    se tocó WhatsApp). También se vio que, lanzado como HIJO del servicio,
+    muere a mitad (su `systemctl --user stop` mata el cgroup y el servicio no
+    se reinicia): ver `autoupdate`, que lo lanza con `systemd-run`.
+    **Sin probar** (necesita una máquina real): una instalación NUEVA y sus
+    preguntas interactivas (EULA y clave: piden terminal), el arranque del
+    binario real y TODO macOS: `launchctl bootstrap`/`kickstart`, que launchd
+    acepte el plist, el `xattr` de cuarentena y `od`/`sed` de BSD. `shellcheck`
+    no estaba disponible: no se corrió.
 
 - Orden de construcción: `acquireAppMutex` (T21, no-op fuera de Windows) →
   `config.ApplyFileDefaults` (T11, ct-2026-08-05-1214 — rellena los

@@ -18,7 +18,7 @@ This repository is the source: for reading it, auditing it, or building it yours
 
 ### Linux and macOS
 
-> **Not tested on a real Linux or Mac yet.** The installer is tested against simulated `systemctl` and `launchctl` (`installer/posix/install_test.sh`); what only a real machine can confirm is listed at the end of this section. If something fails, please say so.
+> **Tested on a real Linux for updating only; not on a Mac at all.** The update path — `install.sh` over an existing install, with no terminal — was run on a real Linux (Ubuntu 24.04, systemd 255, as a normal user): it replaced the program, restarted the user service and kept the keys. A stand-in service replaced the real Piumy binary in that test, so no WhatsApp account was touched. Everything else is only checked against simulated `systemctl` and `launchctl` (`installer/posix/install_test.sh`); what a real machine has not confirmed yet is listed at the end of this section. If something fails, please say so.
 
 ```sh
 tar xzf Piumy-<version>-<system>-<arch>.tar.gz
@@ -66,7 +66,7 @@ Good to know:
 - Outside Windows nothing stops a second copy of Piumy from starting. If you ever ran it by hand, close it before updating, and never run two against the same data folder.
 - On a server or a Raspberry Pi without a login session, the service only runs while you are logged in. To start it at boot: `loginctl enable-linger $USER`.
 - By default Piumy listens on all network interfaces (agents on `8091`, dashboard on `8092`). Both ask for a key or password; to keep the dashboard to this machine only, add `"PIUMY_REST_ADDR": "127.0.0.1:8092"` to `piumy-config.json` and restart.
-- Not confirmed on a real machine: that systemd and launchd accept the service files this installer writes, the interactive prompts (they need a terminal), and the macOS commands in the table above.
+- Not confirmed on a real machine: a **fresh** install (its interactive prompts need a terminal), the real Piumy binary under the service, `shellcheck`, and everything on macOS — that launchd accepts the service file, the macOS commands in the table above, and the quarantine attribute. On Linux, systemd did accept the service file this installer writes.
 
 ## What it is
 

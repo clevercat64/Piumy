@@ -15,9 +15,13 @@
 # Sin preguntas (ej. un script de despliegue):
 #   PIUMY_DASHBOARD_PASSWORD='...' sh install.sh
 #
-# PROBADO solo con install_test.sh (systemctl, launchctl, uname y curl
-# simulados, en Windows con Git Bash). NO probado en un Linux ni un Mac reales;
-# se marca "no probado" abajo en cada punto que solo una máquina real confirma.
+# PROBADO con install_test.sh (systemctl, launchctl, uname y curl simulados, en
+# Windows con Git Bash) y, solo la ruta de ACTUALIZACIÓN, en un Linux real
+# (Ubuntu 24.04, systemd 255, usuario normal, sin terminal, con un servicio de
+# mentira en lugar del binario de Piumy). NO probado: una instalación NUEVA ni
+# sus preguntas (EULA, clave del tablero) en una máquina real, el binario real
+# de Piumy, shellcheck, y NADA en macOS. Se marca "no probado" abajo en cada
+# punto que solo una máquina real confirma.
 set -eu
 umask 077 # los datos y las claves quedan legibles solo para este usuario
 
