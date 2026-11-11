@@ -19,15 +19,22 @@ type Info struct {
 	RESTURL string `json:"rest_url"`
 	MCPKey  string `json:"mcp_key"`
 	RESTKey string `json:"rest_key"`
+	// MCPOperatorURL/MCPManagerURL (T178) are the two profile endpoints on the
+	// same address and key as MCPURL — added, never replacing it, so an agent
+	// reading only mcp_url keeps working.
+	MCPOperatorURL string `json:"mcp_operator_url"`
+	MCPManagerURL  string `json:"mcp_manager_url"`
 }
 
 // Params bundles what Write needs.
 type Params struct {
-	DataDir  string // where agent-connect.json (and status.json) live
-	MCPAddr  string // net/http.Server.Addr the MCP server binds, e.g. ":8091"
-	RESTAddr string
-	MCPKey   string
-	RESTKey  string
+	DataDir      string // where agent-connect.json (and status.json) live
+	MCPAddr      string // net/http.Server.Addr the MCP server binds, e.g. ":8091"
+	OperatorPath string // the profile endpoints' paths, from mcpserver's own constants — empty leaves that URL empty
+	ManagerPath  string
+	RESTAddr     string
+	MCPKey       string
+	RESTKey      string
 }
 
 // Write derives the local URLs from MCPAddr/RESTAddr and rewrites
@@ -40,6 +47,12 @@ func Write(p Params) error {
 		RESTURL: localURL(p.RESTAddr, ""),
 		MCPKey:  p.MCPKey,
 		RESTKey: p.RESTKey,
+	}
+	if p.OperatorPath != "" {
+		info.MCPOperatorURL = localURL(p.MCPAddr, p.OperatorPath)
+	}
+	if p.ManagerPath != "" {
+		info.MCPManagerURL = localURL(p.MCPAddr, p.ManagerPath)
 	}
 	data, err := json.MarshalIndent(info, "", "  ")
 	if err != nil {

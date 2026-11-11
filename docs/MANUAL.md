@@ -2001,10 +2001,15 @@ máquina necesita leer para saber cómo hablarle al gateway, sin parsear el
   `state.Write`), se reescribe entera en cada arranque (las claves pueden
   cambiar entre reinstalaciones). Crea `Params.DataDir` si no existe
   (`os.MkdirAll`).
-- `Params{DataDir, MCPAddr, RESTAddr, MCPKey, RESTKey}` — struct en vez de
-  posicionales (T1): con varios strings seguidos el riesgo real es
-  transponer dos por error en el call site.
-- `Info{MCPURL, RESTURL, MCPKey, RESTKey}` — sin `omitempty`: una clave sin
+- `Params{DataDir, MCPAddr, OperatorPath, ManagerPath, RESTAddr, MCPKey,
+  RESTKey}` — struct en vez de posicionales (T1): con varios strings seguidos
+  el riesgo real es transponer dos por error en el call site.
+  `OperatorPath`/`ManagerPath` (T178) los pone `main.go` desde
+  `mcpserver.PathOperator`/`PathManager`; vacíos dejan esa URL en `""`.
+- `Info{MCPURL, RESTURL, MCPKey, RESTKey, MCPOperatorURL, MCPManagerURL}` —
+  las dos últimas (T178) son los endpoints de perfil, misma dirección y misma
+  clave que `MCPURL`; se SUMAN, `mcp_url` sigue apuntando a `/mcp` (todo).
+  Sin `omitempty`: una clave sin
   setear queda como `""` en el JSON, nunca se omite el campo (el archivo
   refleja la realidad, no la maquilla). `CAPIKey`/`AgentClientPath` (T2)
   salieron en T28 (ct-2026-08-05-2242, decisión del boss): el despacho ya
@@ -3706,10 +3711,19 @@ el modelo vigente: tracking por `terminal_id`, default DENY) +
 `docs/F4C-DIAGRAMA.md` (F4c: confirmation_mode/draft, DB-admin, grupo/perfil).
 
 **Server + 57 tools** (`server.go`)
-- `New(ctx, Deps) *server.MCPServer` — arma el server, el flood-guard y el
-  gate-por-nivel como middleware (`s.Use(...)`), y todas las tools
+- `New(ctx, Deps) *server.MCPServer` — el server con TODAS las tools (el `/mcp`
+  de siempre); es `NewSet(ctx, Deps).All`.
+- `NewSet(ctx, Deps) Set{All, Operator, Manager}` (T178, `profiles.go`) — arma
+  el flood-guard, el gate-por-nivel como middleware y todas las tools
   (`send.go`, `gate_tools.go`, `admin_tools.go`, `group_tools.go`,
-  `agent_tools.go`).
+  `agent_tools.go`) UNA vez, y deriva `Operator` (atender chats) y `Manager`
+  (configurar Piumy) copiando tools por nombre (`operatorTools`/`managerTools`;
+  se solapan en `get_status`, `get_manual` y el triage por chat). Mismos
+  handlers, tracker y gate: una tool se comporta igual por cualquier puerta.
+  El test `TestEveryToolBelongsToAProfile` falla si una tool queda sin perfil.
+- `Handler(Set, mcpKey) http.Handler` (T178, `mount.go`) — monta `PathAll`
+  (`/mcp`), `PathOperator` (`/mcp/operator`) y `PathManager` (`/mcp/manager`)
+  detrás de UN `RequireBearerToken`: misma clave para los tres.
 - `Deps{Store, State, Router, ReadMarker, PolicyPath, Guard, Gate, Governor,
   Gateway, GroupProfile, ClaimTTLDefault, MCPAuthConfigured, AgentIdle,
   PrincipalTerminalID, OnAgentUpsert}` —

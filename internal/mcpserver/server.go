@@ -488,9 +488,16 @@ func publishDraftChanged(bus *eventbus.Bus) {
 // knob yet (YAGNI, single-agent use doesn't need tuning it).
 const claimTTLCeiling = 30 * time.Minute
 
-// New builds the MCP server with the switchboard's 23 tools and starts the
-// agent idle sweeper goroutine. ctx controls the sweeper lifetime.
+// New builds the MCP server with every tool (the legacy /mcp surface) and
+// starts the agent idle sweeper goroutine. ctx controls the sweeper lifetime.
 func New(ctx context.Context, d Deps) *server.MCPServer {
+	return NewSet(ctx, d).All
+}
+
+// NewSet builds the full tool registry once and derives the operator and
+// manager views from it (profiles.go) — same handlers, same tracker, same
+// gate, so a tool behaves identically whichever endpoint it is reached by.
+func NewSet(ctx context.Context, d Deps) Set {
 	tracker := newAgentTracker(d.State, d.AgentIdle, d.PingAgent)
 	go tracker.sweep(ctx)
 
@@ -518,7 +525,10 @@ func New(ctx context.Context, d Deps) *server.MCPServer {
 	// of RegisterDispatch being called — see Gate.Sweep's doc for why a
 	// wedged terminal otherwise never gets swept at all.
 	go gate.Sweep(ctx)
-	s.Use(errorLogMiddleware(), floodGuardMiddleware(guard), levelGateMiddleware(gate, d.PrincipalTerminalID))
+	middlewares := []server.ToolHandlerMiddleware{
+		errorLogMiddleware(), floodGuardMiddleware(guard), levelGateMiddleware(gate, d.PrincipalTerminalID),
+	}
+	s.Use(middlewares...)
 
 	claimTTLDefault := d.ClaimTTLDefault
 	if claimTTLDefault <= 0 {
@@ -1130,7 +1140,11 @@ func New(ctx context.Context, d Deps) *server.MCPServer {
 	// from the connection, never a parameter — see send_to_boss.go's own doc.
 	addSendToBossTool(s, d, tracker)
 
-	return s
+	return Set{
+		All:      s,
+		Operator: deriveProfile(s, "piumy-operator", operatorTools, middlewares),
+		Manager:  deriveProfile(s, "piumy-manager", managerTools, middlewares),
+	}
 }
 
 // generateRandomPassword returns a random 24-hex-char password — no

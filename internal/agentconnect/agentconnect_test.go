@@ -30,6 +30,24 @@ func TestWriteKeysFromConfig(t *testing.T) {
 	}
 }
 
+func TestWriteProfileURLs(t *testing.T) {
+	dir := t.TempDir()
+	if err := Write(Params{
+		DataDir: dir, MCPAddr: ":8091", RESTAddr: ":8092",
+		OperatorPath: "/mcp/operator", ManagerPath: "/mcp/manager",
+	}); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	var got Info
+	readInfo(t, dir, &got)
+	if got.MCPOperatorURL != "http://127.0.0.1:8091/mcp/operator" || got.MCPManagerURL != "http://127.0.0.1:8091/mcp/manager" {
+		t.Errorf("profile URLs = %q, %q", got.MCPOperatorURL, got.MCPManagerURL)
+	}
+	if got.MCPURL != "http://127.0.0.1:8091/mcp" {
+		t.Errorf("MCPURL = %q, the legacy endpoint must stay", got.MCPURL)
+	}
+}
+
 func TestWriteMissingKeyStaysEmpty(t *testing.T) {
 	dir := t.TempDir()
 	if err := Write(Params{DataDir: dir, MCPAddr: ":8091", RESTAddr: ":8092", MCPKey: "mcp-secret"}); err != nil {
