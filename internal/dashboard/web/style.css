@@ -328,7 +328,8 @@ body {
 .hero-number { font-size: 13.5px; font-family: var(--mono); color: var(--dim); margin-top: 3px; }
 /* T188 (M6): sin cuenta este renglón es una frase ("Escanea el QR para
    vincular..."), no un número de teléfono — la monoespaciada se queda sólo
-   donde dice un número. app.js pone .prose en loadStatus. */
+   donde dice un número. Nace puesta en index.html (también la ve quien aún no
+   inició sesión) y loadStatus la quita al conectar. */
 .hero-number.prose { font-family: var(--sans); }
 
 /* ct-2026-07-22 fix visual: el boss vio "Ver QR / Reconectar" pegado a
@@ -816,19 +817,25 @@ td.list-empty::before { content: none; }
 /* #groupzone (un wrapper que solo envolvía #grouplist) se aplanó en
    S1h-fix — el margen que le daba pasa directo a #grouplist. */
 #grouplist { margin-top: 20px; }
+/* T188: el encabezado de grupo no hacía wrap por debajo de 900px y, con los
+   selectores de nivel y de agente más la regla, sumaba más que la tarjeta: a
+   360px la regla con su lápiz quedaba en x=763 con 0px visibles (sin poder
+   editarla) y de 768 a 1920 se recortaba. Ahora hace wrap a todo ancho; el
+   nombre pide 180px de base para que los controles bajen a su renglón en vez
+   de aplastarlo, y los controles se envuelven y se achican dentro de él. */
 .groupheader {
-  display: flex; align-items: center; gap: 10px; padding: 10px 4px; cursor: pointer;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 10px 4px; cursor: pointer;
   border-top: 1px solid var(--border); user-select: none;
 }
 .groupheader:hover { color: var(--phos); }
 .grouptoggle { width: 1em; color: var(--dim); }
-.groupname { flex: 1; font-weight: 600; }
+.groupname { flex: 1 1 180px; min-width: 0; font-weight: 600; }
 .groupcount { color: var(--dim); font-size: 12.5px; }
 .groupmembers { padding: 4px 0 8px 26px; }
 /* Nivel/reglas del grupo (Tramo C, ct-2026-07-22-1235) — mismos controles
-   que la tabla Chats, al final del header; flex-shrink:0 para que no se
-   aplasten cuando el nombre del grupo es largo. */
-.groupcontrols { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+   que la tabla Chats, al final del header. */
+.groupcontrols { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; max-width: 100%; }
+.groupcontrols > * { min-width: 0; max-width: 100%; }
 .memberrow {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: 5px 0; font-size: 13px; color: var(--text); border-top: 1px dashed var(--border);
@@ -869,7 +876,8 @@ td.list-empty::before { content: none; }
   font-size: 12px; color: var(--dim); margin-top: 2px; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
 }
-.draftactions { display: flex; gap: 8px; flex-shrink: 0; }
+/* wrap (T188): a 360px los cuatro botones sumaban más que la fila y «descartar» se recortaba. */
+.draftactions { display: flex; flex-wrap: wrap; gap: 8px; flex-shrink: 0; max-width: 100%; }
 
 /* ── tab Agentes (M1, ct-2026-07-22-1301) ────────────────────────────── */
 #agentlist { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
@@ -911,7 +919,7 @@ td.list-empty::before { content: none; }
 .agentpingresult { font-size: 12px; color: var(--dim); }
 /* Números asignados (M3, ct-2026-07-22-1301) */
 .agentcard-subhead {
-  margin-top: 12px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim);
+  margin-top: 12px; font-size: 12px; color: var(--dim);
 }
 .agentassigned { margin-top: 4px; }
 /* agentassign-form: paso 2 (ct-2026-07-29) — un buscador (input + dropdown
@@ -978,7 +986,6 @@ td.list-empty::before { content: none; }
   tr > td:nth-child(4):not(:only-child) { grid-column: 1 / -1; }
 }
 @media (max-width: 900px) {
-  .groupheader { flex-wrap: wrap; }
   .draftrow { flex-wrap: wrap; }
 }
 

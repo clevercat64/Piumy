@@ -1068,6 +1068,7 @@
     var nameSpan = document.createElement("span");
     nameSpan.className = "membername";
     nameSpan.textContent = name;
+    nameSpan.title = name; // title (T188): el nombre se recorta con "…" — el completo, al pasar el cursor.
     row.appendChild(nameSpan);
     if (m) {
       var mark = groupMemberDecisionMark(m);
@@ -1554,6 +1555,7 @@
         var nameSpan = document.createElement("span");
         nameSpan.className = "membername";
         nameSpan.textContent = contactDisplayLabel(c);
+        nameSpan.title = nameSpan.textContent;
         var numSpan = document.createElement("span");
         numSpan.className = "membernumber";
         numSpan.textContent = maskNumber(jidNumber(c.resolved_number) || jidNumber(c.jid));
@@ -1874,6 +1876,7 @@
         var nameSpan = document.createElement("span");
         nameSpan.className = "membername";
         nameSpan.textContent = contactDisplayLabel(c);
+        nameSpan.title = nameSpan.textContent;
         var removeBtn = document.createElement("button");
         removeBtn.className = "smbtn";
         removeBtn.textContent = t("action.remove");
@@ -2690,6 +2693,7 @@
       var text = document.createElement("div");
       text.className = "drafttext";
       text.textContent = d.text;
+      text.title = d.text; // se corta con "…" (T188): el borrador completo, al pasar el cursor
       info.appendChild(who);
       info.appendChild(text);
       var actions = document.createElement("div");
