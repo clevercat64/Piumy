@@ -204,6 +204,9 @@ var esCatalog = map[string]string{
 	"modal.update_blocked_other_instance": "Hay otra cuenta de Piumy abierta: ciérrala para que se pueda actualizar.",
 	"modal.update_installed":              "Última instalación: {version}, {when}.",
 
+	// T193-B: la actualización queda en espera si no se pudo respaldar la sesión de WhatsApp antes de migrar su base.
+	"modal.update_blocked_no_session_backup": "No se actualiza todavía: no se pudo guardar una copia de la sesión de WhatsApp.",
+
 	// modal: perfil de WhatsApp
 	"titlebar.profile":             "perfil",
 	"modal.whatsapp_profile_title": "Editar perfil de WhatsApp",
@@ -729,6 +732,9 @@ var enCatalog = map[string]string{
 	"modal.update_blocked_busy":           "Waiting for a moment with no pending messages.",
 	"modal.update_blocked_other_instance": "Another Piumy account is open: close it so this one can update.",
 	"modal.update_installed":              "Last install: {version}, {when}.",
+
+	// T193-B: the update stays on hold when the WhatsApp session could not be backed up before its database migrates.
+	"modal.update_blocked_no_session_backup": "Not updating yet: could not save a copy of the WhatsApp session.",
 
 	"titlebar.profile":             "profile",
 	"modal.whatsapp_profile_title": "Edit WhatsApp profile",

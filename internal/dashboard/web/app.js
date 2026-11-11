@@ -3215,7 +3215,7 @@
   // updateStatusText: LA frase de estado, armada con claves del catálogo y
   // nunca pegada a mano (el orden de las palabras cambia entre idiomas). El
   // servidor manda códigos y datos, no texto: u.blocked llega como
-  // "busy" / "other_instance" / "no_key" / "not_installed" / "other_account"
+  // "busy" / "other_instance" / "no_session_backup" / "no_key" / "not_installed" / "other_account"
   // y la frase la arma esta función. Los dos últimos apagan u.supported, así
   // que entran por la primera rama. u.failure (el motivo, del registro) NO se
   // muestra: la frase solo dice que falló y dónde mirar.
@@ -3242,6 +3242,7 @@
       parts.push(t("modal.update_state_ready", { latest: u.latest }));
       if (u.blocked === "busy") parts.push(t("modal.update_blocked_busy"));
       if (u.blocked === "other_instance") parts.push(t("modal.update_blocked_other_instance"));
+      if (u.blocked === "no_session_backup") parts.push(t("modal.update_blocked_no_session_backup"));
     } else if (u.available) {
       parts.push(t("modal.update_state_found", { latest: u.latest }));
     } else {
