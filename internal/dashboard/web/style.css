@@ -427,6 +427,15 @@ body {
    en vez de confiar en que la grilla acomode los items donde uno cree. */
 .sbadge:first-child { border-top: 0; }
 @media (min-width: 780px) { .sbadge:nth-child(2) { border-top: 0; } }
+/* T188: entre 560 y 779px —la ventana angosta del boss, 743px— la lista eran 7
+   renglones de una columna con el punto a la otra punta del renglón (~280px).
+   Dos columnas, con Backup (el único valor largo) a ancho completo; dense
+   rellena con el siguiente el hueco que deja. Desde 780px sigue como estaba. */
+@media (min-width: 560px) and (max-width: 779px) {
+  .status-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-flow: dense; }
+  .sbadge:nth-child(2) { border-top: 0; }
+  .sbadge:nth-child(4) { grid-column: 1 / -1; }
+}
 .sbadge b { color: var(--text); font-weight: 500; text-align: right; }
 /* .pip (T172b tramo 3): el punto de color que reemplazó a los emojis de la
    barra de salud. Lo dibuja setBadgeDot() en app.js, que sólo decide el
@@ -552,6 +561,10 @@ body {
   }
   .side .tabs::-webkit-scrollbar { display: none; }
   .side .tab-btn { width: auto; white-space: nowrap; padding: 6px 11px; }
+  /* T188: Resumen y Clientes eran dos botones apilados a todo el ancho; en fila
+     ocupan una línea en vez de dos. */
+  .side .viewnav { flex-direction: row; gap: 4px; margin-bottom: 4px; }
+  .side .nav-btn { padding: 6px 11px; }
   .topbar { padding: 10px 14px; }
   .content { padding: 14px 14px 26px; }
 }
@@ -936,7 +949,7 @@ td.list-empty::before { content: none; }
      tarjeta, el nombre y la vista previa se recortan con "…" y el selector de
      agente se achica. */
   td {
-    border: none; padding: 5px 0; display: flex; flex-direction: column;
+    border: none; padding: 3px 0; display: flex; flex-direction: column;
     align-items: stretch; gap: 2px; font-size: 13px; text-align: left;
   }
   /* T172b tramo 3: en el teléfono la tabla se apila y cada celda muestra el
@@ -946,6 +959,23 @@ td.list-empty::before { content: none; }
     content: attr(data-label); color: var(--dim); font-size: 12px;
   }
   .rulespreview { max-width: none; }
+  /* T188: cada chat ocupaba ~360px (cuatro bloques apilados, uno por columna).
+     Ahora es una grilla: la conversación a ancho completo (sin rótulo: se
+     explica sola), Nivel y Agente lado a lado, y las reglas debajo. Las filas
+     de un solo <td> (títulos de sección, tabla vacía) ocupan toda la fila. */
+  tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 14px; }
+  tr > td:only-child { grid-column: 1 / -1; }
+  tr > td:nth-child(1):not(:only-child) { grid-column: 1 / -1; }
+  tr > td:nth-child(1):not(:only-child)::before { display: none; }
+  tr > td:nth-child(4):not(:only-child) { grid-column: 1 / -1; }
+}
+/* Con espacio (de 640px a 1100px) la conversación, Nivel y Agente van en una
+   sola fila de tres columnas y las reglas debajo. Más angosto (teléfono) se
+   apilan en dos filas: Nivel y Agente lado a lado bajo la conversación. */
+@media (min-width: 640px) and (max-width: 1100px) {
+  tbody tr { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1fr); }
+  tr > td:nth-child(1):not(:only-child) { grid-column: 1; }
+  tr > td:nth-child(4):not(:only-child) { grid-column: 1 / -1; }
 }
 @media (max-width: 900px) {
   .groupheader { flex-wrap: wrap; }

@@ -82,15 +82,7 @@ var indexHTMLI18nExceptions = map[string]string{
 		"cada idioma se muestra en sí mismo, convención universal de selectores de " +
 		"idioma, para que quien abrió el tablero en un idioma que no lee pueda " +
 		"encontrar el suyo igual.",
-	"English": "mismo motivo que \"Español\" arriba — autónimo a propósito.",
-	"idle": "HALLAZGO SIN CERRAR, no una decisión: app.js:264 hace " +
-		"moodlabel.textContent = mood con el valor CRUDO del backend " +
-		"(state.Status.Mood: idle/qr/responding/error/sleeping/muted/alert...), " +
-		"sin pasar por i18n.T() ni t() en ningún punto. \"alive\" (topbar, sin id, " +
-		"nunca tocado por JS) tiene el mismo problema. Necesitaría su propio " +
-		"mapeo enum→clave, mismo molde que levelLabel/agentTypeLabel — no lo " +
-		"arreglo acá para no sumar alcance por mi cuenta (T165 no lo pidió); " +
-		"reportado a Citrino en el cierre de este contrato.",
+	"English":           "mismo motivo que \"Español\" arriba — autónimo a propósito.",
 	"0 pendientes":      "placeholder que reescribe JS al vuelo con t(\"draft.pending_count\", ...) — el literal estático solo se ve un instante antes de que loadPendingDrafts() corra.",
 	"Editar":            "placeholder que reescribe JS con t(\"action.edit\") + el nombre del chat (dato) — ver openEditModal.",
 	"Editar borrador":   "placeholder que reescribe JS con t(\"action.edit\") + el nombre del chat (dato) — ver openDraftEditModal.",
