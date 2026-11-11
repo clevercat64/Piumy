@@ -112,6 +112,12 @@ solo los campos que sus propios paquetes necesitan.
   es nuevo (`strconv.ParseBool`; un valor ilegible deja el default: un typo
   nunca da vuelta un interruptor). Como el resto, `piumy-config.json` lo
   aplica sin código extra.
+- **T176 (ct-2026-11-10-2103) — auto-actualización, ENCENDIDA por defecto.**
+  `Config.AutoUpdate` (`PIUMY_AUTO_UPDATE`). El default vive en UNA constante,
+  `autoUpdateDefault` (`true`, boss verbatim: *«que piumy detecte
+  actualizaciones, y se actualice solo»*); el interruptor del dueño
+  (`store.SettingAutoUpdate`, `auto_update`) gana siempre. Lo que lo hace
+  seguro NO está acá: es código en `autoupdate`.
 - **T169 (ct-2026-09-19-1433) — cada ruta de datos cuelga de `DataDir()`,
   nunca del directorio de trabajo.** Boss verbatim, la causa raíz de los
   datos personales en el repo: *"el problema es que no separaron el
@@ -7058,6 +7064,10 @@ desde T149 ct-2026-09-07-1730 — ver sus propias entradas más abajo)
     `dispatchStaleAfter`, **5min desde T105, ct-2026-08-29-2129 — 15min
     entre S4b (ct-2026-07-30-1255) y T105, 1h antes de S4b**: "red de
     último recurso para que no pase nunca" no es lo mismo que "recuperarse
+- `(*Gate) AnyInFlight() bool` (T176, ct-2026-11-10-2103) — lo mismo que
+  `InFlight` pero de CUALQUIER terminal: `true` si alguno tiene un dispatch
+  no `done`. Lo pregunta el actualizador (`main.go: updateIdle`) para no
+  reiniciar Piumy en medio del turno de un agente.
     rápido", y 15min seguía siendo un turno entero de terminal bloqueado
     para un agente que se colgó — 5min sigue siendo más que el paso más
     largo del backoff Fibonacci de `capipush`, 13min, ver su sección
@@ -8304,6 +8314,102 @@ como la ÚNICA lista de textos: el tablero nunca guarda su propia copia.
   `TestCatalogsAreComplete` (`catalog_test.go`) garantiza que ambos mapas
   tengan exactamente las mismas claves y ninguna vacía — guarda real dado
   el volumen escrito a mano. `TestAllKeysMatchBetweenFrontendAndCatalog`
+## releasesig — `internal/releasesig`
+
+Rol: el formato y la firma del `SHA256SUMS` de una release (T176,
+`ct-2026-11-10-2103`). Solo stdlib; lo usan Piumy (`autoupdate`) y la
+herramienta de firma (`cmd/signrelease`), así el formato no puede divergir.
+
+- `FormatSums(map[nombre]sha256) []byte` / `ParseSums([]byte)` — el formato
+  de `sha256sum` (`<64 hex minúsculas>  <nombre>`), ordenado por nombre. El
+  parser es **estricto**: es lo que la firma avala, así que una línea rara
+  (ruta, hash corto o en mayúsculas, línea en blanco, nombre repetido) es un
+  error, nunca se salta.
+- `Sign(priv, sums)` / `Verify(pub, sums, sig)` — ed25519 sobre
+  `"piumy-release-sums-v1\n" + sums` (el prefijo evita que esta firma sirva
+  para otro mensaje con la misma clave). `SHA256SUMS.sig` es el base64 de la
+  firma.
+- `ParsePublicKey` / `ParsePrivateKey` (semilla de 32 bytes o clave de 64; los
+  errores NUNCA repiten la clave) / `GenerateKey` / `SumFile`.
+
+## autoupdate — `internal/autoupdate`
+
+Rol: que Piumy detecte una versión nueva y se instale sola (T176; diagrama,
+decisiones y lo medido en `docs/T176-AUTOUPDATE.md`). Boss verbatim: *«que
+piumy detecte actualizaciones, y se actualice solo»*. Encendido por defecto.
+Cada negativa es **código**, nunca un aviso ni una skill.
+
+- `New(Config) *Updater` y `(*Updater) Run(ctx)` — `main.go` lo arranca junto
+  al `pusher`. `Run` primero **reconcilia** lo que dejó la corrida anterior y
+  después mira, en una ventana aleatoria (2–20 min la primera vez; 6–12 h
+  después; 5 min mientras una versión verificada espera un momento quieto).
+  Una copia que nunca podrá actualizarse (desarrollo, otra cuenta) ni consulta
+  GitHub.
+- `Config`: `Enabled` (se pregunta en cada vuelta: el interruptor aplica en el
+  acto), `CurrentVersion`, `DataDir`, `Account`, `KV`, `Idle` (`main.go:
+  updateIdle`: 0 mensajes pendientes, 0 en el outbox, ningún despacho en
+  vuelo; `nil` = ocupado) y `Stop` (el cierre ordenado, justo después de lanzar
+  el instalador).
+- **La cadena de verificación** (`release.go`): `GET releases/latest` del repo
+  FIJO (`clevercat64/Piumy`, una constante), sin credenciales → tag `x.y.z`
+  estricto y SOLO si es MAYOR → baja `SHA256SUMS` y `SHA256SUMS.sig` (≤ 64 KiB)
+  → **firma ed25519 válida con la clave pública fija** (`pubkey.go`,
+  `releasePublicKey`; vacía = no se verifica nada, no se instala nada) → el
+  `digest` que publica GitHub tiene que existir y coincidir con el
+  `SHA256SUMS` firmado para el asset de ESTA plataforma → baja el asset
+  (tamaño exacto, tope 200 MiB, a `.part`) → SHA-256 del archivo = el firmado.
+  La URL se arma en código con el tag y el nombre exacto (`Piumy-Setup-<v>.exe`,
+  `Piumy-<v>-<os>-<arch>.tar.gz`); la `browser_download_url` del JSON no se usa.
+  Un redirect puede cambiar de host pero nunca salir de https.
+- **`verifyReady`, la última puerta**: antes de lanzar, desde lo GUARDADO (no
+  de la memoria de la vuelta anterior): el `SHA256SUMS` guardado debe seguir
+  con firma válida, listar este paquete con el hash que el archivo tiene HOY, y
+  el archivo estar donde el actualizador lo puso. Un estado manipulado no pasa
+  sin la clave de release.
+- **Puertas de la máquina** (`gateBlock`): copia instalada (Windows:
+  `unins000.exe` junto al ejecutable; Linux/Mac: el binario es
+  `DataDir/piumy-gateway` y corre como servicio — `INVOCATION_ID` /
+  `XPC_SERVICE_NAME=app.piumy.gateway`), cuenta por defecto (el instalador solo
+  relanza esa), único `Piumy.exe` (el Setup mata TODOS por nombre de imagen) y
+  cola vacía. Códigos: `BlockedNotInstalled`, `BlockedOtherAccount`,
+  `BlockedOtherInstance`, `BlockedBusy`, `BlockedNoKey`.
+- **Sin bucles**: 3 intentos por versión como máximo y 24 h entre intentos
+  (firma rechazada, hashes que no cuadran, instalador que no arranca o que no
+  dejó el programa nuevo). Los fallos de red no cuentan.
+- **Relanzar** (`install_windows.go`, `install_unix.go`, `posix.go`). Windows:
+  Piumy NO se relanza solo — el Setup ya mata al viejo (verificado) antes de
+  copiar y arranca el nuevo al final; Piumy escribe `update-<v>.cmd` y lo lanza
+  desprendido (`CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP`, sin breakaway: el
+  job de CleverCoder lo rechaza), que corre el Setup (`/VERYSILENT`) y después
+  vuelve a lanzar Piumy.exe SOLO si no hay ninguno (usa `%SystemRoot%\System32\`
+  por ruta: con Git Bash en el PATH, `find` era el de GNU y el chequeo siempre
+  decía «no corre»). Linux: `systemd-run --user --collect` (el `install.sh`
+  empieza con `systemctl --user stop`, que mata el cgroup del servicio con sus
+  hijos). macOS: `Setsid`. El paquete se extrae en Go con `extractPackage`
+  (solo `install.sh`, `piumy-gateway`, `eula.txt`; sin enlaces ni rutas
+  afuera).
+- `Status` / `(*Updater) Status()` — lo que muestra el tablero; ver `restapi`.
+  El estado persiste en KV (`autoupdate.state`): el proceso nuevo compara
+  `pending` con su propia versión y dice si el instalador tomó.
+- Probado: la cadena con una release falsa en `httptest` (11 formas de release
+  que se rechazan, estado manipulado, gates, intentos), el wrapper de Windows
+  de verdad (procesos de mentira en una ruta con espacios) y la suite de este
+  paquete, compilada para Linux y corrida en un Ubuntu real (WSL2), además del
+  camino completo con `install.sh` y `systemd-run`. Detalle en
+  `docs/T176-AUTOUPDATE.md`.
+
+## cmd/signrelease — la herramienta de firma
+
+`go run ./cmd/signrelease keygen` imprime un par de claves (la PRIVADA va al
+vault y a ningún otro lado; la PÚBLICA es `releasePublicKey`).
+`go run ./cmd/signrelease sign <carpeta> <archivo>...` escribe `SHA256SUMS` y
+`SHA256SUMS.sig` en la carpeta. La clave privada se lee **solo** de la variable
+`PIUMY_RELEASE_SIGNING_KEY` (para correrlo con `vault_run`): nunca de un
+argumento ni de un archivo, y nunca se imprime. Rechaza dos archivos con el
+mismo nombre, un nombre que Piumy no aceptaría y firmar el propio `SHA256SUMS`.
+Imprime la clave pública con la que firmó, para compararla con la construida
+en Piumy.
+
   (`catalog_usage_test.go`, T153 2b-iii) es el cruce completo hecho test
   de repo — antes lo corría Citrino a mano después de cada pasada; falla
   si `t(...)` en `app.js` o `data-i18n*` en `index.html` piden una clave
@@ -8612,6 +8718,17 @@ del dueño desde la LAN, sin agente de por medio. Grupo/perfil NO están acá
   `docs/DASHBOARD-AUTO-REFRESH-2026-07-24.md` para el rediseño completo del
   lado `app.js` (tabla declarativa evento→loaders, debounce, reconexión
   con backoff + watchdog).
+- **T176 (ct-2026-11-10-2103) — `GET /api/update` y `POST
+  /api/admin/auto-update` (`update.go`).** La ventana del tablero sobre
+  `autoupdate`. `GET` → `autoupdate.Status` (`enabled`, `supported`, `blocked`,
+  `current`, `latest`, `available`, `ready`, `checked_at`, `pending`,
+  `installed_version`, `installed_at`, `given_up`, `failure`, `last_error`);
+  `blocked` es un CÓDIGO (`busy`, `other_instance`, `no_key`, …), la frase la
+  arma la UI. `POST {"enabled": bool}` lo guarda en `store.SettingAutoUpdate`,
+  el mismo ajuste que el actualizador pregunta en cada vuelta (aplica en el
+  acto) y devuelve el `Status`. Un cuerpo sin `enabled` es 400, no «apagado».
+  Ambas con `d.auth`; sin actualizador cableado (`Deps.AutoUpdate == nil`) →
+  503. Fragmento de UI para Ópalo en `docs/T176-AUTOUPDATE.md`.
 
 - `Deps{Bus *eventbus.Bus, Store *store.Store, Governor *governor.Limiter,
   State *state.Manager, Router *router.Manager, APIKey string}` — `APIKey`
