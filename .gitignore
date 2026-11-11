@@ -9,6 +9,13 @@ node_modules/
 # Operacional de CleverCoder — estado de la herramienta, no código.
 .clevercoder/
 .mcp.json
+.claude/
+.impeccable/
+worktrees/
+
+# Binario de un `go build` en la raíz (39 MB): nunca al repo público.
+/piumy-gateway
+/piumy-gateway.exe
 
 # Secretos — nunca a GitHub.
 .env
