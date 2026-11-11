@@ -10524,6 +10524,47 @@ del dueño desde la LAN, sin agente de por medio. Grupo/perfil NO están acá
   o un JID completo. Cambiar el agente del grupo NO tiene endpoint nuevo: es
   `POST /api/admin/agent-assign` (abajo, M3) con `chat_id = chat_jid`; la UI
   solo lo ofrece si `chat_jid != ""`. Archivo ilegible o corrupto: 500.
+- **T172d (ct-2026-11-10-225415) — la pestaña Clientes del tablero
+  (`index.html`/`style.css`/`app.js` + 33 claves en `internal/i18n/catalog.go`).**
+  Consume el endpoint de T172c. **Un cliente es UN grupo**: el modelo de los
+  tres demos de T172 (un cliente con VARIOS chats, con estado de pago) lo
+  descartó el boss, así que la pestaña se dibujó de nuevo, no se conectó la
+  de los demos.
+  - **Navegación de vistas** (nueva): `.viewnav` con dos `.nav-btn[data-view]`
+    en la barra lateral (Resumen / Clientes) y dos contenedores,
+    `#view-resumen` (envuelve el hero y `#adminpanel`, el tablero de
+    siempre) y `#view-clientes`. Las dos alarmas y el pie quedan FUERA de
+    las vistas: una alarma de seguridad no se esconde al cambiar de
+    pantalla. La navegación se oculta con `:has(#adminpanel.hidden)`, el
+    mismo selector que ya usaban `.side .tabs` — sin WhatsApp vinculado no
+    hay grupos, y un cliente es un grupo.
+  - **`app.js`**: `loadClients()` → `renderClients()` (los 5 estados;
+    `unknown_version` NO dibuja ni un cliente, a propósito: un
+    `schema_version` desconocido puede haber cambiado el significado de los
+    campos) → `buildClientCard()` por grupo: estado y `paused_until`, la
+    cuota de la semana en barras (verde / ámbar al 80 % / rojo al pasarse,
+    el MISMO semáforo que usa CleverCoder para fijar el estado), los
+    mínimos del mes SIN barra (son un mínimo a alcanzar, no un tope que se
+    agota: una barra los contaría al revés), el gráfico y el selector de
+    agente.
+  - **`buildClientChart()`** — las 12 semanas de `history` en SVG a mano
+    (doce `<rect>` y una `<line>`, sin librería), con la línea de tope de
+    `week.lines.limit`. La escala es `max(pico, tope)`, no el pico solo: si
+    fuera el pico, un cliente muy por debajo de su tope dejaría la línea
+    FUERA del lienzo y se vería igual que uno al borde de pasarse. Los
+    colores salen de los tokens por CSS (`.bar`/`.limit`), nunca de un
+    atributo `fill=` — un `fill` en el marcado se queda en el color del
+    tema claro al pasar a oscuro.
+  - **Selector de agente principal** — reusa `buildAgentSelect` y
+    `POST /api/admin/agent-assign` con **`chat_id = chat_jid`** (NO `key`:
+    `key` son solo los dígitos, ver T172c arriba). Con `chat_jid` vacío no
+    se dibuja el `<select>` sino el motivo (`clients.no_group`): el backend
+    ignora un assign de un chat que no tiene, y un desplegable que acepta
+    un cambio que el servidor descarta miente más que no estar.
+  - **Refresco sin F5**: `refreshClientsIfVisible()` cada 15s y en
+    `refreshEverything()` (la red de seguridad al reconectar el SSE), pero
+    solo con la vista a la vista — refrescar una pantalla que nadie mira es
+    gasto sin lector; al entrar, el click ya pide de nuevo.
 - **M3 (ct-2026-07-22-1301) — asignación manual de números:**
   - `GET /api/agents/chats?agent_id=<id>` (`read.go`) — envuelve
     `store.ChatsForAgent` (ya wireado en M1) en un DTO liviano

@@ -2902,6 +2902,11 @@
     debouncedLoadChats();
     loadPendingDrafts().catch(function () {});
     loadAgents().catch(function () {});
+    // T172d: Clientes entra a la red de seguridad por el MISMO argumento
+    // que el resto ("no confiar en qué se perdió mientras la conexión
+    // estuvo caída"), pero solo si está a la vista — ver
+    // refreshClientsIfVisible.
+    refreshClientsIfVisible();
   }
 
   var eventSource = null;
@@ -3409,6 +3414,456 @@
     });
   });
 
+  // ── Clientes (T172d, ct-2026-11-10-225415) ────────────────────────────
+  // Un cliente es UN grupo de WhatsApp: la clave del cliente ES el JID del
+  // grupo, y eso es todo el modelo. Los tres demos de T172 dibujaban "un
+  // cliente con VARIOS chats, con estado de pago" — el boss descartó ese
+  // modelo, así que esta vista se dibujó de nuevo desde el esquema real, no
+  // se conectó la de los demos.
+  // De dónde sale cada cosa, que son dos dueños distintos:
+  //   · las cuotas, el estado y el historial los calcula CleverCoder y
+  //     llegan por GET /api/clients (backend T172c) — el tablero NO los
+  //     deriva ni los recalcula, solo los muestra;
+  //   · el agente que atiende el grupo es ruteo de PIUMY, y se cambia con
+  //     el agent-assign que ya existía (T56), con chat_id = la clave del
+  //     cliente. Mismo endpoint que la tabla de Conversaciones: no hay
+  //     concepto nuevo acá, solo un lugar nuevo desde donde hacerlo.
+  var CLIENTS_POLL_MS = 15000;
+  var SVG_NS = "http://www.w3.org/2000/svg";
+  var clientsData = { status: "", generatedAt: "", list: [] };
+
+  function loadClients() {
+    return api("/api/clients").then(function (d) {
+      clientsData = {
+        status: (d && d.status) || "",
+        generatedAt: (d && d.generated_at) || "",
+        list: d && Array.isArray(d.clients) ? d.clients : [],
+      };
+      renderClients();
+    });
+  }
+
+  // fmtClientNum / fmtClientMoney: el separador de miles y la coma decimal
+  // los pone el navegador con el idioma de la página. No se arman a mano:
+  // así es como un tablero en español termina mostrando "1,200" por mil
+  // doscientos. Un campo ausente sale "—" y no 0 — la misma distinción que
+  // statNumber() ganó en T172a, por la misma razón: un cero real y un dato
+  // que no vino no son lo mismo.
+  function clientLang() { return state.i18n.lang || "es"; }
+  function fmtClientNum(n) {
+    if (typeof n !== "number" || !isFinite(n)) return "—";
+    return n.toLocaleString(clientLang());
+  }
+  function fmtClientMoney(n) {
+    if (typeof n !== "number" || !isFinite(n)) return "—";
+    return n.toLocaleString(clientLang(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  // fmtClientStamp: hora local legible. Un ISO crudo en pantalla
+  // ("2026-11-10T22:45:00Z") es un dato de máquina, no una hora que alguien
+  // lea. Una fecha que no se puede interpretar se muestra TAL CUAL vino:
+  // el texto raro del archivo dice más que un "Invalid Date".
+  function fmtClientStamp(iso) {
+    if (!iso) return "—";
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toLocaleString(clientLang(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  }
+  function fmtClientTime(iso) {
+    if (!iso) return "—";
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toLocaleTimeString(clientLang(), { hour: "2-digit", minute: "2-digit" });
+  }
+  function clientNum(v) { return typeof v === "number" && isFinite(v) ? v : 0; }
+
+  // clientStateInfo: el estado del cliente, en UN solo lugar — el color del
+  // punto y el texto del renglón salen juntos de acá, así no hay forma de
+  // que el punto diga una cosa y la letra otra. Quién decide el estado es
+  // CleverCoder (el "aviso" es su 80 % del tope), no el tablero.
+  function clientStateInfo(cl) {
+    if (cl.state === "pausado") {
+      return {
+        cls: "paused",
+        text: cl.paused_until
+          ? t("clients.paused_until", { when: fmtClientStamp(cl.paused_until) })
+          : t("clients.state_paused"),
+      };
+    }
+    if (cl.state === "aviso") return { cls: "warn", text: t("clients.state_warn") };
+    return { cls: "open", text: t("clients.state_open") };
+  }
+
+  function clientSection(titleText) {
+    var sec = document.createElement("div");
+    sec.className = "client-sec";
+    if (titleText) {
+      var h = document.createElement("div");
+      h.className = "client-sec-title";
+      h.textContent = titleText;
+      sec.appendChild(h);
+    }
+    return sec;
+  }
+
+  // clientQuotaRow: etiqueta, barra y cifra. La barra se pinta por
+  // porcentaje del tope con los MISMOS tres colores del estado (verde,
+  // ámbar al 80 %, rojo al pasarse), para que la barra y el punto de arriba
+  // nunca se contradigan.
+  // Sin tope (0, nulo o ausente) NO se dibuja barra: una barra necesita un
+  // máximo, y si nadie lo dio habría que inventarlo — un invento en una
+  // escala es una mentira con forma de dato. Se muestra solo el consumo.
+  function clientQuotaRow(label, used, limit, money) {
+    var fmt = money ? fmtClientMoney : fmtClientNum;
+    var row = document.createElement("div");
+    row.className = "q-row";
+
+    var lab = document.createElement("span");
+    lab.className = "q-label";
+    lab.textContent = label;
+    row.appendChild(lab);
+
+    // Sin tope NO se dibuja ni el riel vacío, solo el hueco de la grilla.
+    // Medido en pantalla: un riel gris sin relleno se lee como "0 %" — es
+    // decir, lo contrario exacto de "sin tope", que es lo que dice la cifra
+    // de al lado. Un elemento vacío mantiene las tres columnas alineadas
+    // entre tarjetas sin afirmar nada.
+    var hasLimit = typeof limit === "number" && limit > 0;
+    var track = document.createElement("div");
+    if (hasLimit) {
+      track.className = "q-track";
+      var pct = Math.max(0, Math.min(100, (clientNum(used) / limit) * 100));
+      var fill = document.createElement("div");
+      fill.className = "q-fill" + (clientNum(used) >= limit ? " over" : pct >= 80 ? " warn" : "");
+      fill.style.width = pct + "%";
+      track.appendChild(fill);
+    }
+    row.appendChild(track);
+
+    var val = document.createElement("span");
+    val.className = "q-value";
+    val.textContent = hasLimit
+      ? t("clients.quota_value", { used: fmt(used), limit: fmt(limit) })
+      : fmt(used) + " · " + t("clients.no_limit");
+    row.appendChild(val);
+    return row;
+  }
+
+  // clientMonthRow: los mínimos del mes NO llevan barra a propósito. Son un
+  // mínimo a alcanzar, no un tope que se agota: una barra que se llena
+  // cuenta esa historia al revés (parecería que se está quedando sin algo).
+  // Cumplido se marca con color, que es lo único que hace falta decir.
+  function clientMonthRow(label, bucket) {
+    var row = document.createElement("div");
+    row.className = "m-row";
+    var lab = document.createElement("span");
+    lab.textContent = label;
+    var val = document.createElement("b");
+    var used = clientNum(bucket && bucket.used);
+    var limit = clientNum(bucket && bucket.limit);
+    val.textContent = limit > 0
+      ? t("clients.quota_value", { used: fmtClientNum(used), limit: fmtClientNum(limit) })
+      : fmtClientNum(bucket && bucket.used);
+    if (limit > 0 && used >= limit) val.className = "done";
+    row.appendChild(lab);
+    row.appendChild(val);
+    return row;
+  }
+
+  // buildClientChart: las 12 semanas de history en barras, con la línea de
+  // tope de la semana de HOY (week.lines.limit — el esquema lo dice
+  // explícito: el tope del gráfico es el vigente, no el que hubo en cada
+  // semana vieja). SVG a mano: son doce rectángulos y una línea, y una
+  // librería de gráficos para eso sería un peso muerto en el binario.
+  // La escala es el máximo entre el consumo más alto y el tope, no solo el
+  // consumo: si fuera solo el consumo, un cliente muy por debajo de su tope
+  // dejaría la línea de tope FUERA del lienzo y el gráfico mentiría por
+  // omisión — se vería igual que uno al borde de pasarse.
+  // Los colores salen de los tokens por CSS (clases .bar/.limit), nunca de
+  // un atributo fill= acá: un fill escrito en el marcado se queda con el
+  // color del tema claro cuando el sistema pasa a oscuro.
+  var CHART_W = 240;
+  var CHART_H = 54;
+  function buildClientChart(cl) {
+    var hist = Array.isArray(cl.history) ? cl.history : [];
+    if (!hist.length) {
+      var none = document.createElement("p");
+      none.className = "q-note";
+      none.textContent = t("clients.chart_empty");
+      return none;
+    }
+    var limit = clientNum(cl.week && cl.week.lines && cl.week.lines.limit);
+    var peak = 0;
+    hist.forEach(function (w) {
+      var v = clientNum(w && w.lines);
+      if (v > peak) peak = v;
+    });
+    var top = Math.max(peak, limit) || 1;
+
+    var svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("class", "chart");
+    svg.setAttribute("viewBox", "0 0 " + CHART_W + " " + CHART_H);
+    // preserveAspectRatio=none: el alto lo fija el CSS y el ancho es el de
+    // la tarjeta — las barras se estiran a lo ancho, que es exactamente lo
+    // que se quiere de un gráfico de barras que llena su caja.
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.setAttribute("role", "img");
+
+    var slot = CHART_W / hist.length;
+    var barW = Math.max(2, slot - 3);
+    hist.forEach(function (w, i) {
+      var lines = clientNum(w && w.lines);
+      var h = Math.max(1, (lines / top) * CHART_H);
+      var r = document.createElementNS(SVG_NS, "rect");
+      r.setAttribute("x", (i * slot).toFixed(2));
+      r.setAttribute("y", (CHART_H - h).toFixed(2));
+      r.setAttribute("width", barW.toFixed(2));
+      r.setAttribute("height", h.toFixed(2));
+      var over = limit > 0 && lines >= limit;
+      var warn = limit > 0 && !over && lines >= limit * 0.8;
+      r.setAttribute("class", "bar" + (over ? " over" : warn ? " warn" : " on"));
+      // <title> dentro del <rect>: el navegador lo muestra al pasar el
+      // mouse y el lector de pantalla lo lee. Sin esto, doce barras sin
+      // cifra son un adorno.
+      var tip = document.createElementNS(SVG_NS, "title");
+      tip.textContent = t("clients.chart_bar_title", {
+        when: fmtClientStamp(w && w.starts_at),
+        lines: fmtClientNum(w && w.lines),
+        cost: fmtClientMoney(w && w.cost_usd),
+      });
+      r.appendChild(tip);
+      svg.appendChild(r);
+    });
+
+    if (limit > 0) {
+      var y = (CHART_H - (limit / top) * CHART_H).toFixed(2);
+      var ln = document.createElementNS(SVG_NS, "line");
+      ln.setAttribute("x1", "0");
+      ln.setAttribute("x2", String(CHART_W));
+      ln.setAttribute("y1", y);
+      ln.setAttribute("y2", y);
+      ln.setAttribute("class", "limit");
+      svg.appendChild(ln);
+    }
+    return svg;
+  }
+
+  // buildClientAgentControl: el selector del agente principal del grupo.
+  // Reusa buildAgentSelect (la MISMA lista de agentes que la tabla de
+  // Conversaciones) y el mismo POST /api/admin/agent-assign; chat_id es la
+  // clave del cliente, que es el JID del grupo. Sin recargar la página —
+  // la vara de siempre del dueño: post y volver a leer en el .then.
+  // Si el backend rechaza, el select vuelve a lo que estaba: dejarlo
+  // mostrando la opción nueva diría que el cambio se aplicó.
+  function buildClientAgentControl(cl) {
+    var wrap = document.createElement("div");
+    wrap.className = "client-agent";
+    var lab = document.createElement("span");
+    lab.className = "q-label";
+    lab.textContent = t("clients.agent_label");
+    wrap.appendChild(lab);
+
+    // chat_jid vacío = Piumy no conoce ese grupo (la clave del cliente no
+    // cruzó con ningún chat del store, o no es un grupo). El backend lo dice
+    // explícito: asignar un chat que Piumy no tiene NO hace nada. Entonces
+    // no se ofrece el control — un desplegable que acepta un cambio que el
+    // servidor va a ignorar miente más que no estar.
+    if (!cl.chat_jid) {
+      var none = document.createElement("span");
+      none.className = "client-agent-result";
+      none.textContent = t("clients.no_group");
+      wrap.appendChild(none);
+      return wrap;
+    }
+
+    var current = cl.agent_id || "";
+    var sel = buildAgentSelect(current);
+    var result = document.createElement("span");
+    result.className = "client-agent-result";
+    sel.onchange = function () {
+      result.textContent = t("action.saving");
+      post("/api/admin/agent-assign", { chat_id: cl.chat_jid, agent_id: sel.value }).then(function () {
+        result.textContent = "";
+        loadClients().catch(function () {});
+      }).catch(function (e) {
+        result.textContent = t("error.prefix") + e.message;
+        sel.value = current;
+      });
+    };
+    wrap.appendChild(sel);
+    wrap.appendChild(result);
+    return wrap;
+  }
+
+  function buildClientCard(cl) {
+    var card = document.createElement("div");
+    card.className = "client";
+    var info = clientStateInfo(cl);
+
+    var head = document.createElement("div");
+    head.className = "client-head";
+    var dot = document.createElement("span");
+    dot.className = "client-dot " + info.cls;
+    head.appendChild(dot);
+    var name = document.createElement("span");
+    name.className = "client-name";
+    // El nombre del grupo y el nivel son DATO: no pasan por el catálogo
+    // (misma línea que los nombres de chat de la etapa 2b-iv del i18n).
+    // Van por textContent, nunca innerHTML — un nombre de grupo lo escribe
+    // cualquiera de sus miembros y puede traer un "<" adentro.
+    name.textContent = cl.name || cl.key || "";
+    name.title = cl.name || cl.key || "";
+    head.appendChild(name);
+    if (cl.tier) {
+      var tier = document.createElement("span");
+      tier.className = "client-tier";
+      tier.textContent = t("clients.tier", { tier: cl.tier });
+      head.appendChild(tier);
+    }
+    card.appendChild(head);
+
+    var st = document.createElement("p");
+    st.className = "client-state " + info.cls;
+    st.textContent = info.text;
+    card.appendChild(st);
+
+    if (cl.reopened) {
+      var re = document.createElement("p");
+      re.className = "client-state";
+      re.textContent = t("clients.reopened_note");
+      card.appendChild(re);
+    }
+
+    var week = cl.week || {};
+    var wsec = clientSection(t("clients.week_title"));
+    wsec.appendChild(clientQuotaRow(
+      t("clients.lines_label"),
+      week.lines && week.lines.used,
+      week.lines && week.lines.limit,
+      false));
+    wsec.appendChild(clientQuotaRow(
+      t("clients.cost_label"),
+      week.cost_usd && week.cost_usd.used,
+      week.cost_usd && week.cost_usd.limit,
+      true));
+    if (cl.resets_at) {
+      var rst = document.createElement("p");
+      rst.className = "q-note";
+      rst.textContent = t("clients.resets_at", { when: fmtClientStamp(cl.resets_at) });
+      wsec.appendChild(rst);
+    }
+    if (cl.previous_week) {
+      var prev = document.createElement("p");
+      prev.className = "q-note";
+      prev.textContent = t("clients.previous_week", {
+        lines: fmtClientNum(cl.previous_week.lines),
+        cost: fmtClientMoney(cl.previous_week.cost_usd),
+      });
+      wsec.appendChild(prev);
+    }
+    card.appendChild(wsec);
+
+    var month = cl.month || {};
+    var msec = clientSection(t("clients.month_title"));
+    msec.appendChild(clientMonthRow(t("clients.month_style_global"), month.style_global));
+    msec.appendChild(clientMonthRow(t("clients.month_text"), month.text));
+    msec.appendChild(clientMonthRow(t("clients.month_style_simple"), month.style_simple));
+    card.appendChild(msec);
+
+    var csec = clientSection(t("clients.chart_title"));
+    csec.appendChild(buildClientChart(cl));
+    // La leyenda del tope acompaña al GRÁFICO, no a la tarjeta: sin
+    // historial no hay dibujo, y una leyenda suelta debajo de "sin
+    // historial todavía" describe algo que no está en pantalla.
+    var hasHistory = Array.isArray(cl.history) && cl.history.length > 0;
+    if (hasHistory && clientNum(cl.week && cl.week.lines && cl.week.lines.limit) > 0) {
+      var leg = document.createElement("div");
+      leg.className = "chart-legend";
+      var legLimit = document.createElement("span");
+      legLimit.textContent = t("clients.chart_limit", { lines: fmtClientNum(cl.week.lines.limit) });
+      leg.appendChild(legLimit);
+      csec.appendChild(leg);
+    }
+    card.appendChild(csec);
+
+    var asec = clientSection("");
+    asec.appendChild(buildClientAgentControl(cl));
+    card.appendChild(asec);
+
+    return card;
+  }
+
+  // renderClients: los CUATRO estados del archivo de CleverCoder, con los
+  // textos que fijó el contrato letra por letra. El orden importa:
+  //   · missing / unknown_version → no hay nada que interpretar, solo el
+  //     aviso. En unknown_version NO se dibuja ni un cliente a propósito:
+  //     un schema_version que no conocemos puede haber cambiado el
+  //     significado de los campos, y dibujarlos sería inventar;
+  //   · stale → el aviso Y los clientes de la última foto, que siguen
+  //     siendo el mejor dato que hay;
+  //   · empty → "sin clientes todavía", que no es un error.
+  function renderClients() {
+    var meta = document.getElementById("clientsmeta");
+    var list = document.getElementById("clientslist");
+    if (!meta || !list) return;
+    list.textContent = "";
+    meta.className = "clients-meta";
+
+    var st = clientsData.status;
+    if (st === "missing" || st === "unknown_version") {
+      meta.textContent = st === "missing"
+        ? t("clients.status_missing")
+        : t("clients.status_unknown_version");
+      meta.classList.add("bad");
+      return;
+    }
+    if (st === "stale") {
+      meta.textContent = t("clients.status_stale", { when: fmtClientStamp(clientsData.generatedAt) });
+      meta.classList.add("warn");
+    } else if (st === "empty" || !clientsData.list.length) {
+      meta.textContent = t("clients.status_empty");
+      return;
+    } else {
+      meta.textContent = t("clients.meta_fresh", {
+        count: clientsData.list.length,
+        time: fmtClientTime(clientsData.generatedAt),
+      });
+    }
+    clientsData.list.forEach(function (cl) {
+      if (cl && typeof cl === "object") list.appendChild(buildClientCard(cl));
+    });
+  }
+
+  // refreshClientsIfVisible: el archivo se pide SOLO con la vista a la
+  // vista. Refrescar cada 15s una pantalla que nadie está mirando es gasto
+  // sin lector; al volver a entrar, el click de la navegación ya pide de
+  // nuevo. "Sin F5" se cumple igual: parado en Clientes, la pantalla se
+  // actualiza sola.
+  function refreshClientsIfVisible() {
+    var view = document.getElementById("view-clientes");
+    if (!view || view.classList.contains("hidden")) return;
+    loadClients().catch(function () {});
+  }
+
+  // ── navegación de vistas (T172d) ──────────────────────────────────────
+  // Dos vistas: el tablero de siempre (#view-resumen) y Clientes. El
+  // switch es el MISMO patrón que las pestañas de Conversaciones de arriba
+  // (toggle de .active en el botón, toggle de .hidden en el contenido), para
+  // que este tablero tenga un solo modo de cambiar de pantalla y no dos.
+  var viewBtns = document.querySelectorAll(".nav-btn");
+  viewBtns.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      viewBtns.forEach(function (b) { b.classList.remove("active"); });
+      btn.classList.add("active");
+      var name = btn.getAttribute("data-view");
+      document.getElementById("view-resumen").classList.toggle("hidden", name !== "resumen");
+      document.getElementById("view-clientes").classList.toggle("hidden", name !== "clientes");
+      // Al ENTRAR a Clientes se pide el archivo de nuevo en vez de mostrar
+      // la foto que quedó en memoria: el dueño acaba de hacer click, es el
+      // momento en que más le importa que el dato sea de ahora.
+      if (name === "clientes") loadClients().catch(function () {});
+    });
+  });
+
   // T153 2b-i: loadI18n() PRIMERO, no en paralelo — loadStatus() ya usa
   // t() para armar el status/badges (ver su propio código), y si corriera
   // antes de que el catálogo cargara, el primer pintado saldría con
@@ -3435,6 +3890,9 @@
   setInterval(function () { loadStatus().catch(function () {}); }, 15000);
   setInterval(function () { loadPendingDrafts().catch(function () {}); }, 15000);
   setInterval(function () { loadAgents().catch(function () {}); }, 15000);
+  // T172d: el mismo ritmo de 15s que los demás loaders, pero solo cuando la
+  // vista Clientes está abierta (refreshClientsIfVisible).
+  setInterval(refreshClientsIfVisible, CLIENTS_POLL_MS);
   armSSEWatchdog();
   // T172a: un tick por segundo para el renglón de frescura. Es sólo pintar
   // texto que ya está en memoria — ni un fetch más que antes.

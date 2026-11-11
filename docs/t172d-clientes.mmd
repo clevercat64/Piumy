@@ -1,0 +1,57 @@
+%% T172d — pestaña Clientes en el tablero (ct-2026-11-10-225415)
+%% Un cliente es UN grupo de WhatsApp. Nada de "cliente con varios chats"
+%% ni estado de pago: ese era el modelo de los demos, descartado por el boss.
+flowchart TD
+
+    subgraph fuera["Fuera de Piumy"]
+        CC["CleverCoder<br/>clients.json (solo lectura)"]
+    end
+
+    subgraph backend["Backend — T172c, Tourmaline (no lo toco)"]
+        API["GET /api/clients<br/>{status, generated_at, clients[]}<br/>cada cliente + agent_id"]
+        ASSIGN["POST /api/admin/agent-assign<br/>(ya existe, T56)"]
+    end
+
+    subgraph vista["Vista — T172d, mío: internal/dashboard/web"]
+        NAV["barra lateral: navegación de vistas<br/>Resumen | Clientes (data-view)"]
+        VR["#view-resumen<br/>envuelve lo que ya existe"]
+        VC["#view-clientes"]
+
+        LOAD["loadClients()<br/>api('/api/clients')"]
+        ST["renderClientsStatus()<br/>missing | empty | stale | unknown_version"]
+        CARDS["renderClientCards()<br/>una tarjeta por grupo"]
+
+        subgraph tarjeta["Tarjeta de un cliente"]
+            HEAD["nombre · tier · estado<br/>abierto | aviso | pausado (+ paused_until)"]
+            QUOTA["cuota de la semana<br/>líneas used/limit · US$ used/limit<br/>+ se reinicia resets_at"]
+            MONTH["mínimos del mes<br/>style_global · text · style_simple"]
+            CHART["gráfico SVG 12 semanas<br/>history[].lines + línea de tope week.lines.limit"]
+            SEL["selector de agente principal<br/>buildAgentSelect(agent_id)"]
+        end
+    end
+
+    subgraph i18n["internal/i18n/catalog.go"]
+        CAT["claves nuevas en esCatalog Y enCatalog<br/>(catalog_usage_test + prose_sink_test lo exigen)"]
+    end
+
+    CC --> API
+    API --> LOAD
+    LOAD --> ST
+    LOAD --> CARDS
+    CARDS --> HEAD & QUOTA & MONTH & CHART & SEL
+    SEL -->|onchange: chat_id = key| ASSIGN
+    ASSIGN -->|.then| LOAD
+
+    NAV -->|click| VR
+    NAV -->|click| VC
+    VC --> ST
+    VC --> CARDS
+
+    CAT -.->|t() / data-i18n| VC
+
+    REF["refresco automático<br/>setInterval 15s + REFRESH_ON<br/>sin F5"] --> LOAD
+
+    classDef mio fill:#157f41,stroke:#0d5c2e,color:#fff
+    classDef ajeno fill:#5c6472,stroke:#3a404a,color:#fff
+    class NAV,VR,VC,LOAD,ST,CARDS,HEAD,QUOTA,MONTH,CHART,SEL,CAT,REF mio
+    class CC,API,ASSIGN ajeno

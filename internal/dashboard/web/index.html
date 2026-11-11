@@ -71,6 +71,21 @@
              la mudanza no le pide una sola línea. El CSS las apila y las
              esconde cuando #adminpanel está cerrado (sin WhatsApp vinculado
              no hay nada que navegar). -->
+        <!-- T172d (ct-2026-11-10-225415): la navegacion de VISTAS, que el
+             demo 1 tenia (data-view) y el tramo 1 de T172b no portó — hasta
+             hoy la barra lateral solo llevaba las pestañas de Conversaciones.
+             Resumen es todo el tablero de siempre; Clientes es la vista
+             nueva. Dos botones, no un menú: son dos y el boss eligió el
+             demo donde se ven los dos de una.
+             Se oculta junto con las pestañas cuando #adminpanel está
+             cerrado (mismo :has() del CSS): sin WhatsApp vinculado no hay
+             grupos, y un cliente ES un grupo. -->
+        <div class="side-title" data-i18n="nav.views">Vistas</div>
+        <div class="viewnav">
+          <button class="nav-btn active" type="button" data-view="resumen" data-i18n="nav.summary">Resumen</button>
+          <button class="nav-btn" type="button" data-view="clientes" data-i18n="nav.clients">Clientes</button>
+        </div>
+
         <div class="side-title" data-i18n="tab.conversations">Conversaciones</div>
         <div class="tabs">
           <button class="tab-btn active" type="button" data-tab="chats" data-i18n="tab.chats">Chats</button>
@@ -124,6 +139,12 @@
       <div class="alertbar hidden" id="noterminalalert" role="alert">
         <span data-i18n="alert.no_terminal">⚠️ No hay un terminal por defecto configurado — los mensajes del dueño no se van a poder despachar hasta que configures la antena o PIUMY_DEFAULT_TERMINAL_ID.</span>
       </div>
+
+      <!-- #view-resumen: el tablero de siempre, ahora una vista entre dos.
+           Envuelve el hero y #adminpanel; las dos alarmas de arriba y el pie
+           quedan FUERA a propósito — una alarma de seguridad no se esconde
+           porque el dueño esté mirando otra pestaña. -->
+      <div class="view" id="view-resumen">
 
       <!-- hero: carita + identidad + welcome o conectado -->
       <div class="dash-hero">
@@ -399,6 +420,25 @@
       </div>
 
       </div><!-- /#adminpanel -->
+
+      </div><!-- /#view-resumen -->
+
+      <!-- #view-clientes (T172d): un cliente es UN grupo de WhatsApp. El
+           modelo de los 3 demos (un cliente con VARIOS chats, con estado de
+           pago) lo descartó el boss — esta vista se dibujó de nuevo, no se
+           conectó la de ahí.
+           Vacía en el marcado: la llena renderClients() desde /api/clients.
+           #clientsmeta dice en qué estado está el archivo de CleverCoder
+           (sin datos / sin clientes / no está al día / actualiza el tablero)
+           y #clientslist las tarjetas, una por grupo. -->
+      <div class="view hidden" id="view-clientes">
+        <div class="card">
+          <span class="eyebrow" data-i18n="nav.clients">Clientes</span>
+          <p class="sub" data-i18n="clients.intro">Cada cliente es un grupo de WhatsApp. Las cuotas y el consumo los lleva CleverCoder.</p>
+          <p class="clients-meta" id="clientsmeta"></p>
+          <div class="clients-grid" id="clientslist"></div>
+        </div>
+      </div><!-- /#view-clientes -->
 
       <!-- pie del tablero (T112a, ct-2026-09-01-145654) — el dueño, verbatim:
            "al final del dashboard quiero que agregues el github, gracias por

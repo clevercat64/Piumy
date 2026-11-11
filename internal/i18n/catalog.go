@@ -177,10 +177,10 @@ var esCatalog = map[string]string{
 	"modal.drift_limits":      "Como máximo 3 al día, y uno de cada tipo cada 6 a 9 horas. Si el envío falla, se descarta.",
 	"modal.drift_destination": "Destino",
 	"modal.drift_switch":      "Enviar reportes de drift a los desarrolladores",
-	"label.ceiling_seconds":        "Techo (segundos)",
-	"label.language":               "Idioma",
-	"modal.language_hint":          `Idioma del tablero y de los avisos que manda Piumy. "Automático" usa el idioma del sistema operativo.`,
-	"option.auto_language":         "Automático (idioma del sistema)",
+	"label.ceiling_seconds":   "Techo (segundos)",
+	"label.language":          "Idioma",
+	"modal.language_hint":     `Idioma del tablero y de los avisos que manda Piumy. "Automático" usa el idioma del sistema operativo.`,
+	"option.auto_language":    "Automático (idioma del sistema)",
 
 	// modal: perfil de WhatsApp
 	"titlebar.profile":             "perfil",
@@ -253,9 +253,9 @@ var esCatalog = map[string]string{
 	// #status (topbar) y el resumen de Backup (T153 2a's nota: los números
 	// van adentro de la clave, nunca partidos en fragmentos — el orden de
 	// palabras cambia entre idiomas).
-	"status.connected":     "conectado",
-	"status.disconnected":  "desconectado",
-	"badge.off":            "apagado",
+	"status.connected":    "conectado",
+	"status.disconnected": "desconectado",
+	"badge.off":           "apagado",
 	// T172b tramo 3: sin el ✅ del principio. El estado de cada renglón de la
 	// barra de salud lo dice ahora un punto de color (setBadgeDot en app.js);
 	// dejar el visto acá hacía que Backup fuera el único con emoji, al lado de
@@ -513,6 +513,47 @@ var esCatalog = map[string]string{
 	// texto que ya vivía a mano no se toca, se traduce al lado.
 	"server.recovery_email_subject": "Código de recuperación — Piumy Gateway",
 	"server.recovery_email_body":    "Tu código de recuperación es: {code}\n\nVence en 10 minutos y es de un solo uso. Si no lo pediste vos, ignorá este correo.\n",
+	// ── Clientes (T172d, ct-2026-11-10-225415) ──────────────────────────
+	// Un cliente es UN grupo de WhatsApp, no un cliente con varios chats:
+	// el modelo de los tres demos lo descartó el boss. Las cuotas, el
+	// estado y el consumo los lleva CleverCoder en un archivo de solo
+	// lectura; el tablero solo los muestra. El "nivel" (tier) y el nombre
+	// del grupo son DATO — llegan del archivo y no se traducen, igual que
+	// los nombres de chat de la etapa 2b-iv.
+	// Los cuatro textos de status son los que fijó el contrato, letra por
+	// letra: el tablero no inventa su propia versión de "no está al día".
+	"nav.views":                      "Vistas",
+	"nav.summary":                    "Resumen",
+	"nav.clients":                    "Clientes",
+	"clients.intro":                  "Cada cliente es un grupo de WhatsApp. Las cuotas y el consumo los lleva CleverCoder.",
+	"clients.meta_fresh":             "clientes: {count} · foto de las {time}",
+	"clients.status_missing":         "sin datos de CleverCoder",
+	"clients.status_empty":           "sin clientes todavía",
+	"clients.status_stale":           "no está al día, última foto: {when}",
+	"clients.status_unknown_version": "actualiza el tablero",
+	"clients.tier":                   "nivel: {tier}",
+	"clients.state_open":             "abierto",
+	"clients.state_warn":             "aviso: pasó el 80 % del tope de la semana",
+	"clients.state_paused":           "pausado",
+	"clients.paused_until":           "pausado hasta {when}",
+	"clients.reopened_note":          "reabierto a mano",
+	"clients.week_title":             "Semana",
+	"clients.resets_at":              "se reinicia {when}",
+	"clients.lines_label":            "líneas",
+	"clients.cost_label":             "US$",
+	"clients.quota_value":            "{used} de {limit}",
+	"clients.no_limit":               "sin tope",
+	"clients.previous_week":          "semana pasada: {lines} líneas · US$ {cost}",
+	"clients.month_title":            "Mínimos del mes",
+	"clients.month_style_global":     "estilo global",
+	"clients.month_text":             "texto",
+	"clients.month_style_simple":     "estilo simple",
+	"clients.chart_title":            "líneas por semana (12 últimas)",
+	"clients.chart_limit":            "tope de la semana: {lines} líneas",
+	"clients.chart_empty":            "sin historial todavía",
+	"clients.chart_bar_title":        "semana del {when}: {lines} líneas · US$ {cost}",
+	"clients.agent_label":            "Agente principal",
+	"clients.no_group":               "Piumy todavía no conoce este grupo",
 }
 
 var enCatalog = map[string]string{
@@ -619,10 +660,10 @@ var enCatalog = map[string]string{
 	"modal.drift_limits":      "At most 3 a day, and one of each kind every 6 to 9 hours. If sending fails, the report is dropped.",
 	"modal.drift_destination": "Destination",
 	"modal.drift_switch":      "Send drift reports to the developers",
-	"label.ceiling_seconds":        "Ceiling (seconds)",
-	"label.language":               "Language",
-	"modal.language_hint":          `Language for the dashboard and the notifications Piumy sends. "Automatic" uses the operating system's language.`,
-	"option.auto_language":         "Automatic (system language)",
+	"label.ceiling_seconds":   "Ceiling (seconds)",
+	"label.language":          "Language",
+	"modal.language_hint":     `Language for the dashboard and the notifications Piumy sends. "Automatic" uses the operating system's language.`,
+	"option.auto_language":    "Automatic (system language)",
 
 	"titlebar.profile":             "profile",
 	"modal.whatsapp_profile_title": "Edit WhatsApp profile",
@@ -870,4 +911,38 @@ var enCatalog = map[string]string{
 	// server.recovery_email_* — see the matching comment in esCatalog.
 	"server.recovery_email_subject": "Piumy Gateway recovery code",
 	"server.recovery_email_body":    "Your recovery code is: {code}\n\nExpires in 10 minutes and is single-use. If you didn't request this, ignore this email.\n",
+	// ── Clients (T172d) — see the Spanish block for the model: one client
+	// is ONE WhatsApp group. Group name and tier are DATA, never translated.
+	"nav.views":                      "Views",
+	"nav.summary":                    "Summary",
+	"nav.clients":                    "Clients",
+	"clients.intro":                  "Each client is a WhatsApp group. Quotas and usage are tracked by CleverCoder.",
+	"clients.meta_fresh":             "clients: {count} · snapshot at {time}",
+	"clients.status_missing":         "no data from CleverCoder",
+	"clients.status_empty":           "no clients yet",
+	"clients.status_stale":           "out of date, last snapshot: {when}",
+	"clients.status_unknown_version": "update the dashboard",
+	"clients.tier":                   "tier: {tier}",
+	"clients.state_open":             "open",
+	"clients.state_warn":             "warning: past 80% of the weekly limit",
+	"clients.state_paused":           "paused",
+	"clients.paused_until":           "paused until {when}",
+	"clients.reopened_note":          "reopened by hand",
+	"clients.week_title":             "Week",
+	"clients.resets_at":              "resets {when}",
+	"clients.lines_label":            "lines",
+	"clients.cost_label":             "US$",
+	"clients.quota_value":            "{used} of {limit}",
+	"clients.no_limit":               "no limit",
+	"clients.previous_week":          "last week: {lines} lines · US$ {cost}",
+	"clients.month_title":            "Monthly minimums",
+	"clients.month_style_global":     "global style",
+	"clients.month_text":             "text",
+	"clients.month_style_simple":     "simple style",
+	"clients.chart_title":            "lines per week (last 12)",
+	"clients.chart_limit":            "weekly limit: {lines} lines",
+	"clients.chart_empty":            "no history yet",
+	"clients.chart_bar_title":        "week of {when}: {lines} lines · US$ {cost}",
+	"clients.agent_label":            "Primary agent",
+	"clients.no_group":               "Piumy doesn't know this group yet",
 }
