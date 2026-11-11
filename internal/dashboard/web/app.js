@@ -54,7 +54,7 @@
     document.getElementById("loginmodal").classList.add("hidden");
   }
 
-  var state = { chats: [], groups: [], groupMembers: [], agents: [], originAgentDefaults: {}, selectedJID: null, appliedSort: "recientes", filterText: "", lastStatus: null, privacyMode: false, i18n: { lang: "es", language: "", texts: {} } };
+  var state = { chats: [], groups: [], groupMembers: [], agents: [], originAgentDefaults: {}, selectedJID: null, appliedSort: "recientes", filterText: "", lastStatus: null, lastUpdate: null, updateUnreachable: false, privacyMode: false, i18n: { lang: "es", language: "", texts: {} } };
 
   // ── i18n (T153 etapa 1, ct-2026-09-08-1656): un solo catálogo de textos,
   // servido por el backend — el tablero no guarda su propia lista (si la
@@ -3121,6 +3121,100 @@
     document.getElementById("config_governor_info").textContent = t("governor.rate_info", { n: rate });
   }
 
+  // ── auto-actualización (T182, ct-2026-11-11-0152) ──────────────────────
+  // updateStatusText: LA frase de estado, armada con claves del catálogo y
+  // nunca pegada a mano (el orden de las palabras cambia entre idiomas). El
+  // servidor manda códigos y datos, no texto: u.blocked llega como
+  // "busy" / "other_instance" / "no_key" / "not_installed" / "other_account"
+  // y la frase la arma esta función. Los dos últimos apagan u.supported, así
+  // que entran por la primera rama. u.failure (el motivo, del registro) NO se
+  // muestra: la frase solo dice que falló y dónde mirar.
+  //
+  // El orden de las ramas es el de la realidad, no el del JSON: lo que ya
+  // está en vuelo (pending) gana sobre lo que podría pasar, y el interruptor
+  // apagado gana sobre "se instala sola" -- prometer una instalación
+  // automática con la auto-actualización apagada sería mentirle al dueño.
+  // Esa rama (modal.update_state_off) es el único agregado al fragmento que
+  // dejó Tourmaline en docs/T176-AUTOUPDATE.md.
+  function updateStatusText(u) {
+    var parts = [];
+    if (!u.supported) {
+      parts.push(t("modal.update_state_unsupported"));
+    } else if (u.pending) {
+      parts.push(t("modal.update_state_installing", { pending: u.pending }));
+    } else if (u.available && u.given_up) {
+      parts.push(t("modal.update_state_failed", { latest: u.latest }));
+    } else if (u.available && u.blocked === "no_key") {
+      parts.push(t("modal.update_state_nokey", { latest: u.latest }));
+    } else if (u.available && !u.enabled) {
+      parts.push(t("modal.update_state_off", { latest: u.latest }));
+    } else if (u.available && u.ready) {
+      parts.push(t("modal.update_state_ready", { latest: u.latest }));
+      if (u.blocked === "busy") parts.push(t("modal.update_blocked_busy"));
+      if (u.blocked === "other_instance") parts.push(t("modal.update_blocked_other_instance"));
+    } else if (u.available) {
+      parts.push(t("modal.update_state_found", { latest: u.latest }));
+    } else {
+      parts.push(t("modal.update_state_current", { current: u.current }));
+    }
+    if (u.installed_version && u.installed_at) {
+      var when = new Date(u.installed_at * 1000).toLocaleString(clientLang(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+      parts.push(t("modal.update_installed", { version: u.installed_version, when: when }));
+    }
+    return parts.join(" ");
+  }
+
+  // refreshUpdateInfo: repinta la frase desde state.lastUpdate, sin red --
+  // exactamente el mismo caso que refreshGovernorInfo, y por eso entra por
+  // la misma puerta (applyAllI18n). Sin esto el dueño cambia el idioma en
+  // ESTE mismo modal y la frase se queda en el anterior. Segura con el modal
+  // cerrado, igual que refreshGovernorInfo.
+  //
+  // Los TRES estados del renglón son distintos y ninguno se puede confundir
+  // con otro: hay un Status → la frase; se preguntó y el servidor no
+  // contestó → se dice; todavía no se preguntó → vacío. El del medio lo
+  // encontró la mirada visual de T182: con /api/update caído, el interruptor
+  // sale apagado y sin una palabra, y el dueño lee "la actualización
+  // automática está apagada" cuando lo cierto es "no se pudo preguntar". Un
+  // silencio también afirma. Y decir "al día" sin saberlo sería mentir.
+  function refreshUpdateInfo() {
+    var el = document.getElementById("config_update_status");
+    if (state.lastUpdate) {
+      el.textContent = updateStatusText(state.lastUpdate);
+      return;
+    }
+    el.textContent = state.updateUnreachable ? t("modal.update_state_unknown") : "";
+  }
+
+  // loadUpdateStatus: el estado REAL, leído del servidor -- nunca se asume.
+  // withSwitch solo es true al abrir Opciones: el refresco periódico NO toca
+  // el interruptor, o le pisaría al dueño el que acaba de mover mientras
+  // todavía no apretó Guardar.
+  function loadUpdateStatus(withSwitch) {
+    return api("/api/update").then(function (u) {
+      state.lastUpdate = u;
+      state.updateUnreachable = false;
+      if (withSwitch) document.getElementById("config_update_enabled").checked = !!u.enabled;
+      refreshUpdateInfo();
+    }).catch(function () {
+      state.lastUpdate = null;
+      state.updateUnreachable = true;
+      if (withSwitch) document.getElementById("config_update_enabled").checked = false;
+      refreshUpdateInfo();
+    });
+  }
+
+  // refreshUpdateIfVisible: el estado se mueve SOLO (se verifica una
+  // versión, arranca la instalación, se libera el bloqueo) y el dueño tiene
+  // que verlo cambiar sin F5. Mismo molde y mismo ritmo que
+  // refreshClientsIfVisible: solo mientras Opciones está abierto, cero
+  // tráfico con el modal cerrado.
+  function refreshUpdateIfVisible() {
+    var modal = document.getElementById("configmodal");
+    if (!modal || modal.classList.contains("hidden")) return;
+    loadUpdateStatus(false);
+  }
+
   // applyAllI18n (T165, ct-2026-09-16-2016) — LA puerta única para todo el
   // texto de interfaz: lo declarativo ([data-i18n], vía applyI18n()) MÁS lo
   // que arma JS y ningún poll periódico vuelve a dibujar por su cuenta
@@ -3138,6 +3232,7 @@
     applyI18n();
     applySearchPlaceholder();
     refreshGovernorInfo();
+    refreshUpdateInfo();
   }
 
   // ── config (cambiar contraseña + correo de recuperación) ────────────────
@@ -3178,6 +3273,10 @@
     }).catch(function () {
       document.getElementById("config_drift_enabled").checked = false;
     });
+    // T182: estado real de la auto-actualización al abrir, interruptor
+    // incluido -- el refresco periódico de más abajo ya no lo toca.
+    document.getElementById("config_update_result").textContent = "";
+    loadUpdateStatus(true);
     // T153 etapa 1: elección manual guardada (vacío = "nunca elegido",
     // el backend autodetecta) — /api/i18n ya trae el crudo, sin endpoint
     // aparte que duplique effectiveLang.
@@ -3310,6 +3409,23 @@
       result.textContent = t("error.prefix") + e.message;
     });
   });
+  // T182: encender o apagar la auto-actualización. Aplica en el acto del
+  // lado del servidor, sin reiniciar; acá se manda la decisión, se dice si
+  // quedó guardada y se repinta la frase con el estado que contestó -- el
+  // POST devuelve el mismo Status que el GET, así que no hace falta pedirlo
+  // de nuevo.
+  document.getElementById("config_update_save").addEventListener("click", function () {
+    var result = document.getElementById("config_update_result");
+    post("/api/admin/auto-update", {
+      enabled: document.getElementById("config_update_enabled").checked,
+    }).then(function (u) {
+      state.lastUpdate = u;
+      refreshUpdateInfo();
+      result.textContent = t("action.saved");
+    }).catch(function (e) {
+      result.textContent = t("error.prefix") + e.message;
+    });
+  });
   // openProfileModal (T112c, ct-2026-09-01-145755): foto + estado de
   // WhatsApp, editables desde el hero en vez de escondidos en Config. El
   // preview de foto reusa buildAvatar contra state.lastStatus — el mismo
@@ -3429,6 +3545,9 @@
   //     cliente. Mismo endpoint que la tabla de Conversaciones: no hay
   //     concepto nuevo acá, solo un lugar nuevo desde donde hacerlo.
   var CLIENTS_POLL_MS = 15000;
+  // T182: el ritmo del estado de la auto-actualización, con su propio nombre
+  // porque es otro renglón y puede cambiar sin arrastrar al de Clientes.
+  var UPDATE_POLL_MS = 15000;
   var SVG_NS = "http://www.w3.org/2000/svg";
   var clientsData = { status: "", generatedAt: "", list: [] };
 
@@ -3893,6 +4012,8 @@
   // T172d: el mismo ritmo de 15s que los demás loaders, pero solo cuando la
   // vista Clientes está abierta (refreshClientsIfVisible).
   setInterval(refreshClientsIfVisible, CLIENTS_POLL_MS);
+  // T182: el mismo ritmo, solo con Opciones abierto (refreshUpdateIfVisible).
+  setInterval(refreshUpdateIfVisible, UPDATE_POLL_MS);
   armSSEWatchdog();
   // T172a: un tick por segundo para el renglón de frescura. Es sólo pintar
   // texto que ya está en memoria — ni un fetch más que antes.

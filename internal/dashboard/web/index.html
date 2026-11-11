@@ -691,6 +691,35 @@
         <div class="field"><button class="btn pri block" type="button" id="config_drift_save" data-i18n="action.save">Guardar</button></div>
         <p id="config_drift_result" class="result"></p>
 
+        <!-- T182 (ct-2026-11-11-0152): la auto-actualización de T176, que
+             hasta ahora existía solo en el backend. Viene ENCENDIDA de
+             fábrica (boss: "que piumy detecte actualizaciones, y se
+             actualice solo"), así que lo primero es el estado -- el dueño
+             quiere saber si hay versión nueva, si se está instalando o por
+             qué no puede -- y después el interruptor para apagarla. El
+             renglón de estado lo arma JS con claves del catálogo (el orden
+             de las palabras cambia entre idiomas) y se refresca solo
+             mientras Opciones está abierto; el interruptor es
+             POST /api/admin/auto-update. Mismas clases que el bloque de
+             drift de arriba: este modal tiene UN solo molde de sección, y
+             ese molde pone la prosa que se lee una vez primero y el dato
+             que cambia solo (allá "Destino:", acá el estado) al final,
+             pegado al interruptor que lo gobierna. El estado lleva además
+             .statusnote: es lo que pasa AHORA y no puede verse igual que
+             el párrafo de ayuda -- una falla en gris tenue no se lee. -->
+        <div class="divider"></div>
+        <p class="modal-sub" data-i18n="modal.update_heading">Actualizaciones</p>
+        <p class="dimnote" data-i18n="modal.update_intro">Antes de instalar, Piumy verifica la firma de la versión: si algo no cuadra, no instala.</p>
+        <p class="dimnote statusnote" id="config_update_status"></p>
+        <div class="field">
+          <label class="switch-row" for="config_update_enabled">
+            <span data-i18n="modal.update_switch">Actualizar Piumy automáticamente</span>
+            <input type="checkbox" id="config_update_enabled">
+          </label>
+        </div>
+        <div class="field"><button class="btn pri block" type="button" id="config_update_save" data-i18n="action.save">Guardar</button></div>
+        <p id="config_update_result" class="result"></p>
+
         <!-- T153 etapa 1 (ct-2026-09-08-1656): el selector, sin traducir
              nada todavía — el catálogo que sirve GET /api/i18n arranca
              vacío, esto solo persiste la elección manual. "Automático" deja

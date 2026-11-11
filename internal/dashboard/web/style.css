@@ -1000,6 +1000,12 @@ textarea.inp { resize: vertical; min-height: 150px; line-height: 1.55; font-fami
    perfil de contestacion de un chat. */
 #edit_rules, #edit_memory, #edit_context { min-height: 220px; }
 .dimnote { color: var(--dim); font-size: 12.5px; margin-top: 10px; line-height: 1.55; }
+/* .statusnote (T182, ct-2026-11-11-0152): un renglón que dice lo que está
+   pasando AHORA, no lo que el programa hace en general. Va sobre .dimnote y
+   sólo le sube el color al del texto normal: en gris tenue, un "no se pudo
+   instalar" se lee como nota al pie y el dueño pasa de largo justo por lo
+   que tiene que enterarse. Token existente (--text), que ya cambia por tema. */
+.dimnote.statusnote { color: var(--text); }
 /* .switch-row (T172b tramo 4b): el renglón de un interruptor — la frase a la
    izquierda, el control a la derecha, el mismo reparto que usan los
    renglones de la barra de salud. Toda la fila es la etiqueta, así que se

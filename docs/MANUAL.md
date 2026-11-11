@@ -10708,6 +10708,34 @@ del dueño desde la LAN, sin agente de por medio. Grupo/perfil NO están acá
     sub-cambio aparte. Recarga la lista completa tras cada asignar/quitar
     en vez de mantener estado propio — la lista es chica (asignación
     manual, no todos los chats), así queda siempre fiel al backend.
+- **T182 (ct-2026-11-11-0152) — la actualización automática, en Opciones
+  (`index.html`/`style.css`/`app.js` + 15 claves en `internal/i18n/catalog.go`).**
+  Muestra y gobierna lo que T176 construyó: hasta acá el backend existía y no
+  se veía en ninguna parte, así que el dueño no sabía si había versión nueva,
+  si se estaba instalando ni por qué no, y no podía apagarlo.
+  - **Dónde**: en el modal de Opciones, debajo del bloque de drift y con su
+    mismo molde — la prosa que se lee una vez primero, el dato que cambia
+    solo al final, pegado al interruptor que lo gobierna (allá `Destino:`,
+    acá el estado). Interruptor: `POST /api/admin/auto-update`, que devuelve
+    el MISMO `Status` que el GET, así que la frase se repinta con la
+    respuesta en vez de volver a pedirla.
+  - **La frase la arma la UI, no el servidor** (`updateStatusText()`,
+    `app.js`): `GET /api/update` manda códigos y datos, no texto, porque el
+    orden de las palabras cambia entre idiomas. `failure` (el motivo, del
+    registro) NO se muestra. `not_installed` y `other_account` apagan
+    `supported`; `no_key` NO, así que tiene rama propia.
+  - **`.dimnote.statusnote`** (`style.css`, una regla sobre `.dimnote`, token
+    `--text` ya existente): el estado dice lo que pasa AHORA y no puede verse
+    igual que el párrafo de ayuda — en gris tenue, un "no se pudo instalar"
+    se lee como nota al pie y el dueño pasa de largo.
+  - **Se refresca solo, sin F5** (`refreshUpdateIfVisible` + `UPDATE_POLL_MS`),
+    mismo molde y ritmo que Clientes: solo con Opciones abierto, cero tráfico
+    con el modal cerrado. `refreshUpdateInfo()` entra por `applyAllI18n()` —
+    sin esa puerta la frase se queda en el idioma viejo al cambiar idioma.
+  - **Tres estados del renglón, que no se confunden entre sí**: hay `Status`
+    → la frase; se preguntó y el servidor no contestó → se dice
+    (`state.updateUnreachable`); todavía no se preguntó → vacío. Decir "al
+    día" sin saberlo sería mentir, y un silencio también afirma.
 - **T56 (ct-2026-08-10-201641) — el camino inverso, parado en el chat:**
   M3 arriba solo daba de alta la asignación DESDE la tarjeta del agente
   (`renderAssignedNumbers`); la tabla de Chats nunca llamaba

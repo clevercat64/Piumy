@@ -182,6 +182,28 @@ var esCatalog = map[string]string{
 	"modal.language_hint":     `Idioma del tablero y de los avisos que manda Piumy. "Automático" usa el idioma del sistema operativo.`,
 	"option.auto_language":    "Automático (idioma del sistema)",
 
+	// Auto-actualización (T176, ct-2026-11-10-2103; el tablero la muestra
+	// desde T182, ct-2026-11-11-0152). El servidor manda códigos y datos, no
+	// frases: la UI arma cada estado con estas claves, porque el orden de las
+	// palabras cambia entre idiomas. modal.update_state_off NO viene del
+	// fragmento de T176 — la agregó T182 para que la frase no prometa una
+	// instalación automática cuando el dueño apagó el interruptor.
+	"modal.update_heading":                "Actualizaciones",
+	"modal.update_intro":                  "Antes de instalar, Piumy verifica la firma de la versión: si algo no cuadra, no instala.",
+	"modal.update_switch":                 "Actualizar Piumy automáticamente",
+	"modal.update_state_current":          "Piumy {current} está al día.",
+	"modal.update_state_found":            "Hay una versión nueva ({latest}); se está verificando.",
+	"modal.update_state_ready":            "La versión {latest} está verificada y se instala sola en cuanto no haya mensajes pendientes.",
+	"modal.update_state_installing":       "Instalando la versión {pending}…",
+	"modal.update_state_failed":           "La versión {latest} no se pudo instalar (3 intentos). Piumy la deja de lado hasta que salga una más nueva; el motivo está en el registro.",
+	"modal.update_state_nokey":            "Hay una versión nueva ({latest}), pero esta copia de Piumy no puede verificarla: actualízala a mano.",
+	"modal.update_state_off":              "Hay una versión nueva ({latest}), pero la actualización automática está apagada: enciéndela aquí o instálala a mano.",
+	"modal.update_state_unknown":          "No se pudo leer el estado de las actualizaciones.",
+	"modal.update_state_unsupported":      "Esta copia de Piumy no se actualiza sola (es una copia de desarrollo, o no es la cuenta principal).",
+	"modal.update_blocked_busy":           "Esperando un momento sin mensajes pendientes.",
+	"modal.update_blocked_other_instance": "Hay otra cuenta de Piumy abierta: ciérrala para que se pueda actualizar.",
+	"modal.update_installed":              "Última instalación: {version}, {when}.",
+
 	// modal: perfil de WhatsApp
 	"titlebar.profile":             "perfil",
 	"modal.whatsapp_profile_title": "Editar perfil de WhatsApp",
@@ -664,6 +686,22 @@ var enCatalog = map[string]string{
 	"label.language":          "Language",
 	"modal.language_hint":     `Language for the dashboard and the notifications Piumy sends. "Automatic" uses the operating system's language.`,
 	"option.auto_language":    "Automatic (system language)",
+
+	"modal.update_heading":                "Updates",
+	"modal.update_intro":                  "Before installing, Piumy checks the version's signature: if anything does not add up, it does not install.",
+	"modal.update_switch":                 "Update Piumy automatically",
+	"modal.update_state_current":          "Piumy {current} is up to date.",
+	"modal.update_state_found":            "There is a new version ({latest}); it is being verified.",
+	"modal.update_state_ready":            "Version {latest} is verified and will install itself as soon as no messages are pending.",
+	"modal.update_state_installing":       "Installing version {pending}…",
+	"modal.update_state_failed":           "Version {latest} could not be installed (3 tries). Piumy sets it aside until a newer one comes out; the reason is in the log.",
+	"modal.update_state_nokey":            "There is a new version ({latest}), but this copy of Piumy cannot verify it: update it by hand.",
+	"modal.update_state_off":              "There is a new version ({latest}), but automatic updating is switched off: turn it on here or install it by hand.",
+	"modal.update_state_unknown":          "The update status could not be read.",
+	"modal.update_state_unsupported":      "This copy of Piumy does not update itself (it is a development copy, or not the main account).",
+	"modal.update_blocked_busy":           "Waiting for a moment with no pending messages.",
+	"modal.update_blocked_other_instance": "Another Piumy account is open: close it so this one can update.",
+	"modal.update_installed":              "Last install: {version}, {when}.",
 
 	"titlebar.profile":             "profile",
 	"modal.whatsapp_profile_title": "Edit WhatsApp profile",
