@@ -269,11 +269,43 @@
   }
 
   var curMood = null;
+  // moodLabel (T188): el ánimo del backend (state.ValidMoods) en el idioma del
+  // tablero. Un case por ánimo con la clave escrita entera en su llamada a t:
+  // el test de paridad del catálogo sólo ve las claves escritas así, no las
+  // armadas con +.
+  function moodLabel(mood) {
+    switch (mood) {
+      case "idle": return t("mood.idle");
+      case "zero": return t("mood.zero");
+      case "new_msg": return t("mood.new_msg");
+      case "few": return t("mood.few");
+      case "swamped": return t("mood.swamped");
+      case "reading": return t("mood.reading");
+      case "switching": return t("mood.switching");
+      case "thinking": return t("mood.thinking");
+      case "working": return t("mood.working");
+      case "responding": return t("mood.responding");
+      case "done": return t("mood.done");
+      case "ai_online": return t("mood.ai_online");
+      case "vip": return t("mood.vip");
+      case "muted": return t("mood.muted");
+      case "sleeping": return t("mood.sleeping");
+      case "alert": return t("mood.alert");
+      case "error": return t("mood.error");
+      case "qr": return t("mood.qr");
+    }
+    return mood;
+  }
+  // renderMoodLabel: aparte de applyMood porque applyAllI18n() lo repinta al
+  // cambiar de idioma — applyMood no hace nada si el ánimo no cambió.
+  function renderMoodLabel() {
+    document.getElementById("moodlabel").textContent = curMood ? moodLabel(curMood) : "";
+  }
   function applyMood(mood) {
     mood = mood || "idle";
     if (mood === curMood) return;
     curMood = mood;
-    document.getElementById("moodlabel").textContent = mood;
+    renderMoodLabel();
     var face = document.getElementById("face");
     var literal = MOOD_FACES[mood];
     gazeGen++;
@@ -357,11 +389,19 @@
   // initialsFor: hasta 2 letras de label ("Contacto Uno" -> "CU", "hola" ->
   // "H", "" -> "#"). Nunca vacío — T17 Parte 3's "sin foto, sin hueco"
   // también cubre el lado del texto, no solo la imagen.
+  // T188 (hallazgo de Calcite): sólo cuentan las palabras que empiezan con
+  // letra ("Ana 🌸" -> "A") y el primer carácter se toma entero con
+  // Array.from — charAt(0) partía un emoji (par sustituto) a la mitad y salía
+  // "A�". Un nombre sin ninguna letra ("🌸", "555") usa su primer
+  // carácter entero.
   function initialsFor(label) {
     var words = (label || "").trim().split(/\s+/).filter(Boolean);
     if (words.length === 0) return "#";
-    if (words.length === 1) return words[0].charAt(0).toUpperCase();
-    return (words[0].charAt(0) + words[1].charAt(0)).toUpperCase();
+    var first = function (w) { return Array.from(w)[0]; };
+    var lettered = words.filter(function (w) { return /^\p{L}/u.test(w); });
+    if (lettered.length === 0) return first(words[0]);
+    if (lettered.length === 1) return first(lettered[0]).toUpperCase();
+    return (first(lettered[0]) + first(lettered[1])).toUpperCase();
   }
 
   function initialsSpan(label) {
@@ -832,10 +872,28 @@
         }
       });
     });
+    // T188: sin filas la tabla se quedaba con sólo sus encabezados y la leyenda
+    // debajo, que se leía como una fila más ("BOSS"). Ahora dice por qué está
+    // vacía, y la leyenda — que explica filas que no hay — se esconde.
+    var emptyTable = !tbody.children.length;
+    if (emptyTable) tbody.appendChild(renderEmptyRow());
+    document.getElementById("legend").classList.toggle("hidden", emptyTable);
     var totalLoaded = state.chats.length + state.groups.length + state.groupMembers.length;
     document.getElementById("more").textContent = totalLoaded >= 5000 ? t("chat.load_limit_notice", { n: 5000 }) : "";
     renderGroups();
     renderContacts();
+  }
+
+  // renderEmptyRow: la fila única de una tabla sin conversaciones — con la
+  // búsqueda activa dice que nada coincide, sin ella que todavía no hay.
+  function renderEmptyRow() {
+    var tr = document.createElement("tr");
+    var td = document.createElement("td");
+    td.className = "list-empty";
+    td.colSpan = document.querySelectorAll("#chattable thead th").length || 4;
+    td.textContent = state.filterText ? t("chat.empty_filter") : t("chat.empty_none");
+    tr.appendChild(td);
+    return tr;
   }
 
   // renderSectionHeader: una <tr> de ancho completo (colspan = nº de
@@ -3258,6 +3316,7 @@
   // línea más acá adentro para quedar cubierto para siempre.
   function applyAllI18n() {
     applyI18n();
+    renderMoodLabel();
     applySearchPlaceholder();
     refreshGovernorInfo();
     refreshUpdateInfo();

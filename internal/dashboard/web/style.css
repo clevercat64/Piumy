@@ -206,7 +206,7 @@ body {
    coincida. Medido: acá arriba no hacía efecto ninguno. */
 
 .brand {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px;
   padding: 4px 8px 14px; border: 0; background: none;
 }
 .brand-name { font-weight: 600; font-size: 15px; color: var(--text); letter-spacing: -.01em; }
@@ -220,7 +220,10 @@ body {
    s.account_color, nunca hardcodeado acá (la paleta vive en internal/config,
    una sola vez). border usa currentColor a propósito: un solo style.color
    puesto por JS pinta texto Y borde juntos, sin duplicar la propiedad. */
-.brand-account { font-family: var(--mono); font-weight: 600; font-size: 11px; padding: 2px 8px; border: 1px solid currentColor; border-radius: 10px; }
+/* T188 (M7): tipografía del sistema, no monoespaciada — "Cuenta: prueba" es
+   una frase, no un código — y en una sola línea; si no entra junto al logo,
+   baja entera a su propio renglón (.brand hace wrap) en vez de partirse. */
+.brand-account { font-weight: 600; font-size: 11px; padding: 2px 8px; border: 1px solid currentColor; border-radius: 10px; white-space: nowrap; }
 /* La carita se queda — el dueño, verbatim: "la carita (como en la web) si
    me gusta, pequeña y simple". Lo que se va es el fósforo: los dos
    resplandores la hacían parte del CRT. Queda el verde plano, el tamaño de
@@ -244,16 +247,15 @@ body {
   content: ""; position: absolute; left: 8%; right: 8%; top: 46%; height: .12em;
   background: var(--phos); border-radius: 2px;
 }
-.live { font-size: 11px; color: var(--dim); letter-spacing: .14em; text-transform: uppercase; display: inline-flex; align-items: center; gap: 7px; }
-/* #status entra dentro de .live (mismo renglón que "alive · <mood>", "·"
+/* T188: sin mayúsculas ni espaciado entre letras — la franja decía "ALIVE ·
+   IDLE" en inglés y gritando; la marca de terminal que T172b ya había sacado
+   de los títulos. Ahora todo el renglón sale como lo redacta el catálogo. */
+.live { font-size: 12px; color: var(--dim); display: inline-flex; align-items: center; gap: 7px; }
+/* #status entra dentro de .live (mismo renglón que "activo · <ánimo>", "·"
    como separador) pero es un dato DISTINTO — sigue con su propio texto y
-   color (.badge/.badge.disconnected), solo neutraliza el uppercase de
-   .live para no gritar "CONECTADO" cuando el backend ya manda el texto
-   como quiere que se lea. */
-.live .badge { text-transform: none; letter-spacing: normal; }
-/* #fresh (T172a, ct-2026-11-10-2000): vive dentro de .live y, como #status,
-   neutraliza el uppercase/espaciado de su padre — el texto ya viene
-   redactado por el catálogo ("actualizado hace 12s"), no hay que gritarlo.
+   color (.badge/.badge.disconnected). */
+/* #fresh (T172a, ct-2026-11-10-2000): vive dentro de .live; el texto ya
+   viene redactado por el catálogo ("actualizado hace 12s").
    El "·" separador va acá y no en el marcado porque el span nace vacío:
    con :empty desaparece junto a él y no queda un punto suelto colgando.
    .stale usa --amber, el MISMO ámbar que ya significa "mirá esto" en el
@@ -263,7 +265,7 @@ body {
    y la hora sola en la siguiente. La franja igual usa dos líneas a ese
    ancho (18px → 36px, medido con y sin este agregado), pero cada frase
    queda entera. No se toca el resto de la topbar: eso sería rediseño. */
-.live .fresh { text-transform: none; letter-spacing: normal; white-space: nowrap; }
+.live .fresh { white-space: nowrap; }
 .live .fresh::before { content: "·"; margin: 0 5px; opacity: .6; }
 .live .fresh:empty::before { content: none; }
 .live .fresh.stale { color: var(--amber); }
@@ -761,6 +763,9 @@ tbody tr td:first-child { cursor: pointer; }
   border-bottom: 1px solid var(--border);
 }
 td.list-sub::before { content: none; } /* sin data-label — no heredar el ::before responsive de abajo */
+/* T188: la única fila de una tabla sin conversaciones (renderEmptyRow). */
+td.list-empty { color: var(--dim); text-align: center; padding: 28px 12px; align-items: center; }
+td.list-empty::before { content: none; }
 
 .smbtn {
   background: var(--bg2); color: var(--dim); border: 1px solid var(--border); border-radius: 7px;

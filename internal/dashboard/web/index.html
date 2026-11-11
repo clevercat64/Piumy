@@ -114,7 +114,10 @@
              "hace 0s" fijo sería mentira); el "·" separador lo pone el CSS y desaparece
              solo cuando el span está vacío. Sin data-i18n: no tiene texto
              estático, todo lo que muestra sale de t() en runtime. -->
-        <span class="live"><span class="pulse"></span> alive · <span id="moodlabel">idle</span> · <span class="badge" id="status">—</span><span class="fresh" id="fresh"></span></span>
+        <!-- T188: "alive" e "idle" salían en inglés y en mayúsculas espaciadas
+             aunque el tablero estuviera en español. Ahora los dos viven en el
+             catálogo; #moodlabel nace vacío y lo llena applyMood (app.js). -->
+        <span class="live"><span class="pulse"></span> <span data-i18n="status.alive">activo</span> · <span id="moodlabel"></span> · <span class="badge" id="status">—</span><span class="fresh" id="fresh"></span></span>
         </div><!-- /.topbar -->
 
         <div class="content">
@@ -295,7 +298,7 @@
           </div>
           <p id="more" class="sub"></p>
 
-          <div id="legend" class="legend">
+          <div id="legend" class="legend hidden">
             <span class="indicator boss">★</span><span>BOSS</span>
             <span class="indicator auto"><span class="idot"></span></span><span data-i18n="legend.auto_reply">respuesta automática</span>
             <span class="indicator confirm"><span class="idot"></span></span><span data-i18n="legend.with_confirmation">con tu confirmación</span>

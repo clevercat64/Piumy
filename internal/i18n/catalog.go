@@ -278,6 +278,28 @@ var esCatalog = map[string]string{
 	"status.connected":    "conectado",
 	"status.disconnected": "desconectado",
 	"badge.off":           "apagado",
+
+	// T188: el ánimo del gateway (GET /api/status mood, state.ValidMoods) en el idioma del
+	// tablero — antes salía el valor crudo del backend, en inglés, en el renglón de estado.
+	"status.alive":    "activo",
+	"mood.idle":       "en reposo",
+	"mood.zero":       "sin pendientes",
+	"mood.new_msg":    "mensaje nuevo",
+	"mood.few":        "pocos pendientes",
+	"mood.swamped":    "muchos pendientes",
+	"mood.reading":    "leyendo",
+	"mood.switching":  "cambiando de chat",
+	"mood.thinking":   "pensando",
+	"mood.working":    "trabajando",
+	"mood.responding": "respondiendo",
+	"mood.done":       "listo",
+	"mood.ai_online":  "agente en línea",
+	"mood.vip":        "chat prioritario",
+	"mood.muted":      "silenciado",
+	"mood.sleeping":   "durmiendo",
+	"mood.alert":      "alerta",
+	"mood.error":      "con error",
+	"mood.qr":         "esperando QR",
 	// T172b tramo 3: sin el ✅ del principio. El estado de cada renglón de la
 	// barra de salud lo dice ahora un punto de color (setBadgeDot en app.js);
 	// dejar el visto acá hacía que Backup fuera el único con emoji, al lado de
@@ -390,6 +412,8 @@ var esCatalog = map[string]string{
 	// error.prefix/sync.summary).
 	"chat.alias_prefix":      " · alias: ",
 	"chat.type_group":        "grupo",
+	"chat.empty_none":        "Todavía no hay conversaciones. Aparecen aquí cuando alguien te escribe.",
+	"chat.empty_filter":      "Ninguna conversación coincide con la búsqueda.",
 	"chat.load_limit_notice": "+ posiblemente más conversaciones (límite de carga: {n})",
 
 	"level.label_auto":       "Respuesta automática",
@@ -760,8 +784,30 @@ var enCatalog = map[string]string{
 	"hero.number_disconnected": "Scan the QR to link your account to the gateway",
 	"data.unnamed":             "(no name)",
 
-	"status.connected":     "connected",
-	"status.disconnected":  "disconnected",
+	"status.connected":    "connected",
+	"status.disconnected": "disconnected",
+
+	// T188: the gateway mood (GET /api/status mood, state.ValidMoods) in the dashboard's
+	// language — it used to print the backend's raw value in the status line.
+	"status.alive":         "alive",
+	"mood.idle":            "idle",
+	"mood.zero":            "nothing pending",
+	"mood.new_msg":         "new message",
+	"mood.few":             "a few pending",
+	"mood.swamped":         "swamped",
+	"mood.reading":         "reading",
+	"mood.switching":       "switching chats",
+	"mood.thinking":        "thinking",
+	"mood.working":         "working",
+	"mood.responding":      "responding",
+	"mood.done":            "done",
+	"mood.ai_online":       "agent online",
+	"mood.vip":             "priority chat",
+	"mood.muted":           "muted",
+	"mood.sleeping":        "sleeping",
+	"mood.alert":           "alert",
+	"mood.error":           "error",
+	"mood.qr":              "waiting for QR",
 	"badge.off":            "off",
 	"badge.backup_summary": "chats {chats} · groups {groups} · Contacts {contacts} · Numbers {numbers}",
 	"sync.summary":         "📥 {chats} chats · {msgs} msgs · {ago}",
@@ -843,6 +889,8 @@ var enCatalog = map[string]string{
 
 	"chat.alias_prefix":      " · alias: ",
 	"chat.type_group":        "group",
+	"chat.empty_none":        "No conversations yet. They show up here when someone messages you.",
+	"chat.empty_filter":      "No conversation matches the search.",
 	"chat.load_limit_notice": "+ possibly more conversations (load limit: {n})",
 
 	"level.label_auto":       "Automatic reply",
