@@ -172,10 +172,27 @@
                  igual que el de acá. Eso es para cuando haga falta, no
                  ahora. -->
             <button class="btn gho sm hidden" type="button" id="editprofilebtn" data-i18n="hero.edit_profile">Editar perfil</button>
+            <!-- Desconectar vivía abajo a la derecha del hero, en su propio
+                 renglón (T118, ct-2026-09-01-2205). Con la identidad hecha
+                 tarjeta (T172b tramo 2) ese "abajo a la derecha" ya no
+                 existe: los dos botones de la cuenta viven juntos en la
+                 misma esquina. Sigue siendo el mismo botón, con su id, su
+                 clase .hidden que app.js togglea en applyLinkGate y su
+                 modal de confirmación. -->
+            <button class="btn danger sm hidden" type="button" id="disconnectbtn" data-i18n="hero.disconnect">Desconectar</button>
           </div>
         </div>
 
-        <div class="mini-stats"><span data-i18n="stats.queue">cola:</span> <b id="statqueue">0</b> &nbsp;·&nbsp; <span data-i18n="stats.sent">enviados:</span> <b id="statsent">0</b> &nbsp;·&nbsp; <span data-i18n="stats.agents">agentes:</span> <b id="statagents">0</b></div>
+        <!-- T172b tramo 2: las mismas tres cifras, cada una en su bloque en
+             vez de un renglón con puntos medios. Los <b> conservan sus ids
+             (statqueue/statsent/statagents): app.js les escribe el número
+             con statNumber(), que distingue un cero real de un "—" cuando
+             el dato no vino (T172a). -->
+        <div class="mini-stats">
+          <div class="stat"><span data-i18n="stats.queue">cola:</span><b id="statqueue">0</b></div>
+          <div class="stat"><span data-i18n="stats.sent">enviados:</span><b id="statsent">0</b></div>
+          <div class="stat"><span data-i18n="stats.agents">agentes:</span><b id="statagents">0</b></div>
+        </div>
 
         <!-- T118 (ct-2026-09-01-2205): el dueño pidió esto tres veces —
              "el boton de desconectar no me gusta ahi ya te dije". Se saca
@@ -184,9 +201,6 @@
              derecha — abajo a la derecha del bloque, como pidió. Sigue
              con su propio modal de confirmación (#disconnectmodal), sin
              cambios ahí. -->
-        <div class="hero-footer-actions">
-          <button class="btn danger sm hidden" type="button" id="disconnectbtn" data-i18n="hero.disconnect">Desconectar</button>
-        </div>
       </div>
 
       <!-- panel admin: oculto hasta vincular WhatsApp (S1f, ct-2026-07-19-1735) -->
@@ -208,8 +222,12 @@
                exponerlos. Nombres, avatares y el nombre propio quedan
                visibles — el title lo deja explícito para que el dueño no
                dé por tapado algo que no lo está. -->
+          <!-- T172b tramo 2: los dos botones salen de la grilla de renglones
+               y van juntos abajo, separados por un filete. -->
+          <div class="status-actions">
           <button class="btn gho sm" type="button" id="privacybtn" title="Oculta SOLO números de teléfono (incluido el tuyo) en todo el tablero. Nombres y avatares quedan visibles. Los MENSAJES no se ocultan — si alguien escribió un número a mano en un mensaje, sigue visible." data-i18n-title="tooltip.privacy"><span class="eye" id="privacyeye">◕</span> <span data-i18n="badge.privacy">Privacidad</span></button>
           <button class="btn gho sm cfg" type="button" id="configbtn" data-i18n="modal.settings_title">Config ⚙</button>
+          </div>
         </div>
       </div>
 
