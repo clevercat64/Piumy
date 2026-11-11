@@ -240,7 +240,12 @@ var esCatalog = map[string]string{
 	"status.connected":     "conectado",
 	"status.disconnected":  "desconectado",
 	"badge.off":            "apagado",
-	"badge.backup_summary": "✅ chats {chats} · grupos {groups} · Contactos {contacts} · Números {numbers}",
+	// T172b tramo 3: sin el ✅ del principio. El estado de cada renglón de la
+	// barra de salud lo dice ahora un punto de color (setBadgeDot en app.js);
+	// dejar el visto acá hacía que Backup fuera el único con emoji, al lado de
+	// cuatro vecinos con punto. El texto queda contando lo que sabe contar:
+	// cuántas cosas se respaldaron.
+	"badge.backup_summary": "chats {chats} · grupos {groups} · Contactos {contacts} · Números {numbers}",
 	// "sync.summary" — IDÉNTICO en los dos idiomas: "chats"/"msgs" ya son
 	// préstamos ingleses en el español de esta interfaz (ver "kill"/
 	// "Governor"/"Sync" de la etapa 2a); solo {ago} cambia, y viaja
@@ -650,7 +655,7 @@ var enCatalog = map[string]string{
 	"status.connected":     "connected",
 	"status.disconnected":  "disconnected",
 	"badge.off":            "off",
-	"badge.backup_summary": "✅ chats {chats} · groups {groups} · Contacts {contacts} · Numbers {numbers}",
+	"badge.backup_summary": "chats {chats} · groups {groups} · Contacts {contacts} · Numbers {numbers}",
 	"sync.summary":         "📥 {chats} chats · {msgs} msgs · {ago}",
 	"time.now":             "now",
 	"time.ago_seconds":     "{n}s ago",

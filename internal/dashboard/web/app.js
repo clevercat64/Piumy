@@ -430,6 +430,21 @@
     return Number.isFinite(v) ? String(v) : "—";
   }
 
+  // setBadgeDot (T172b tramo 3): pinta en una insignia de la barra de salud
+  // un punto de color y, si hace falta, una palabra al lado. `estado` es
+  // "ok" | "off" | "bad", y el color de cada uno lo decide el CSS (.pip),
+  // no esta función: acá sólo se dice QUÉ pasa, no de qué color se ve.
+  // Reemplaza los emojis que se escribían a mano en cada sitio.
+  function setBadgeDot(id, estado, texto) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.replaceChildren();
+    var punto = document.createElement("span");
+    punto.className = "pip " + estado;
+    el.appendChild(punto);
+    if (texto) el.appendChild(document.createTextNode(" " + texto));
+  }
+
   function loadStatus() {
     return api("/api/status").then(function (s) {
       state.lastStatus = s;
@@ -453,16 +468,27 @@
         st.textContent = "\ud83d\udd34 " + t("status.disconnected");
         st.classList.add("disconnected");
       }
-      document.getElementById("badgewa").textContent = s.connected ? "\u2705" : "\ud83d\udd34";
-      document.getElementById("badgegovernor").textContent = s.governor_killed ? t("badge.governor_killed") : "✅";
+      // T172b tramo 3: los estados de la barra de salud se dicen con un
+      // punto de color, no con un emoji. El visto y el circulito eran lo
+      // ultimo que quedaba del tablero viejo en esa fila, y un emoji cambia
+      // de dibujo en cada sistema: el punto se ve igual en todos y hereda
+      // el color del tema. Donde hay algo que LEER (el kill del governor,
+      // "apagado" del cifrado) el texto se queda: el punto dice el estado,
+      // la palabra dice el detalle.
+      setBadgeDot("badgewa", s.connected ? "ok" : "bad");
+      if (s.governor_killed) {
+        document.getElementById("badgegovernor").textContent = t("badge.governor_killed");
+      } else {
+        setBadgeDot("badgegovernor", "ok");
+      }
       document.getElementById("badgebackup").textContent = t("badge.backup_summary", {
         chats: s.backup_chats || 0,
         groups: s.backup_groups || 0,
         contacts: s.backup_contacts || 0,
         numbers: s.backup_numbers || 0,
       });
-      document.getElementById("badgeantena").textContent = s.antenna_configured ? "✅" : "⚪";
-      document.getElementById("badgecifrado").textContent = s.backup_encrypted ? "✅" : "⚪ " + t("badge.off");
+      setBadgeDot("badgeantena", s.antenna_configured ? "ok" : "off");
+      setBadgeDot("badgecifrado", s.backup_encrypted ? "ok" : "off", s.backup_encrypted ? "" : t("badge.off"));
       document.getElementById("badgehistory").textContent = (s.history_loaded || 0) + " / " + (s.history_total || 0);
       var syncEl = document.getElementById("badgesync");
       if (s.history_sync_active) {
