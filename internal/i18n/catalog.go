@@ -446,6 +446,9 @@ var esCatalog = map[string]string{
 	"qr.waiting_for_code":  "Esperando código…",
 	"qr.generating":        "Generando QR…",
 
+	// T188/T187: motivo de qr_error (GET /api/status): Piumy no pudo abrir la ronda de QR.
+	"qr.error_unavailable": "No se pudo generar el QR. Prueba de nuevo en unos segundos.",
+
 	"action.renewing":      "Renovando…",
 	"action.disconnecting": "Desconectando…",
 
@@ -895,6 +898,9 @@ var enCatalog = map[string]string{
 	"qr.connecting_note":   "Connecting…",
 	"qr.waiting_for_code":  "Waiting for code…",
 	"qr.generating":        "Generating QR…",
+
+	// T188/T187: qr_error reason (GET /api/status): Piumy could not open the QR round.
+	"qr.error_unavailable": "Could not generate the QR. Try again in a few seconds.",
 
 	"action.renewing":      "Renewing…",
 	"action.disconnecting": "Disconnecting…",

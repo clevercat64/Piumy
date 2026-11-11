@@ -321,9 +321,20 @@
       note.textContent = t("qr.scan_instructions");
     } else {
       document.getElementById("qrimg").removeAttribute("src");
-      note.textContent = t("qr.connecting_note");
+      document.getElementById("qrimg").classList.add("hidden");
+      // Con qr_error el motivo (qrUpdateTimer) habla solo: "Conectando…"
+      // encima lo contradeciría.
+      note.textContent = s.qr_error ? "" : t("qr.connecting_note");
     }
   }
+  // T188: el <img> del QR sólo se ve cuando hay un QR cargado. Sin src, o con
+  // el pedido fallido (todavía no hay código), quedaba el cuadrado blanco con
+  // el ícono de imagen rota y el alt encima.
+  (function () {
+    var img = document.getElementById("qrimg");
+    img.addEventListener("load", function () { img.classList.remove("hidden"); });
+    img.addEventListener("error", function () { img.classList.add("hidden"); });
+  })();
 
   // loadStatus doubles as the auth probe (ct-2026-07-19-1616, S1d): every
   // /api/* call is session-or-key gated now, so a 401 here — on first boot
@@ -391,7 +402,7 @@
     // llega al tablero. Cuando /api/status lo exponga, reemplazar esto por
     // "&v=" + pictureID y sacar el reloj.
     var bust = Math.floor(Date.now() / 300000);
-    img.src = "/api/avatar?jid=" + encodeURIComponent(jid) + "&v=" + bust;
+    img.src = withKey("/api/avatar?jid=" + encodeURIComponent(jid) + "&v=" + bust);
     wrap.appendChild(img);
     return wrap;
   }
@@ -451,13 +462,15 @@
       hideLogin();
       applyAccountIdentity(s.account, s.account_color);
       var heroAvatarWrap = document.getElementById("heroavatar");
+      var heroNum = document.getElementById("num");
+      heroNum.classList.toggle("prose", !s.connected);
       if (s.connected) {
         document.getElementById("name").textContent = s.name || t("data.unnamed");
-        document.getElementById("num").textContent = ownNumberDisplay(s.own_number);
+        heroNum.textContent = ownNumberDisplay(s.own_number);
         heroAvatarWrap.replaceChildren(buildAvatar(s.own_number, s.name, "avatar-xl"));
       } else {
         document.getElementById("name").textContent = t("hero.name_disconnected");
-        document.getElementById("num").textContent = t("hero.number_disconnected");
+        heroNum.textContent = t("hero.number_disconnected");
         heroAvatarWrap.replaceChildren();
       }
       var st = document.getElementById("status");
@@ -2788,6 +2801,16 @@
         img.style.opacity = "1";
         startQRRefreshTimer();
       }
+    } else if (s.qr_error) {
+      // T188/T187: en vez de quedarse en "Generando QR…" sin decir por qué no
+      // llega, lo dice. qr_error es un CÓDIGO (hoy uno solo, "qr_unavailable":
+      // Piumy no pudo abrir la ronda de QR), no el texto de la librería, que
+      // está en inglés, cambia entre versiones y se queda en el log. Un código
+      // futuro cae en este mismo mensaje hasta que tenga el suyo. El botón de
+      // refrescar queda a mano para reintentar.
+      expiryEl.textContent = t("qr.error_unavailable");
+      expiryEl.style.color = "#ff6b6b";
+      refreshBtn.classList.remove("hidden");
     } else {
       expiryEl.textContent = s.qr_code ? t("qr.waiting_for_code") : t("qr.generating");
       expiryEl.style.color = "";

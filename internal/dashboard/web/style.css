@@ -167,6 +167,23 @@ body {
   border-right: 1px solid var(--border);
 }
 .main { display: flex; flex-direction: column; min-width: 0; }
+/* T188 (G1-G4, hallazgos de T185): sin WhatsApp vinculado no hay
+   nada que navegar ni que mostrar de una cuenta. La barra lateral sólo
+   llevaría la marca, así que se acuesta arriba (como en pantalla angosta) y
+   la ventana se ajusta a su contenido: antes .app repartía su alto mínimo
+   entre las dos filas y .side medía 351px con 42px de carita (743px de
+   ancho; 982px con 48 en ancho). Tampoco se dibuja lo que todavía no existe:
+   el avatar vacío de 120x120, el "Agregar estado" con su lápiz y tres ceros
+   que competían con el único botón que importa, "Conectar QR". Sale por el
+   mismo candado :has(#adminpanel.hidden) que ya esconde las pestañas. */
+.app:has(#adminpanel.hidden) {
+  grid-template-columns: minmax(0, 1fr); min-height: 0; align-content: start;
+}
+.app:has(#adminpanel.hidden) .side {
+  border-right: 0; border-bottom: 1px solid var(--border); padding: 10px 12px;
+}
+.app:has(#adminpanel.hidden) .brand { padding: 4px 8px; }
+.app:has(#adminpanel.hidden) :is(#heroavatar, #herostatus, .mini-stats) { display: none; }
 .topbar {
   position: sticky; top: 0; z-index: 30;
   display: flex; align-items: center; justify-content: flex-end;
@@ -302,6 +319,10 @@ body {
 .hero-status-error { font-size: 12.5px; font-style: normal; width: 100%; }
 .hero-status-error:empty { display: none; }
 .hero-number { font-size: 13.5px; font-family: var(--mono); color: var(--dim); margin-top: 3px; }
+/* T188 (M6): sin cuenta este renglón es una frase ("Escanea el QR para
+   vincular..."), no un número de teléfono — la monoespaciada se queda sólo
+   donde dice un número. app.js pone .prose en loadStatus. */
+.hero-number.prose { font-family: var(--sans); }
 
 /* ct-2026-07-22 fix visual: el boss vio "Ver QR / Reconectar" pegado a
    "Antena ⚡" sin espacio — el gap ya existía (12px) pero se ve insuficiente
@@ -509,7 +530,7 @@ body {
 @media (max-width: 900px) {
   body { padding: 0; }
   .app {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr); align-content: start;
     border: 0; border-radius: 0; box-shadow: none; min-height: 100vh;
   }
   .side {
