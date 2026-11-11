@@ -39,6 +39,24 @@ func TestDelayWindowRandomInBounds(t *testing.T) {
 	}
 }
 
+// TestDelayWindowRandomVaries guards the property pacing exists for: never
+// the same interval twice (a fixed gap is a bot's fingerprint). A Random that
+// always returned Min passed TestDelayWindowRandomInBounds above (T184). 200
+// draws over 20 ms in nanoseconds: P(all equal) = (1/2e7)^199, and no clock is
+// involved — measuring real waits through the scheduler's jitter detected
+// that same sabotage in only 57% of runs, this cannot flake in either
+// direction.
+func TestDelayWindowRandomVaries(t *testing.T) {
+	w := DelayWindow{Min: 10 * time.Millisecond, Max: 30 * time.Millisecond}
+	first := w.Random()
+	for i := 0; i < 200; i++ {
+		if w.Random() != first {
+			return
+		}
+	}
+	t.Fatalf("200 draws from [%v, %v) were all %v — a fixed interval is the pattern pacing exists to avoid", w.Min, w.Max, first)
+}
+
 func TestDelayWindowRandomDegenerate(t *testing.T) {
 	w := DelayWindow{Min: 5 * time.Millisecond, Max: 5 * time.Millisecond}
 	if d := w.Random(); d != w.Min {

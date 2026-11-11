@@ -44,13 +44,10 @@ func (s *driftSink) count() int {
 // waitFor blocks until the sink has n reports (the send is asynchronous).
 func (s *driftSink) waitFor(t *testing.T, n int) {
 	t.Helper()
-	// 30 s is a deadlock guard for a POSITIVE wait, not a measurement: polling
-	// every 5 ms means it costs nothing when the send is quick.
-	deadline := time.Now().Add(30 * time.Second)
+	// A POSITIVE wait has no deadline of its own (T184): go test's -timeout
+	// bounds it and dumps the stacks. The 30 s guard it had lost the race to
+	// a loaded machine (one test of this file took 36.8 s under load).
 	for s.count() < n {
-		if time.Now().After(deadline) {
-			t.Fatalf("sink got %d reports, want %d", s.count(), n)
-		}
 		time.Sleep(5 * time.Millisecond)
 	}
 }

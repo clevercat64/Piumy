@@ -2451,11 +2451,9 @@ func TestRunStopsOnContextCancel(t *testing.T) {
 		pusher.Run(ctx)
 		close(done)
 	}()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("Run did not return after context cancellation")
-	}
+	// No deadline of its own (T184): go test's -timeout bounds the wait, and
+	// dumps the stacks when Run really doesn't return.
+	<-done
 }
 
 // TestInjectorFallsBackToLogSkipsDispatch: dispatch to a terminal_id with no

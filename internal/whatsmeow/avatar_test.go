@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -389,37 +390,55 @@ func TestRecheckWindowForNilClientUsesContactsWindow(t *testing.T) {
 	}
 }
 
-// pacingMeasurementSlop tolerates the error this test's OWN instrumentation
-// adds on top of the real sleep — not a loosening of the pacing guarantee
-// (ct-2026-08-07, reproduced under load by Citrino: a real run measured
-// 29.4966ms against actionDelayMin=30ms, 0.5ms/1.7% short). Two independent,
-// real sources, neither one a pacing bug: (1) this test observes a dequeue
-// by POLLING len(a.avatarQueue) every 1ms, not by a synchronous signal, so
-// each recorded timestamp already lags the true dequeue moment by up to
-// ~1ms on an idle machine, more under load — and that lag doesn't cancel
-// symmetrically between two consecutive polls; (2) goroutine scheduling
-// delay between actionDelay()'s timer firing and the woken goroutine
-// actually calling time.Now(), plus Windows' own clock-resolution error —
-// both grow under system load, never shrink it. A margin here can only ever
-// make a real gap read as SHORTER than it was, never longer, so it cannot
-// hide genuine bursty/near-instant behavior — it exists purely to absorb
-// how this test measures, not what the code under test does.
-const pacingMeasurementSlop = 2 * time.Millisecond
+// pacingCtx is a context whose Err() timestamps every call (T184,
+// ct-2026-11-11-0845). avatarWorkerLoop calls ctx.Err() exactly once per
+// request, right after actionDelay().Sleep(ctx) returns, so consecutive
+// stamps are the real inter-request pacing measured by the worker's own
+// goroutine: every gap contains one whole Sleep, which cannot end before the
+// time it was asked to wait. An observer OUTSIDE the loop adds its own
+// scheduling lag to each stamp — the previous version polled len(avatarQueue)
+// every 1 ms, and under CPU load (24 spinning processes on 12 cores) it read
+// gaps of 17-27 ms against a 30 ms minimum in 8 runs of 60, with the worker
+// itself pacing correctly. If avatarWorkerLoop ever gains another ctx.Err()
+// call, the extra stamps read as near-instant gaps and this test says so.
+type pacingCtx struct {
+	context.Context
+	mu     sync.Mutex
+	stamps []time.Time
+	want   int
+	done   chan struct{} // closed on the want-th stamp
+}
+
+func (c *pacingCtx) Err() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.stamps = append(c.stamps, time.Now())
+	if len(c.stamps) == c.want {
+		close(c.done)
+	}
+	return c.Context.Err()
+}
 
 // TestAvatarWorkerLoopPacesRequestsWithVariableGaps is T17 Parte 3's
 // required evidence (ct-2026-08-05-1240 — Citrino: "mostrame la evidencia
 // del pacing: cuántas peticiones salieron, con qué separación. Es la parte
 // que puede costar una cuenta"). Drains several queued jids through the
 // REAL avatarWorkerLoop (not a shortcut — same goroutine Start() launches
-// in production) and records the wall-clock moment each leaves the queue.
-// actionDelay().Sleep runs unconditionally right after every dequeue,
-// BEFORE the connection check (avatar.go) — so the gap between consecutive
-// dequeues IS the real inter-request pacing, whether or not a live
-// connection ends up letting checkAvatar's own protocol call through.
-// Asserts what actually matters for anti-ban: never near-instant (a burst
-// in disguise), and never the SAME gap twice — a repeated interval is
-// exactly the fixed-pattern risk Citrino's own correction on this
-// contract's first draft called out.
+// in production) and records, from inside it (pacingCtx), the moment each
+// request's pacing wait ended. actionDelay().Sleep runs unconditionally
+// right after every dequeue, BEFORE the connection check (avatar.go) — so
+// the gap between consecutive stamps IS the real inter-request pacing,
+// whether or not a live connection ends up letting checkAvatar's own
+// protocol call through.
+// Asserts what a real wait can prove: never near-instant (a burst in
+// disguise). The other half — never the SAME gap twice, the fixed-pattern
+// risk Citrino's correction on this contract's first draft called out — is
+// the draw's own property and is asserted where it lives, governor's
+// TestDelayWindowRandomVaries. Measuring it here through real timers does
+// not work (T184): Windows timer jitter has a heavy tail (p90 7 ms, p99
+// 34 ms) against only 4 draws, and a spread check detected a sabotaged
+// always-Min window in 57% of runs. The gaps are still logged as the
+// evidence this test exists to show.
 func TestAvatarWorkerLoopPacesRequestsWithVariableGaps(t *testing.T) {
 	st := openTestAvatarStore(t)
 	a := &Adapter{
@@ -433,40 +452,25 @@ func TestAvatarWorkerLoopPacesRequestsWithVariableGaps(t *testing.T) {
 		a.RequestAvatar(fmt.Sprintf("%d@s.whatsapp.net", i))
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	cancelCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	ctx := &pacingCtx{Context: cancelCtx, want: n, done: make(chan struct{})}
 	go a.avatarWorkerLoop(ctx)
 
-	var dequeues []time.Time
-	last := n
-	deadline := time.Now().Add(5 * time.Second)
-	for len(dequeues) < n && time.Now().Before(deadline) {
-		if cur := len(a.avatarQueue); cur < last {
-			now := time.Now()
-			for i := 0; i < last-cur; i++ {
-				dequeues = append(dequeues, now)
-			}
-			last = cur
-		}
-		time.Sleep(time.Millisecond)
-	}
-	if len(dequeues) < n {
-		t.Fatalf("only observed %d/%d dequeues before the test deadline", len(dequeues), n)
-	}
+	// No deadline of its own: go test's -timeout bounds a wait for an event
+	// that must happen (5 requests of at most 90 ms each), and dumps the
+	// stacks when it doesn't. A 5 s bet lost to a CPU-starved machine.
+	<-ctx.done
+	ctx.mu.Lock()
+	stamps := append([]time.Time(nil), ctx.stamps...)
+	ctx.mu.Unlock()
 
 	t.Logf("T17 Parte 3 — evidencia del pacing real: %d peticiones, ventana configurada %v-%v", n, a.actionDelayMin, a.actionDelayMax)
-	var gaps []time.Duration
-	for i := 1; i < len(dequeues); i++ {
-		gap := dequeues[i].Sub(dequeues[i-1])
-		gaps = append(gaps, gap)
+	for i := 1; i < len(stamps); i++ {
+		gap := stamps[i].Sub(stamps[i-1])
 		t.Logf("  petición %d -> %d: separación %v", i, i+1, gap.Round(time.Millisecond))
-		if gap < a.actionDelayMin-pacingMeasurementSlop {
-			t.Errorf("separación %d = %v, want >= actionDelayMin (%v) menos %v de margen de medición — nunca casi-instantáneo, siempre paceado", i, gap, a.actionDelayMin, pacingMeasurementSlop)
-		}
-	}
-	for i := 1; i < len(gaps); i++ {
-		if gaps[i] == gaps[i-1] {
-			t.Errorf("separación %d == separación %d (ambas %v) — un intervalo repetido es exactamente el patrón fijo que este diseño evita", i, i+1, gaps[i])
+		if gap < a.actionDelayMin {
+			t.Errorf("separación %d = %v, want >= actionDelayMin (%v) — nunca casi-instantáneo, siempre paceado", i, gap, a.actionDelayMin)
 		}
 	}
 }

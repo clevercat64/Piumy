@@ -363,13 +363,10 @@ func TestHandleInboundPublishesOnEventbus(t *testing.T) {
 
 	p.handleInbound(gateway.Inbound{ChatJID: "111@c.us", MsgID: "m1", Text: "hola", TS: 42})
 
-	select {
-	case e := <-ch:
-		if e.JID != "111@c.us" || e.TS != 42 {
-			t.Errorf("event = %+v, want jid=111@c.us ts=42", e)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for the eventbus nudge")
+	// No deadline of its own (T184): go test's -timeout bounds the wait.
+	e := <-ch
+	if e.JID != "111@c.us" || e.TS != 42 {
+		t.Errorf("event = %+v, want jid=111@c.us ts=42", e)
 	}
 }
 
@@ -437,7 +434,26 @@ func TestMarkReadRoutesEachSenderSeparately(t *testing.T) {
 	}
 
 	p.MarkRead(group, msgs)
-	time.Sleep(50 * time.Millisecond) // background goroutine, same margin as the kill-switch test above
+	// MarkRead's goroutine ends with SetRead on the last sender's ids, so both
+	// messages read means every gw.MarkRead call has already happened — a
+	// real event, not a margin (T184: the 50 ms sleep that stood here lost to
+	// a loaded machine). No deadline of its own: go test's -timeout bounds it.
+	for {
+		got, err := st.GetMessages(group, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		read := 0
+		for _, m := range got {
+			if m.ReadTS != 0 {
+				read++
+			}
+		}
+		if read == len(msgs) {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	calls := fgw.markReadCalls()
 	if len(calls) != 2 {

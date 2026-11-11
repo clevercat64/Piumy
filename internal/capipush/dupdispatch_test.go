@@ -74,11 +74,7 @@ func TestDupDispatchStaleSnapshotRedispatchesHandledBurst(t *testing.T) {
 
 		done := make(chan struct{})
 		go func() { pusher.sweepOnce(); close(done) }()
-		select {
-		case <-blocker.entered:
-		case <-time.After(5 * time.Second):
-			t.Fatal("sweep never reached the slow injector")
-		}
+		<-blocker.entered // no deadline of its own (T184): go test's -timeout bounds the wait
 		if pusher.logState["inFlight:port-fallback"] {
 			// G's key was already evaluated (postponed) before the slow key:
 			// no stale window this attempt. Map order is random; try again.

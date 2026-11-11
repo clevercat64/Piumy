@@ -19,20 +19,23 @@ type fakeGateway struct {
 	sent      []sentCall
 	sendErr   error
 	stopped   bool
-	// sendDelay makes Send block before returning — used to deterministically
-	// widen the window where processOutbox is "in flight" mid-Send, for
-	// tests that need to provoke a shutdown race on purpose (see
-	// TestControllerStopWaitsForInFlightOutboxSend).
-	sendDelay time.Duration
 	// sendStarted, if non-nil, gets a non-blocking signal the INSTANT Send
-	// is entered — before sendDelay's sleep. A test that needs to know
-	// "Send is now in flight" waits on this instead of a fixed sleep
-	// (ct-2026-07-18-1507: the fixed-sleep version was the actual source
-	// of TestControllerStopWaitsForInFlightOutboxSend's flakiness — under
+	// is entered. A test that needs to know "Send is now in flight" waits
+	// on this instead of a fixed sleep (ct-2026-07-18-1507: the
+	// fixed-sleep version was the actual source of
+	// TestControllerStopWaitsForInFlightOutboxSend's flakiness — under
 	// scheduler load the ticker+dispatch+composing delay chain could still
 	// be short of reaching Send by the time the sleep elapsed, so Stop()
 	// legitimately had nothing to wait for and returned "too fast").
 	sendStarted chan struct{}
+	// sendGate, if non-nil, holds Send right after sendStarted fires until
+	// the test closes it: an in-flight Send that lasts exactly as long as
+	// the test needs, to provoke a shutdown race on purpose (see
+	// TestControllerStopWaitsForInFlightOutboxSend). It replaced a fixed
+	// sendDelay (T184): a duration is a bet on the machine's speed, and
+	// under load the test failed 1 run in 100 because its own goroutine
+	// woke after the delay had already elapsed, so Stop() rightly returned.
+	sendGate chan struct{}
 
 	// sendFailAt (T101, ct-2026-08-29-1651), 1-indexed: the sendCallCount-th
 	// call to Send fails with errFakeSend — every other call (before and
@@ -108,9 +111,9 @@ func (f *fakeGateway) setSendFailAt(n int) {
 	f.mu.Unlock()
 }
 
-func (f *fakeGateway) setSendDelay(d time.Duration) {
+func (f *fakeGateway) setSendGate(gate chan struct{}) {
 	f.mu.Lock()
-	f.sendDelay = d
+	f.sendGate = gate
 	f.mu.Unlock()
 }
 
@@ -124,7 +127,7 @@ func (f *fakeGateway) Inbound() <-chan gateway.Inbound { return f.inbound }
 
 func (f *fakeGateway) Send(ctx context.Context, toJID, text string) (gateway.SendResult, error) {
 	f.mu.Lock()
-	delay := f.sendDelay
+	gate := f.sendGate
 	started := f.sendStarted
 	f.mu.Unlock()
 	if started != nil {
@@ -133,8 +136,8 @@ func (f *fakeGateway) Send(ctx context.Context, toJID, text string) (gateway.Sen
 		default:
 		}
 	}
-	if delay > 0 {
-		time.Sleep(delay) // outside the lock: Connected()/setConnected must not block on this
+	if gate != nil {
+		<-gate // outside the lock: Connected()/setConnected must not block on this
 	}
 
 	f.mu.Lock()
@@ -157,7 +160,6 @@ func (f *fakeGateway) Send(ctx context.Context, toJID, text string) (gateway.Sen
 // struct the first time a second media kind needed its own field).
 func (f *fakeGateway) SendMedia(ctx context.Context, toJID string, media gateway.OutboundMedia) (gateway.SendResult, error) {
 	f.mu.Lock()
-	delay := f.sendDelay
 	started := f.sendStarted
 	f.mu.Unlock()
 	if started != nil {
@@ -165,9 +167,6 @@ func (f *fakeGateway) SendMedia(ctx context.Context, toJID string, media gateway
 		case started <- struct{}{}:
 		default:
 		}
-	}
-	if delay > 0 {
-		time.Sleep(delay)
 	}
 
 	f.mu.Lock()

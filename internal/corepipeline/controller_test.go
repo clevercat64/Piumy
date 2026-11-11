@@ -28,7 +28,9 @@ func TestControllerRunsPipelineEndToEnd(t *testing.T) {
 
 	fgw.inbound <- gateway.Inbound{ChatJID: "111@c.us", MsgID: "m1", Text: "hola", TS: 1}
 
-	deadline := time.Now().Add(2 * time.Second)
+	// No deadline of its own (T184): go test's -timeout bounds a wait for an
+	// event that must happen, and dumps the stacks when it doesn't. A 2 s
+	// bet lost to a CPU-starved machine, never to a bug.
 	for {
 		msgs, err := st.GetMessages("111@c.us", 10)
 		if err != nil {
@@ -36,9 +38,6 @@ func TestControllerRunsPipelineEndToEnd(t *testing.T) {
 		}
 		if len(msgs) == 1 {
 			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("inbound message never reached the store through Controller.Start's pipeline")
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -76,36 +75,26 @@ func TestControllerMarkReadNoOpWhenNotRunning(t *testing.T) {
 // in Run (waits for outboxLoop too, not just inboundLoop) — verified still
 // intact here.
 //
-// ct-2026-07-18-1507: this test itself used to synchronize with a FIXED
-// time.Sleep(20ms) before calling Stop(), gambling that outboxLoop's
-// ticker + the dispatch/composing pacing delays had reliably reached
-// gw.Send by then. Under scheduler load that gamble occasionally lost —
-// Stop() was invoked before Send had even started, so it correctly had
-// nothing to join and returned fast, which the test misread as "the join
-// is broken" (characterized flaky via -count=5, Citrino). fakeGateway's
-// sendStarted channel now signals the INSTANT Send is entered, so the test
-// waits on a real event instead of guessing a duration — deterministic,
-// no production code changed (Run/Stop's join was already correct).
+// No wall-clock bet decides this test (T184, ct-2026-11-11-0845). It used to
+// wait 2 s for Send to be entered and sleep a fixed 60 ms inside Send; under
+// CPU starvation (24 spinning processes on 12 cores) it failed 9 runs in
+// 100 — "Send was never entered", "Stop() never returned" and "Stop()
+// returned before the in-flight Send finished" — while the quiet chain from
+// Start to Send takes ~10 ms. No step of that chain was left unshrunk: the
+// scheduler delayed the processes, not the code. So:
+//   - the positive waits (Send entered, Stop returned) have no deadline of
+//     their own — go test's -timeout is the bound, and it dumps the stacks;
+//   - Send is held by fakeGateway.sendGate until the test releases it, so
+//     Stop() cannot legitimately return meanwhile: the "still blocked" check
+//     below can miss a bug under load (its goroutine woke late) but can
+//     never fail a correct Stop().
 //
-// ct-2026-08-07, second flake (Citrino reproduced under 40 parallel full-
-// suite runs, two different symptoms — "outbox Send was never entered" and
-// "sql: database is closed"): NOT a production race — Run/Stop's join is
-// still correct (re-verified: WaitGroup + happens-before hold under the
-// exact same heavy-load reproduction). The bug was here, in this test's own
-// cleanup. Before this fix, `c` was only ever Stop()ed by the explicit
-// goroutine at the bottom — if either of the FIRST two t.Fatal calls fired
-// (the "Send was never entered" timeout, extended under load to a couple
-// hundred seconds by 15 parallel `go test ./...` runs competing for CPU),
-// t.Fatal's Goexit unwound straight past that goroutine, which never ran:
-// the Controller kept running, un-stopped, its outboxLoop still ticking
-// every 5ms against a store the deferred st.Close() (registered earlier)
-// closed out from under it — hence the repeated "database is closed".
-// stopOnce (sync.OnceFunc) makes the deferred cleanup below the SAME
-// underlying call as the explicit mid-test Stop(): whichever goroutine
-// calls it, every OTHER caller blocks until that one real Stop() finishes
-// (sync.Once's own documented contract) — so the deferred call actually
-// joins outboxLoop instead of racing an already-idempotent no-op, on every
-// exit path including an early t.Fatal.
+// ct-2026-08-07: a failed run used to leave the Controller running, its
+// outboxLoop ticking against a store the deferred st.Close() had closed
+// ("database is closed"). stopOnce makes the deferred cleanup the SAME call
+// as the mid-test Stop(), and releaseSend unwinds before it (LIFO) so a Send
+// still held by the gate can never deadlock that cleanup — on every exit
+// path, including an early t.Fatal.
 func TestControllerStopWaitsForInFlightOutboxSend(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "piumy.db"))
 	if err != nil {
@@ -116,10 +105,10 @@ func TestControllerStopWaitsForInFlightOutboxSend(t *testing.T) {
 	gov := governor.NewLimiter(100, time.Minute)
 	sm := state.NewManager(filepath.Join(t.TempDir(), "status.json"), 8)
 	fgw := newFakeGateway()
-	const sendDelay = 60 * time.Millisecond
-	fgw.setSendDelay(sendDelay)
 	sendStarted := make(chan struct{}, 1)
 	fgw.setSendStarted(sendStarted)
+	sendGate := make(chan struct{})
+	fgw.setSendGate(sendGate)
 
 	if err := st.Enqueue("111@c.us", "hola", time.Now().Unix()); err != nil {
 		t.Fatal(err)
@@ -140,34 +129,34 @@ func TestControllerStopWaitsForInFlightOutboxSend(t *testing.T) {
 		c.Stop()
 		close(stopped)
 	})
-	// Runs on EVERY exit path, including an early t.Fatal below — never
-	// leaves the Controller running past this test function, whatever
-	// triggered the return. Registered after defer st.Close() above, so it
-	// unwinds first (LIFO): Stop() always joins outboxLoop before the store
-	// closes.
+	releaseSend := sync.OnceFunc(func() { close(sendGate) })
+	// Both run on EVERY exit path. Registered after defer st.Close(), so
+	// they unwind first (LIFO), releaseSend before stopOnce: Stop() always
+	// joins outboxLoop before the store closes.
 	defer stopOnce()
+	defer releaseSend()
 
-	// Wait for outboxLoop to actually be blocked inside gw.Send's artificial
-	// delay before we try to stop it — a real event, not a timing guess.
-	select {
-	case <-sendStarted:
-	case <-time.After(2 * time.Second):
-		t.Fatal("outbox Send was never entered")
-	}
+	// Wait for outboxLoop to actually be blocked inside gw.Send — a real
+	// event, not a timing guess.
+	<-sendStarted
 
 	go stopOnce()
 
+	// Long enough for a Stop() that does NOT join to return; short enough
+	// not to slow the passing run.
+	const joinWindow = 50 * time.Millisecond
 	select {
 	case <-stopped:
 		t.Fatal("Stop() returned before the in-flight Send finished — outboxLoop isn't joined")
-	case <-time.After(sendDelay / 2):
-		// Still blocked partway through the delay, as expected.
+	case <-time.After(joinWindow):
+		// Still blocked while Send is held, as expected.
 	}
 
-	select {
-	case <-stopped:
-	case <-time.After(2 * time.Second):
-		t.Fatal("Stop() never returned")
+	releaseSend()
+	<-stopped
+
+	if got := len(fgw.sentCalls()); got != 1 {
+		t.Errorf("sent calls once Stop() returned = %d, want 1 — Stop() returned before the in-flight Send completed", got)
 	}
 }
 
