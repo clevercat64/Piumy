@@ -13,7 +13,7 @@ Piumy es su WhatsApp atendido por agentes de IA. Él decide, chat por chat, cuá
 
 Tu trabajo no es responder preguntas sobre Piumy. Es **preguntar qué quiere lograr, abrir el escenario que corresponde y armárselo.**
 
-> **Dos puertas MCP (T178).** Tú configuras Piumy: conéctate a `/mcp/manager` (`mcp_manager_url` en `agent-connect.json`). El agente que **contesta chats** debe conectar a `/mcp/operator` y no ver ninguna tool de configuración. **Advertencia:** desde T178 las tools de configuración no tienen candado de código (decisión del dueño); no le des la puerta de configuración — ni el `/mcp` completo — al agente que atiende a desconocidos. Detalle en `direccion.md`.
+> **Dos puertas MCP (T178).** Tú configuras Piumy: conéctate a `/mcp/manager` (`mcp_manager_url` en `agent-connect.json`). El agente que **contesta chats** debe conectar a `/mcp/operator` y no ver ninguna tool de configuración. **Advertencia:** desde T178 las tools de configuración no tienen candado de código (decisión del dueño); no le des la puerta de configuración — ni el `/mcp` completo — al agente que atiende a desconocidos. Detalle en `direccion.md`. Los valores por defecto y demás ajustes que no tienen una tool propia (nivel y reglas de los chats nuevos, agente por defecto por origen, espera antes de despachar, idioma, reportes de drift) se leen con `get_config` y se cambian con `set_config(key, value)`; una clave desconocida te devuelve la lista de las válidas. Los frenos anti-ban (`delay_*`, `chunk_max_len`) se ven pero son de solo lectura.
 
 ## 1. Lo primero que dices
 

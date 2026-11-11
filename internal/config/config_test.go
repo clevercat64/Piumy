@@ -192,6 +192,40 @@ func TestDispatchDelayEnv(t *testing.T) {
 	})
 }
 
+// TestAutoUpdateSwitch (T176, ct-2026-11-10-2103): like the drift switch, the
+// default lives in ONE constant — and the boss's decision (self-update on, "se
+// actualice solo") is pinned here as a literal, so flipping the constant cannot
+// slip through a test that only compares it with itself.
+func TestAutoUpdateSwitch(t *testing.T) {
+	t.Setenv("PIUMY_DATA_DIR", t.TempDir())
+	load := func(t *testing.T, v string) bool {
+		t.Helper()
+		t.Setenv("PIUMY_AUTO_UPDATE", v)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cfg.AutoUpdate
+	}
+
+	if !load(t, "") {
+		t.Error("unset: self-update is off, want ON by default (boss: \"se actualice solo\")")
+	}
+	for _, v := range []string{"0", "false", "False"} {
+		if load(t, v) {
+			t.Errorf("PIUMY_AUTO_UPDATE=%q must switch it off", v)
+		}
+	}
+	for _, v := range []string{"1", "true"} {
+		if !load(t, v) {
+			t.Errorf("PIUMY_AUTO_UPDATE=%q must switch it on", v)
+		}
+	}
+	if !load(t, "maybe") {
+		t.Error("a typo flipped the switch off: it must keep the default")
+	}
+}
+
 // TestDriftReportsSwitchAndURL (T174a, ct-2026-11-10-210158): the on/off
 // default lives in ONE constant (driftReportsDefault) so the owner's pending
 // opt-in-or-on decision is a one-line change — which is why this test checks

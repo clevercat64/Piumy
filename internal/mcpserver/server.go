@@ -1130,6 +1130,7 @@ func NewSet(ctx context.Context, d Deps) Set {
 	addGroupTools(s, d, tracker)
 	addMediaTools(s, d, tracker)
 	addAgentTools(s, d)
+	addConfigTools(s, d, tracker)
 	// send_to_boss (T39, ct-2026-08-08-1619): DELIBERATELY not passed
 	// through levelGateMiddleware's gated-tool maps (bossOnlyTools/
 	// enumerationTools/chatScopedArg in levelgate.go) — same "no chat

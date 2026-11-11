@@ -54,6 +54,7 @@ var operatorTools = nameSet(
 // chat it is about to configure.
 var managerTools = nameSet(
 	"get_status", "get_manual", "list_chats", "get_chat",
+	"get_config", "set_config",
 	"set_is_boss", "set_is_approver", "set_type_rules", "set_confirmation_mode", "set_config_level",
 	"set_chat_rules", "set_chat_status", "set_chat_active", "set_mode",
 	"set_kill_switch", "reset_dashboard_password",

@@ -13,6 +13,7 @@ import (
 	"net/smtp"
 	"time"
 
+	"piumy-gateway/internal/autoupdate"
 	"piumy-gateway/internal/eventbus"
 	"piumy-gateway/internal/governor"
 	"piumy-gateway/internal/i18n"
@@ -282,6 +283,10 @@ type Deps struct {
 	// DriftReportURL is cfg.DriftReportURL — shown next to the switch so the
 	// owner sees where a report would go, exactly as configured.
 	DriftReportURL string
+
+	// AutoUpdate (T176, ct-2026-11-10-2103) is the self-updater GET /api/update
+	// reports on and POST /api/admin/auto-update switches. nil -> both 503.
+	AutoUpdate *autoupdate.Updater
 
 	// PrincipalTerminalID (ct-2026-07-22-1301, M1) is cfg.DefaultTerminalID —
 	// the SAME identity mcpserver.Deps.PrincipalTerminalID already gates

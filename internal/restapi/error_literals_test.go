@@ -41,6 +41,7 @@ var errorLiteralExceptions = map[string]string{
 	"gateway not available":       "técnico — adaptador de mensajería sin inicializar, no algo que el usuario cause",
 	"events not available":        "técnico — event bus sin inicializar, no algo que el usuario cause",
 	"media fetcher not available": "técnico — dependencia interna sin inicializar, no algo que el usuario cause",
+	"auto-update not available":   "técnico — el actualizador (T176) sin cablear, no algo que el usuario cause",
 	"streaming not supported":     "técnico — el ResponseWriter no implementa http.Flusher; no puede pasar en un deploy HTTP normal",
 
 	"invalid JSON body":                           "técnico — contrato de API violado solo llamando el endpoint directo; el tablero siempre manda JSON válido",

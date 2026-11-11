@@ -33,6 +33,7 @@ func (d Deps) registerReadRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/agents", d.auth(d.handleAgents))
 	mux.HandleFunc("GET /api/agents/chats", d.auth(d.handleAgentChats))
 	mux.HandleFunc("GET /api/clients", d.auth(d.handleClients))
+	mux.HandleFunc("GET /api/update", d.auth(d.handleGetUpdate))
 }
 
 // handleStatus is the dashboard's one status projection. S1b

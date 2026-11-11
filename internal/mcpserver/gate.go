@@ -430,6 +430,20 @@ func (g *Gate) InFlight(terminalID string) bool {
 	return d != nil && d.state != gateDone
 }
 
+// AnyInFlight reports whether ANY terminal has a dispatch that is not done
+// (T176, ct-2026-11-10-2103): the self-updater only installs a new version when
+// none does, so it never restarts Piumy in the middle of an agent's turn.
+func (g *Gate) AnyInFlight() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for _, d := range g.byTerminal {
+		if d != nil && d.state != gateDone {
+			return true
+		}
+	}
+	return false
+}
+
 // NonceActive reports whether nonce is currently registered to a dispatch
 // (ct-2026-07-18-1851-B) — capipush checks this before committing to a short
 // (4-hex) nonce, regenerating on a collision instead of registering over an

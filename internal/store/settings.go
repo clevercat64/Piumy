@@ -125,6 +125,11 @@ const (
 	// otherwise) — a stored "0" or "1" is the owner's explicit choice.
 	SettingDriftReports = "drift_reports"
 
+	// SettingAutoUpdate (T176) is the owner's switch for self-update, flipped from
+	// the dashboard while Piumy runs. Unset means "use the default"
+	// (config.Config.AutoUpdate: on unless PIUMY_AUTO_UPDATE says otherwise).
+	SettingAutoUpdate = "auto_update"
+
 	// SettingActivationSweepWindow (S8, ct-2026-07-30-031126) overrides
 	// SetActive's own backlog-sweep reach on a genuine inactive→active
 	// transition: messages OLDER than `now - window` get marked handled

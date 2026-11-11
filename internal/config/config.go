@@ -276,7 +276,19 @@ type Config struct {
 	// PIUMY_DRIFT_REPORT_URL points it elsewhere.
 	DriftReports   bool
 	DriftReportURL string
+
+	// AutoUpdate (T176, ct-2026-11-10-2103): whether Piumy may look for a newer
+	// release and install it by itself (internal/autoupdate). Only the DEFAULT:
+	// the owner's switch in the dashboard (store.SettingAutoUpdate) wins, and
+	// PIUMY_AUTO_UPDATE sets the default for a machine nobody will click on.
+	AutoUpdate bool
 }
+
+// autoUpdateDefault is the ONE place the on/off default lives (T176). true:
+// boss, 2026-11-10, verbatim: "que piumy detecte actualizaciones, y se actualice
+// solo". Every guarantee that makes that safe — a signed release, an installed
+// copy, a quiet queue — is code in internal/autoupdate, not this switch.
+const autoUpdateDefault = true
 
 // driftReportsDefault is the ONE place the on/off default lives (T174a).
 // false = reports are the owner's opt-in: nothing leaves until they switch it
@@ -479,6 +491,8 @@ func Load() (Config, error) {
 
 		DriftReports:   envBool("PIUMY_DRIFT_REPORTS", driftReportsDefault),
 		DriftReportURL: env("PIUMY_DRIFT_REPORT_URL", driftReportURLDefault),
+
+		AutoUpdate: envBool("PIUMY_AUTO_UPDATE", autoUpdateDefault),
 	}
 	return cfg, nil
 }

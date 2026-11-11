@@ -16,6 +16,7 @@ import (
 	"github.com/mdp/qrterminal/v3"
 
 	"piumy-gateway/internal/agentconnect"
+	"piumy-gateway/internal/autoupdate"
 	"piumy-gateway/internal/capipush"
 	"piumy-gateway/internal/config"
 	"piumy-gateway/internal/corepipeline"
@@ -442,6 +443,22 @@ func main() {
 	pusher.SetState(sm)
 	pusher.SetDrift(drift)
 
+	// T176 (ct-2026-11-10-2103): Piumy looks for a newer release and installs it
+	// by itself — verified against the release signature, only on an installed
+	// copy, only when the queue is empty and nothing is in flight. The owner's
+	// switch is asked on every look (the stored choice wins; cfg.AutoUpdate, on,
+	// is only the default). stop() is the graceful shutdown the updater calls
+	// right after it launches the installer.
+	updater := autoupdate.New(autoupdate.Config{
+		Enabled:        func() bool { return s.SettingBool(store.SettingAutoUpdate, cfg.AutoUpdate) },
+		CurrentVersion: version.Version,
+		DataDir:        dataDir,
+		Account:        cfg.Account,
+		KV:             s,
+		Idle:           updateIdle(s, gate),
+		Stop:           stop,
+	})
+
 	// onAgentUpsert/onAgentDelete (ct-2026-07-29, agentes paso 1): the ONE
 	// hot-reload effect a secondary agent's credentials changing (or the
 	// agent disappearing) has on the live pusher — shared verbatim by
@@ -655,7 +672,7 @@ func main() {
 	// (backup off), a real race under load.
 	var bg sync.WaitGroup
 	watchWhatsApp := func(ctx context.Context) { driftreport.WatchWhatsApp(ctx, sm, drift) }
-	for _, run := range []func(context.Context){pusher.Run, bk.RunPeriodic, watchWhatsApp} {
+	for _, run := range []func(context.Context){pusher.Run, bk.RunPeriodic, watchWhatsApp, updater.Run} {
 		bg.Add(1)
 		go func(r func(context.Context)) { defer bg.Done(); r(ctx) }(run)
 	}
@@ -698,6 +715,7 @@ func main() {
 		// owner touches it — their stored choice always wins.
 		DriftReportsDefault: cfg.DriftReports,
 		DriftReportURL:      cfg.DriftReportURL,
+		AutoUpdate:          updater,
 		// Injectors: pusher's own injectors map (RegisterInjector/
 		// OnAgentUpsert below already keep it current) — the per-agent ping
 		// (M2, ct-2026-07-22-1301) resolves THAT agent's injector through

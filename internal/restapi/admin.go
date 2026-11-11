@@ -170,6 +170,7 @@ func (d Deps) registerAdminRoutes(mux *http.ServeMux) {
 	// see drift.go. Off until they switch it on.
 	mux.HandleFunc("GET /api/admin/drift-reports", d.auth(d.handleGetDriftReports))
 	mux.HandleFunc("POST /api/admin/drift-reports", d.auth(d.handleSetDriftReports))
+	mux.HandleFunc("POST /api/admin/auto-update", d.auth(d.handleSetAutoUpdate))
 
 	// Estado/"About" de WhatsApp (T92, ct-2026-08-28 — el mismo
 	// GroupProfile.SetProfileStatus que set_profile_status (MCP) ya usa,
