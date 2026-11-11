@@ -25,5 +25,10 @@ Reglas del reparto:
 - `/mcp` no pierde nada: los agentes ya conectados siguen igual.
 - `agent-connect.json` suma `mcp_operator_url` y `mcp_manager_url`.
 
-Pasos siguientes (T178): sacar los candados de configuración, `get_config` /
-`set_config`, `gateway_action`, manuales.
+Además, solo en `/mcp/manager` y `/mcp` (T178):
+- Sin candados de configuración: `set_kill_switch` es el único que queda.
+- `get_config` / `set_config(key, value)`: una tabla de claves
+  (`config_tools.go`) — defaults por origen, reglas, agente por defecto,
+  `default_terminal_id` (aplica al reiniciar), `router.*`, `auto_update`; los
+  frenos anti-ban se ven pero son de solo lectura.
+- `gateway_action(reconnect|disconnect|reset)`: lo que no es un ajuste.
