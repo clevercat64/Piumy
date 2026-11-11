@@ -12,7 +12,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -1093,7 +1092,7 @@ func (d Deps) handleSetRecoveryEmail(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
-	if body.Email != "" && (!strings.Contains(body.Email, "@") || strings.ContainsAny(body.Email, " \t\n")) {
+	if !store.ValidRecoveryEmail(body.Email) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(effectiveLang(d.Store), "server.invalid_email")})
 		return
 	}
@@ -1551,18 +1550,6 @@ func (d Deps) handlePromoteAgent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "promoted", "new_principal": d.PrincipalTerminalID, "demoted_to": demotedID})
 }
 
-// validConfigLevelDefault mirrors store.applyConfigLevelDefault's own enum
-// — "boss" is deliberately excluded, unlike validConfigLevel: a default is
-// never the owner's identity (M5, ct-2026-07-22-1903, boss's own combo box
-// only offers sin confirmar/con confirmación/desatendido/ignorado).
-func validConfigLevelDefault(level string) bool {
-	switch level {
-	case "auto", "confirm", "unattended", "ignored":
-		return true
-	}
-	return false
-}
-
 // M5 (ct-2026-07-22-1903) — 2 pares (modo + reglas) en la cabecera del
 // dashboard: "mensajes nuevos" (números desconocidos) y "contactos de la
 // libreta". Calco de handleGetRecoveryEmail/handleSetRecoveryEmail's shape
@@ -1595,7 +1582,7 @@ func (d Deps) handleSetConfigLevelDefaultNew(w http.ResponseWriter, r *http.Requ
 	if !decode(w, r, &body) {
 		return
 	}
-	if !validConfigLevelDefault(body.Level) {
+	if !store.ValidConfigLevelDefault(body.Level) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "level must be auto|confirm|unattended|ignored"})
 		return
 	}
@@ -1630,7 +1617,7 @@ func (d Deps) handleSetConfigLevelDefaultContact(w http.ResponseWriter, r *http.
 	if !decode(w, r, &body) {
 		return
 	}
-	if !validConfigLevelDefault(body.Level) {
+	if !store.ValidConfigLevelDefault(body.Level) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "level must be auto|confirm|unattended|ignored"})
 		return
 	}
@@ -1742,16 +1729,11 @@ func (d Deps) handleSetAgentDefault(key string) http.HandlerFunc {
 		if !decode(w, r, &body) {
 			return
 		}
-		if body.AgentID != "" && body.AgentID != d.PrincipalTerminalID {
-			if _, ok, err := d.Store.GetAgent(body.AgentID); err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-				return
-			} else if !ok {
+		if err := d.Store.SetAgentDefault(key, body.AgentID, d.PrincipalTerminalID); err != nil {
+			if errors.Is(err, store.ErrUnknownAgent) {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(effectiveLang(d.Store), "server.unknown_agent_id")})
 				return
 			}
-		}
-		if err := d.Store.KVSet(key, body.AgentID); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
@@ -1820,7 +1802,7 @@ func (d Deps) handleReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if d.MediaDir != "" {
-		if err := clearDirContents(d.MediaDir); err != nil {
+		if err := mediautil.ClearDir(d.MediaDir); err != nil {
 			log.Printf("restapi: reset: clear media dir %s: %v", d.MediaDir, err)
 		}
 	}
@@ -1861,26 +1843,6 @@ func (d Deps) handleReconnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "reconnecting"})
-}
-
-// clearDirContents removes every entry INSIDE dir, leaving dir itself in
-// place — os.RemoveAll(dir) would also delete the directory, which a
-// concurrent writer (the media-download worker) could then fail to
-// recreate mid-write. A missing dir is not an error (nothing to clear).
-func clearDirContents(dir string) error {
-	entries, err := os.ReadDir(dir)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if err := os.RemoveAll(filepath.Join(dir, entry.Name())); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {

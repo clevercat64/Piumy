@@ -102,6 +102,13 @@ solo los campos que sus propios paquetes necesitan.
   T11, abajo). Ya no falla si falta `PIUMY_DB_PATH` — ver T169 justo abajo,
   que le sacó ese caso especial junto con el resto de los defaults
   relativos.
+- **`filewrite.go` (T178)** — el escritor de `piumy-config.json`, par del
+  lector `ApplyFileDefaults`: `FileDir()` (junto al binario, donde el lector
+  lo busca), `FileValue(dir, key)` y `SetFileValue(dir, key, value)` (atómico,
+  `""` borra la clave, las demás quedan). Lo usa el MCP `set_config` para lo
+  que el proceso no puede reescribir en vivo (`PIUMY_DEFAULT_TERMINAL_ID`):
+  el cambio se lee en el PRÓXIMO arranque, y nunca si una variable de entorno
+  real del mismo nombre está puesta.
 - **T174a (ct-2026-11-10-210158) — reportes de drift, APAGADOS por defecto.**
   `Config.DriftReports` (`PIUMY_DRIFT_REPORTS`) y `Config.DriftReportURL`
   (`PIUMY_DRIFT_REPORT_URL`, por defecto `https://clevercoder.app/lic/report`).
@@ -409,6 +416,11 @@ solo los campos que sus propios paquetes necesitan.
 
 Rol: persistencia SQLite (8 tablas). "El oro" — se migró literal desde
 Piumy. Ver `docs/F1A-STORE-ACCESO.md`.
+
+- **`configvalid.go` (T178)** — validación de ajustes que escriben más de una
+  superficie (REST y el MCP `set_config`): `ValidConfigLevelDefault(level)`,
+  `ValidRecoveryEmail(email)` y `(*Store).SetAgentDefault(setting, agentID,
+  principalID)` (el principal vale sin fila en `agents`; `""` limpia).
 
 **Ciclo de vida** (`schema.go`)
 - `Open(path) (*Store, error)` — abre/crea la DB, aplica esquema + migraciones.
@@ -3499,6 +3511,13 @@ justo antes de borrar ese paquete — `mcpserver/group_tools.go`'s
 retomar media inbound (ct-2026-07-14-0024) se reconstruyeron dentro de
 `internal/whatsmeow/media.go`, junto a su único caller.
 
+- **`ClearDir(dir) error` (`cleardir.go`, T178)** — vacía el CONTENIDO de un
+  directorio y deja el directorio: `os.RemoveAll(dir)` lo borraría también, y
+  un escritor concurrente (el worker de descarga de media) podría no poder
+  recrearlo a mitad de una escritura. Un directorio que no existe no es error.
+  Lo usan `POST /api/admin/reset` (REST) y `gateway_action reset` (MCP): una
+  sola implementación.
+
 - `DecodeDataURL(dataURL) (data []byte, mime string, err error)` — parsea
   `data:<mime>;base64,<payload>`.
 - **`EnsureJPEG(data []byte) ([]byte, error)`** (T111, ct-2026-09-01-1442)
@@ -3728,6 +3747,52 @@ el modelo vigente: tracking por `terminal_id`, default DENY) +
 - `Handler(Set, mcpKey) http.Handler` (T178, `mount.go`) — monta `PathAll`
   (`/mcp`), `PathOperator` (`/mcp/operator`) y `PathManager` (`/mcp/manager`)
   detrás de UN `RequireBearerToken`: misma clave para los tres.
+- `get_config(prefix?)` / `set_config(key, value)` (T178, `config_tools.go`,
+  solo perfil manager) — todo lo ajustable de una instalación en dos tools, no
+  una por ajuste. UNA tabla (`configKeys()`) es toda la superficie: cada clave
+  trae tipo, descripción, `get` (valor + `source`: `kv` = tocada, `default` =
+  nunca tocada) y `set` (valida y escribe). `value` es siempre string
+  (`"true"`/`"false"`, segundos como número, `""` limpia). Clave desconocida →
+  el error lista las válidas. Claves hoy: `config_level_default_new|contact`,
+  `rules_default_new_number|contact`, `rules_type_group`, `identity`,
+  `agent_default_new_number|contact|group|boss`, `dispatch_debounce_sec`,
+  `max_dispatch_debounce_sec`, `drift_reports`, `language`,
+  `dashboard_recovery_email`, `default_terminal_id` (el principal: se lee UNA
+  vez al arrancar y se copia por valor a gate/levelgate/capipush, así que no
+  cambia en vivo — el escritor es `piumy-config.json` vía `config.SetFileValue`,
+  `applied` dice `restart`, y avisa si una variable de entorno real le gana),
+  `router.default_mode` y `router.route:<match>` (JSON
+  `{mode,plugin,model,vip,terminal_id}`, `""` la borra; `Router.Update` ya
+  persiste a `router.json` y aplica en vivo; una ruta que no existe se crea).
+  Cada clave puede traer `applies` (`restart`) y `preflight` (un aviso previo
+  al `set`). `Deps.ConfigFileDir` (`config.FileDir()`, lo cablea `main.go`)
+  es el directorio de `piumy-config.json`; vacío = `default_terminal_id` se
+  niega con un error claro. `auto_update` y `drift_reports` (`boolKey`)
+  muestran su default (`Deps.AutoUpdateDefault`/`DriftReportsDefault`) hasta
+  que el dueño los toca. Los frenos anti-ban (`delay_*`, `chunk_max_len`) se
+  LISTAN pero son de solo lectura (`readOnly` en `antiBanKey`: abrir uno es
+  cambiar esa línea); `rate_limit_per_min/day` (`envLimitKey`) también, con
+  `source: "env"` y el número REAL que corre el governor (`Deps.RateLimitPer*`):
+  un agente que pregunta su límite de envío recibe el límite verdadero.
+  Ninguna clave es un secreto (`TestConfigKeysNeverExposeSecrets`). Las
+  validaciones que comparten con REST viven en `store/configvalid.go`.
+- `gateway_action(action)` (T178, `gateway_action.go`, solo perfil manager) —
+  lo que no es un ajuste: `reconnect`, `disconnect` y `reset`, los mismos tres
+  botones del tablero (`POST /api/admin/reconnect|disconnect|reset`).
+  `reset` borra chats, mensajes, membresías de grupo, media, borradores y cola
+  de salida (`Store.ResetMessagingData` + `mediautil.ClearDir`) y pide un
+  re-sync; conserva ajustes, agentes, clave del tablero y contadores, y nunca
+  toca la sesión de WhatsApp. Usa `Deps.Disconnecter/Reconnecter/Resetter`
+  (nil-safe: sin ellos responde "not available"); su descripción dice en
+  claro qué borra.
+- **Cableado en `main.go` (T178):** `mcpserver.NewSet(ctx, Deps{...})` en vez
+  de `New`, montado con `mcpserver.Handler(mcpSet, cfg.MCPKey)` — tres
+  endpoints, una clave. `agentconnect.Params` recibe `OperatorPath`/
+  `ManagerPath` desde `mcpserver.PathOperator/PathManager`. Los `Deps` nuevos
+  salen de las mismas fuentes que usa el tablero: `ConfigFileDir:
+  config.FileDir()`, `RateLimitPerMin/Day`, `AutoUpdateDefault`,
+  `DriftReportsDefault` (de `cfg`) y `gw` como `Disconnecter`/`Reconnecter`/
+  `Resetter`.
 - `Deps{Store, State, Router, ReadMarker, PolicyPath, Guard, Gate, Governor,
   Gateway, GroupProfile, ClaimTTLDefault, MCPAuthConfigured, AgentIdle,
   PrincipalTerminalID, OnAgentUpsert}` —

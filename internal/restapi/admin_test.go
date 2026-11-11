@@ -1526,12 +1526,6 @@ func TestResetEndpointClearsMediaDirContentsButKeepsDir(t *testing.T) {
 	}
 }
 
-func TestClearDirContentsMissingDirIsNoOp(t *testing.T) {
-	if err := clearDirContents(filepath.Join(t.TempDir(), "never-existed")); err != nil {
-		t.Errorf("clearDirContents(missing dir) = %v, want nil", err)
-	}
-}
-
 // ── M3 "Desconectar" (ct-2026-07-22-2342) ───────────────────────────────────
 
 type mockDisconnecter struct {

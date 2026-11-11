@@ -26,15 +26,9 @@ func (s *Store) KVSet(key, val string) error {
 // Setting keys: KV-override names shared by the pipeline (readers) and
 // restapi (writers), defined once here so neither side can typo a mismatch.
 // env = default (config package); dashboard edits persist here; the core
-// rereads them live wherever it matters (dispatch/read/action delay, media
-// skip, media retention) so a change applies without a restart.
+// rereads them live wherever it matters (dispatch/read/action delay) so a
+// change applies without a restart.
 const (
-	SettingMediaSkipVideoGroup = "media_skip_video_group"
-	SettingMediaSkipVideoChat  = "media_skip_video_chat"
-	SettingMediaSkipPhotoGroup = "media_skip_photo_group"
-	SettingMediaSkipPhotoChat  = "media_skip_photo_chat"
-	SettingMediaMaxMB          = "media_max_mb"
-
 	SettingDispatchDelayMin = "delay_dispatch_min"
 	SettingDispatchDelayMax = "delay_dispatch_max"
 	SettingReadDelayMin     = "delay_read_min"
@@ -72,9 +66,6 @@ const (
 	// dashboard-editable override (falling back to a Go constant in
 	// internal/whatsmeow) is enough.
 	SettingHistoryFreshPairGraceWindow = "history_fresh_pair_grace_window"
-
-	SettingRateLimitPerMin = "rate_limit_per_min"
-	SettingRateLimitPerDay = "rate_limit_per_day"
 
 	// SettingCapipushSwampedAt / SettingCapipushSwampedWindow (S3,
 	// ct-2026-07-30-030948) — the backpressure gate's threshold + recency
@@ -164,14 +155,6 @@ const (
 	// one bit that has to survive a crash/power-cut/update, not a general
 	// "persist all governor state" precedent.
 	SettingKillSwitch = "kill_switch"
-
-	// MCP anti-flood — own namespace, deliberately separate from the
-	// rate-limit keys above (those are the WhatsApp-outbound governor;
-	// these are the MCP-inbound flood guard).
-	SettingMCPGuardRatePerMin     = "mcpguard_rate_per_min"
-	SettingMCPGuardEmitRatePerMin = "mcpguard_emit_rate_per_min"
-	SettingMCPGuardBlockThreshold = "mcpguard_block_threshold"
-	SettingMCPGuardBlockCooldown  = "mcpguard_block_cooldown"
 
 	// Rules hierarchy: the "by type" tier a GROUP with no chat-particular
 	// rules inherits. See EffectiveRules. T79 (ct-2026-08-27-2034) removed

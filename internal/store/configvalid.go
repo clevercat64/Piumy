@@ -1,9 +1,14 @@
 package store
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
+
+// ErrUnknownAgent is what SetAgentDefault returns for an id that is neither
+// the principal nor a registered agent.
+var ErrUnknownAgent = errors.New("unknown agent_id")
 
 // Validation for settings that more than one surface writes (the dashboard's
 // REST handlers and the MCP set_config tool). Kept next to the settings
@@ -37,7 +42,7 @@ func (s *Store) SetAgentDefault(setting, agentID, principalID string) error {
 		if _, ok, err := s.GetAgent(agentID); err != nil {
 			return err
 		} else if !ok {
-			return fmt.Errorf("unknown agent_id %q", agentID)
+			return fmt.Errorf("%w %q", ErrUnknownAgent, agentID)
 		}
 	}
 	return s.KVSet(setting, agentID)
