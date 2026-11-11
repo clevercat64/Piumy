@@ -6,6 +6,48 @@ Se actualiza en cada deploy/build junto con el relanzamiento del gateway.
 
 ---
 
+## 0.13.1 — 2026-11-11
+
+### Added
+- **Copia de la sesión de WhatsApp antes de cada migración.** La biblioteca de
+  WhatsApp nueva convierte su archivo de sesión al arrancar, y esa conversión no
+  tiene vuelta atrás. Ahora Piumy guarda primero una copia al lado, con la
+  versión en el nombre, y conserva las últimas. Si la copia falla, no convierte
+  nada y lo dice en el tablero.
+- **Copia de la sesión antes de instalar una versión nueva.** El actualizador
+  guarda una copia de la sesión de WhatsApp justo antes de lanzar el
+  instalador; si no puede, no instala y el tablero dice por qué. Lo ya bajado y
+  verificado queda listo para el próximo intento.
+- **El tablero gobierna la actualización automática.** Muestra la versión
+  instalada, si hay una nueva, por qué todavía no se instala, y tiene el
+  interruptor para apagarla.
+- **Un solo tablero por cuenta.** Si la ventana ya está abierta, «Abrir tablero»
+  y un segundo arranque de Piumy la traen al frente en vez de abrir otra.
+
+### Changed
+- **WhatsApp al día.** La biblioteca de WhatsApp pasa a la versión actual
+  (88 cambios desde la anterior, que tenía tres meses).
+- **La antena encuentra a CleverCoder en el mismo PC aunque cambie de puerto**,
+  y Piumy comprueba el sello de cada respuesta de CleverCoder.
+- **Tablero más limpio en todos los tamaños.** La tabla de conversaciones cabe
+  en su tarjeta, las filas son más compactas en pantallas medianas, en el
+  teléfono ya se pueden editar las reglas de un grupo y descartar un borrador,
+  el estado sale en el idioma del tablero y las iniciales con emoji ya no se
+  rompen.
+
+### Fixed
+- **Un mensaje ya atendido ya no le vuelve a llegar al agente.** Si el agente
+  lo cerraba justo cuando Piumy revisaba los pendientes, Piumy se lo volvía a
+  mandar. Ahora vuelve a mirar antes de mandar, y al contestar marca el mensaje
+  como atendido antes de soltar el turno.
+- **Conectar QR vuelve a funcionar después de un cierre de sesión hecho desde
+  el teléfono.** Antes el QR no aparecía nunca; ahora aparece, y si no puede, el
+  tablero dice por qué.
+- **Al fallar el arranque, el archivo de sesión ya no queda tomado**, lo que en
+  Windows impedía restaurar una copia encima.
+
+---
+
 ## 0.13.0 — 2026-11-11
 
 ### Added
