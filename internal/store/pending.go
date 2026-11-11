@@ -199,6 +199,28 @@ func (s *Store) PendingDedicated(limit int) ([]Message, error) {
 	return scanMessages(rows)
 }
 
+// UnhandledIDs returns the ids of chatJID's inbound messages still handled=0
+// with fromTS <= ts <= toTS. capipush.dispatch re-reads its burst through it
+// right before dispatching (T196): the sweep's PendingDedicated snapshot can
+// be stale by then, and a burst the agent already closed must not go out again.
+func (s *Store) UnhandledIDs(chatJID string, fromTS, toTS int64) (map[string]bool, error) {
+	rows, err := s.db.Query(`SELECT id FROM messages
+		WHERE chat_jid = ? AND from_me = 0 AND handled = 0 AND ts BETWEEN ? AND ?`, chatJID, fromTS, toTS)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids[id] = true
+	}
+	return ids, rows.Err()
+}
+
 func (s *Store) MarkHandled(jid, id string) error {
 	_, err := s.db.Exec(`UPDATE messages SET handled = 1 WHERE chat_jid = ? AND id = ?`, jid, id)
 	return err

@@ -917,6 +917,22 @@ func (p *Pusher) dueChats() (map[dispatchKey][]store.Message, error) {
 	return byKey, nil
 }
 
+// stillPending keeps the burst messages that are still handled=0 in the
+// store (ts order preserved). burst must not be empty.
+func (p *Pusher) stillPending(chatJID string, burst []store.Message) ([]store.Message, error) {
+	ids, err := p.store.UnhandledIDs(chatJID, burst[0].TS, burst[len(burst)-1].TS)
+	if err != nil {
+		return nil, err
+	}
+	var live []store.Message
+	for _, m := range burst {
+		if ids[m.ID] {
+			live = append(live, m)
+		}
+	}
+	return live, nil
+}
+
 // resolveReplyTarget is T43 (ct-2026-08-08-2043): if the newest message in
 // burst — the one that just triggered this sweep — quotes a message a
 // registered agent sent via send_to_boss (messages.origin_terminal_id,
@@ -1284,6 +1300,20 @@ func (p *Pusher) dispatch(chatJID, sender string, burst []store.Message) error {
 		return nil
 	}
 	delete(p.logState, "inFlight:"+terminalID)
+
+	// T196: the burst comes from the sweep's snapshot, which may predate the
+	// agent closing it (silent_act / send_message mark handled, THEN release
+	// the terminal — so once InFlight is false above, every such mark is
+	// already in the store). Re-read it here, never earlier than the InFlight
+	// check: that order is what makes this airtight.
+	burst, err = p.stillPending(chatJID, burst)
+	if err != nil {
+		return err
+	}
+	if len(burst) == 0 {
+		log.Printf("capipush: chat %s: el burst ya fue atendido mientras el barrido lo preparaba — no se vuelve a despachar", chatJID)
+		return nil
+	}
 
 	// Redispatch cap anchored to the NEWEST message in the burst (S4b,
 	// ct-2026-07-30-1255, defect 2 — anchoring to the oldest let one stuck

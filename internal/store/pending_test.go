@@ -851,3 +851,34 @@ func TestSetStatusAssignAttendsIgnoredButNotBlacklist(t *testing.T) {
 		}
 	}
 }
+
+// TestUnhandledIDsBoundsAndScope: UnhandledIDs answers only for ONE chat's
+// inbound, handled=0 messages inside [fromTS, toTS] — the re-read capipush
+// does before dispatching (T196) must not pick up a neighbour's or an
+// outbound message, nor one the agent already closed.
+func TestUnhandledIDsBoundsAndScope(t *testing.T) {
+	s := openTestStore(t)
+	const chat, other = "555000000001@s.whatsapp.net", "555000000002@s.whatsapp.net"
+	for _, m := range []Message{
+		{ChatJID: chat, ID: "m1", Text: "closed", TS: 100},
+		{ChatJID: chat, ID: "m2", Text: "pending", TS: 200},
+		{ChatJID: chat, ID: "m3", Text: "after the range", TS: 300},
+		{ChatJID: chat, ID: "o1", FromMe: true, Text: "ours", TS: 200},
+		{ChatJID: other, ID: "x1", Text: "neighbour", TS: 200},
+	} {
+		if err := s.AddMessage(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.MarkHandled(chat, "m1"); err != nil {
+		t.Fatal(err)
+	}
+
+	ids, err := s.UnhandledIDs(chat, 100, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 1 || !ids["m2"] {
+		t.Fatalf("UnhandledIDs(100..200) = %v, want only m2", ids)
+	}
+}

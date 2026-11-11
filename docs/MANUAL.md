@@ -1219,6 +1219,10 @@ Piumy. Ver `docs/F1A-STORE-ACCESO.md`.
   DELIBERADAMENTE de todo el chat (el barrido de `SetActive`, la respuesta del dueño
   desde el teléfono, T100) — ver `mcpserver.markHandledForDispatch` (`send.go`) para
   el mapa completo de cuál caller usa cuál.
+- **`UnhandledIDs(chatJID, fromTS, toTS)` (T196, ct-2026-11-11-1143)** — ids (set) de los inbound
+  del chat que siguen `handled = 0` con `ts` en `[fromTS, toTS]`. No mira `mode`/`active`: no es
+  la cola de despacho sino una RELECTURA — la usa `capipush.stillPending` para revalidar un
+  burst justo antes de despacharlo. Test: `TestUnhandledIDsBoundsAndScope`.
 - `MarkPendingBefore(chatJID, tsResp)` (T15, ct-2026-08-05-123241) — inverso exacto de `MarkHandledBefore` (mismo bound de ts): `reject_draft` la llama cuando el borrador rechazado no llegó al tope de rondas, para que el mensaje que lo disparó vuelva a `PendingDedicated` y el próximo sweep de `capipush` lo redespache — estado honesto (el pedido sigue sin contestar), no un canal aparte para "rechazado".
 - `CountPendingDedicated()` — mismo filtro que `PendingDedicated` (T5:
   también `mode IN ('dedicated','auto')`, en lockstep — un conteo distinto
@@ -7948,6 +7952,20 @@ propio que describen se sacó en T28, ver `docs/T28-DIAGRAMA-CAPI-SIN-CIFRADO.md
   retoma). Refinamiento de eficiencia — la seguridad real está en
   `Gate.RegisterDispatch`'s force-replace, que sigue aplicando aunque este
   chequeo alguna vez no salte a tiempo.
+- **T196 (ct-2026-11-11-1143) — un burst ya atendido no se vuelve a despachar.** `sweepOnce`
+  lee `PendingDedicated` UNA vez (`dueChats`) y despacha chat por chat desde esa foto: si el agente
+  cerraba su despacho entre la foto y el `InFlight` de ese chat, el terminal parecía libre y se
+  reinyectaba un burst con `handled = 1` (medido en el Piumy real: el mismo mensaje del dueño
+  despachado dos veces aunque el agente ya lo había cerrado con `silent_act`). Ahora `dispatch`
+  revalida el burst con `stillPending` (una consulta, `store.UnhandledIDs`) DESPUÉS del chequeo
+  `InFlight` — nunca antes: ese orden es lo que lo hace estanco, porque `silent_act`, `draft` y
+  `send_message` marcan handled y RECIÉN después hacen `gate.Consume` (la rama `send_message`
+  normal los tenía al revés; corregida en `send.go`). Si no queda ningún mensaje, no despacha (el
+  próximo barrido recalcula). Techo: que revalidar vaya después de `InFlight` lo garantiza el
+  razonamiento, no un test (esa intercalación no se reproduce de forma determinista).
+  Tests: `TestDupDispatchStaleSnapshotRedispatchesHandledBurst` y `TestStillPendingKeepsUnhandledInOrder`
+  (capipush); `TestSendMessageMarksBurstBeforeReleasingTerminal` (probabilístico: carrera contra un
+  observador, 150 rondas) y `TestDupDispatchSilentActOnLaterBurstMarksIt` (mcpserver).
 - **`dispatch` — orden H5 (ct-2026-07-10-0540):** armar el payload
   (`dispatchPayload`, antes `capi.Encrypt`) corre ANTES de
   `gate.RegisterDispatch` (antes era al revés) — una falla ahí ya no deja

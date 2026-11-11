@@ -416,7 +416,6 @@ func addSendTools(s *server.MCPServer, d Deps, gate *Gate, tracker *agentTracker
 			// nonce now (gate.go), but there is nothing to identify when
 			// nothing was ever opened.
 			if bound {
-				gate.Consume(termID, active.Nonce)
 				// ct-2026-07-13-2243: mark handled only up to burstMaxTS —
 				// messages that arrived while the agent was composing stay
 				// pending and are re-dispatched (with debounce) on the next
@@ -425,6 +424,10 @@ func addSendTools(s *server.MCPServer, d Deps, gate *Gate, tracker *agentTracker
 					log.Printf("send_message: mark_handled_before %s: %v", to, err)
 				}
 				markDispatchChatIfDifferent(d, active, bound, to)
+				// T196: Consume goes AFTER the marks (as in draft and
+				// silent_act) — a capipush sweep that sees the terminal free
+				// must already find the burst handled, else it re-injects it.
+				gate.Consume(termID, active.Nonce)
 			}
 			refreshQueue(d.State, d.Store)
 			return mcp.NewToolResultText("queued for sending"), nil
