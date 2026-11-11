@@ -6,6 +6,26 @@ Se actualiza en cada deploy/build junto con el relanzamiento del gateway.
 
 ---
 
+## 0.12.5 — 2026-11-10
+
+### Changed
+- **Tablero nuevo.** Pasa de pantalla de terminal a una ventana con barra
+  lateral, en tema claro u oscuro según el sistema. La cuenta va en una
+  tarjeta, el estado en una lista con puntos de color, y la tabla de
+  conversaciones, los modales y el chat dejan la estética de consola.
+
+### Added
+- **Reportes de drift, opcionales.** Cuando lo que Piumy cree difiere de lo que
+  pasa (despachos retenidos, WhatsApp desconectado mucho rato, una antena que
+  no responde), puede avisar a los desarrolladores. **Viene apagado**; se
+  enciende en Configuración, que muestra qué sale y qué nunca sale. Nunca lleva
+  números, nombres, chats ni rutas. Como máximo 3 al día.
+- **Un cliente pausado por CleverCoder recibe un aviso** en vez de silencio,
+  una sola vez por pausa. Requiere la próxima versión de CleverCoder, que es
+  la que manda ese texto.
+
+---
+
 ## 0.12.4 — 2026-11-10
 
 ### Fixed
