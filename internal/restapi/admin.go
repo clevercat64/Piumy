@@ -19,6 +19,7 @@ import (
 	"piumy-gateway/internal/eventbus"
 	"piumy-gateway/internal/i18n"
 	"piumy-gateway/internal/mediautil"
+	"piumy-gateway/internal/netinfo"
 	"piumy-gateway/internal/router"
 	"piumy-gateway/internal/store"
 )
@@ -943,7 +944,7 @@ func (d Deps) handleSetCAPIConnectorLine(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	endpoint := "http://" + ip + ":" + port
+	endpoint := netinfo.LocalizeEndpoint("http://"+ip+":"+port, d.IsOwnIP)
 	current, _, err := d.Store.PrincipalAgent(d.PrincipalTerminalID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -1291,6 +1292,7 @@ func (d Deps) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "agent_id, endpoint, antenna_terminal_id and pinpass are required"})
 		return
 	}
+	body.Endpoint = netinfo.LocalizeEndpoint(body.Endpoint, d.IsOwnIP)
 	if d.PrincipalTerminalID != "" && body.AgentID == d.PrincipalTerminalID {
 		if err := d.Store.SetPrincipalAgent(body.Name, body.Endpoint, body.AntennaTerminalID, body.Pinpass); err != nil {
 			status := http.StatusInternalServerError
@@ -1360,6 +1362,10 @@ func (d Deps) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 	if body.AgentID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "agent_id is required"})
 		return
+	}
+	if body.Endpoint != nil {
+		localized := netinfo.LocalizeEndpoint(*body.Endpoint, d.IsOwnIP)
+		body.Endpoint = &localized
 	}
 
 	if d.PrincipalTerminalID != "" && body.AgentID == d.PrincipalTerminalID {

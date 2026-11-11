@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -116,6 +117,13 @@ type Deps struct {
 	// into the Pusher's injector map. nil-safe: agent tools still persist to
 	// store, just skip the live injector update (useful in tests).
 	OnAgentUpsert func(agentID, endpoint, terminalID, pinpass string)
+
+	// IsOwnIP lets the entry points that take an antenna endpoint rewrite this
+	// machine's own LAN IP to 127.0.0.1 (T177, netinfo.LocalizeEndpoint): the
+	// value stored and the one handed to the live injector are the same one.
+	// nil -> endpoints are kept exactly as given (tests: no host-dependent
+	// rewriting); main.go wires netinfo.IsOwnIP.
+	IsOwnIP func(net.IP) bool
 
 	// OnAgentDelete is called after delete_agent successfully removes an
 	// agent (agent_tools.go, ct-2026-07-29, agentes paso 3) — the MCP twin

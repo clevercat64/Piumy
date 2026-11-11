@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/smtp"
 	"time"
@@ -228,6 +229,11 @@ type Deps struct {
 	// points, one outcome. nil -> the row is written but its injector
 	// doesn't take effect until restart.
 	OnAgentUpsert func(agentID, endpoint, terminalID, pinpass string)
+
+	// IsOwnIP: same as mcpserver.Deps.IsOwnIP (T177) — the endpoints these
+	// handlers take go through netinfo.LocalizeEndpoint once, and that value
+	// feeds both the store and the live injector. nil = kept as given.
+	IsOwnIP func(net.IP) bool
 
 	// OnLanguageChanged hot-refreshes the tray menu's text after POST
 	// /api/admin/language (T153 etapa 3c, ct-2026-09-16-1854) — same shape

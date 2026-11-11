@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -56,6 +58,11 @@ type CleverInjector struct {
 	// ct-2026-08-06-1109) — see markDead/Configured. Only SetConfig, a fresh
 	// credential, clears it.
 	dead bool
+
+	// scanPorts are the loopback ports relocate() sweeps for this terminal's
+	// antenna; nil = CleverCoder's own range (cleverPorts). A test seam: an
+	// empty non-nil slice turns the sweep off.
+	scanPorts []int
 }
 
 // NewCleverInjector builds a ready-to-use injector; sessions start empty and
@@ -110,14 +117,60 @@ func (c *CleverInjector) markDead() {
 }
 
 // TestHandshake probes the current config with a single handshake and returns
-// any error. Does NOT update the live session token — probe only.
+// any error. Does NOT update the live session token — probe only. Relocates
+// like Inject does (T177), so a probe never reports "down" for an antenna the
+// next dispatch would find.
 func (c *CleverInjector) TestHandshake() error {
+	err := c.probe()
+	if relocatable(err) && c.relocate() {
+		err = c.probe()
+	}
+	return err
+}
+
+func (c *CleverInjector) probe() error {
 	endpoint, terminalID, pinpass, _, _ := c.snapshot()
 	if endpoint == "" {
 		return fmt.Errorf("clever_injector: endpoint not configured")
 	}
 	_, _, err := c.handshake(endpoint, terminalID, pinpass)
 	return err
+}
+
+// relocatable says whether a failure may just mean the antenna moved: nobody
+// answers where we knocked (refused, timeout — any net.Error), or the server
+// that answered doesn't know the terminal (terminal_gone, which on a port
+// another CleverCoder project now holds is not final).
+func relocatable(err error) bool {
+	var netErr net.Error
+	return errors.As(err, &netErr) || errors.Is(err, errTerminalGone)
+}
+
+// relocate looks for this terminal's antenna on the loopback ports and, when
+// it sits somewhere other than the configured endpoint, points the injector
+// there — in memory only: the registered endpoint in the DB stays as the
+// owner left it, and a restart re-discovers on the first failure. Reports
+// whether the injector moved (so the caller retries once).
+func (c *CleverInjector) relocate() bool {
+	endpoint, terminalID, _, _, _ := c.snapshot()
+	ports := c.scanPorts
+	if ports == nil {
+		ports = cleverPorts()
+	}
+	found, ok := discoverLoopback(ports, terminalID)
+	if !ok || found == endpoint {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// A fresh SetConfig may have landed while we swept: its credential wins.
+	if c.Endpoint != endpoint || c.TerminalID != terminalID {
+		return false
+	}
+	c.Endpoint = found
+	c.token, c.key = "", nil
+	log.Printf("capipush: la antena de %s cambió de lugar: %s -> %s (hallada en loopback)", terminalID, endpoint, found)
+	return true
 }
 
 var errUnauthorized = errors.New("clever_injector: unauthorized")
@@ -138,15 +191,29 @@ var errTerminalGone = errors.New("clever_injector: terminal_gone — no correspo
 // envelope's dynamic sender identity (ct-2026-07-18-1851-B), carried through
 // to postMessage verbatim — this method has no opinion on its content.
 // ponytail: single-terminal MVP; a route->creds map lands if/when multi-agent happens.
+//
+// T177: the antenna may have changed port since the endpoint was registered.
+// A failure that can mean that (relocatable) makes the injector look for the
+// terminal on loopback and retry once where it finds it — and only after
+// that does terminal_gone discard the credential (T32 stays as it was when
+// nothing is found).
 func (c *CleverInjector) Inject(_ string, from, payload string) error {
+	err := c.injectOnce(from, payload)
+	if relocatable(err) && c.relocate() {
+		err = c.injectOnce(from, payload)
+	}
+	if errors.Is(err, errTerminalGone) {
+		c.markDead()
+	}
+	return err
+}
+
+func (c *CleverInjector) injectOnce(from, payload string) error {
 	endpoint, terminalID, pinpass, token, key := c.snapshot()
 	if token == "" {
 		var err error
 		token, key, err = c.handshake(endpoint, terminalID, pinpass)
 		if err != nil {
-			if errors.Is(err, errTerminalGone) {
-				c.markDead()
-			}
 			return err
 		}
 		c.updateSession(token, key)
@@ -159,9 +226,6 @@ func (c *CleverInjector) Inject(_ string, from, payload string) error {
 	// or invalidated token, not a permanent failure.
 	token, key, err = c.handshake(endpoint, terminalID, pinpass)
 	if err != nil {
-		if errors.Is(err, errTerminalGone) {
-			c.markDead()
-		}
 		return fmt.Errorf("clever_injector: re-handshake after 401: %w", err)
 	}
 	c.updateSession(token, key)

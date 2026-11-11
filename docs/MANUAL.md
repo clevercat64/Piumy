@@ -2103,9 +2103,21 @@ Rol: CPU/RAM desde `/proc` (Linux-only, degrada a `ok=false` en cualquier otra p
 
 ## netinfo — `internal/netinfo`
 
-Rol: hostname/IP/wifi/SSID, best-effort.
+Rol: hostname/IP/wifi/SSID, best-effort — y, desde T177, saber si una IP es de
+ESTE PC.
 
 - `Gather(hostnameOverride, wifiIface) Info`
+- `IsOwnIP(ip net.IP) bool` (T177, `localize.go`) — ¿esa IP está en alguna
+  interfaz de este equipo? Si no se pueden listar, responde `false` (el llamador
+  deja la dirección en paz).
+- `LocalizeEndpoint(endpoint string, isOwn func(net.IP) bool) string` (T177) —
+  función PURA: un endpoint cuyo host es una IP propia (y no loopback) vuelve como
+  `http://127.0.0.1:<mismo puerto>`, con esquema y ruta intactos. Una IP ajena
+  (caso Raspberry Pi, S6), un nombre, loopback, algo que no parsea o `isOwn == nil`
+  vuelven SIN tocar; si el endpoint es válido lo decide
+  `store.IsAllowedPrincipalEndpoint`, no esta función. Se llama UNA vez en cada
+  frontera de entrada (ver `restapi.Deps.IsOwnIP`); diseño en
+  `docs/T177-ANTENA-LOOPBACK.md`.
 
 ---
 
@@ -3809,6 +3821,12 @@ el modelo vigente: tracking por `terminal_id`, default DENY) +
   `register_agent` sobre QUIÉN LLAMA, no este). `OnAgentUpsert
   func(agentID, endpoint, terminalID, pinpass)` cablea el injector nuevo al
   `capipush.Pusher` en caliente desde main.go (evita import circular).
+  `IsOwnIP func(net.IP) bool` (T177) — con él, `register_agent`,
+  `set_agent_capi` (secundario) y `updatePrincipalConnector` (`set_capi_connector`
+  y `set_agent_capi` sobre el principal) guardan `127.0.0.1` cuando el endpoint es
+  la IP de ESTE PC (`netinfo.LocalizeEndpoint`); el MISMO valor va al store y al
+  `OnAgentUpsert`/`Connector.SetConfig`. `nil` = no reescribe (los tests);
+  `main.go` lo cablea con `netinfo.IsOwnIP`.
 - Las 23 migradas de Piumy: get_status, list_chats, get_messages, get_queue,
   get_decision_policy, send_message, set_mode, escalate, mark_handled,
   resolve_chat, get_outbox, get_chat, set_chat_status, set_chat_active,
@@ -4604,6 +4622,11 @@ el modelo vigente: tracking por `terminal_id`, default DENY) +
     `UnregisterInjector`). `main.go` define los closures UNA vez
     (`onAgentUpsert`/`onAgentDelete`) y los pasa a ambos Deps — nada
     duplicado.
+  - `restapi.Deps.IsOwnIP func(net.IP) bool` (T177, `restapi.go`) — gemelo de
+    `mcpserver.Deps.IsOwnIP`. Pegar la línea del conector, `agent-create` y
+    `agent-update` pasan el endpoint por `netinfo.LocalizeEndpoint(…, d.IsOwnIP)`
+    UNA vez (create/update antes de separar principal/secundario), y ese valor va
+    al store Y al injector vivo. `nil` = sin reescritura; `main.go` lo cablea.
   - `GET /api/agents` (`read.go`) actualizado para leer
     `SettingPrincipalName` — el lado de lectura del nombre nuevo del
     principal (antes mostraba "(sin nombre)" sin excepción, no había dónde
@@ -7788,6 +7811,19 @@ propio que describen se sacó en T28, ver `docs/T28-DIAGRAMA-CAPI-SIN-CIFRADO.md
     `main.go` registraba un `LogInjector{}` separado y `cleverInj` quedaba
     huérfano — `SetConfig` reconfiguraba el huérfano, nunca lo que
     `dispatch()` realmente llamaba.
+  - Reubicación de la antena (T177, `discover.go` + `clever_injector.go`).
+    CleverCoder abre la antena en el primer puerto libre de 8787..8806, así que
+    puede cambiar de una sesión a otra. Cuando `Inject` o `TestHandshake` fallan
+    con algo que puede significar eso (`relocatable`: un `net.Error` —rechazada,
+    timeout— o `terminal_gone`), el injector llama a `discoverLoopback(ports,
+    terminalID)`: solo `GET http://127.0.0.1:<p>/terminals` (NUNCA un handshake de
+    sondeo ni la LAN), elige por `chat_id == TerminalID`, y si la encuentra en otro
+    endpoint apunta ahí EN MEMORIA y reintenta UNA vez — antes de que
+    `terminal_gone` llame a `markDead` (T32 queda igual si no la encuentra).
+    Un `SetConfig` que llegó durante el barrido gana. `/terminals` no figura en el
+    protocolo escrito: cualquier desajuste se lee como «no está aquí». El campo
+    `scanPorts` (nil = rango de CleverCoder, `cleverPorts()`) es el seam de los
+    tests. Ver `docs/T177-ANTENA-LOOPBACK.md`.
 - `(*Pusher) RegisterInjector(agentID string, inj Injector)` (Multi-agente
   F1) — registra o reemplaza el `Injector` de un agente en el mapa interno
   (`injectors map[string]Injector`, protegido por `sync.RWMutex`). El

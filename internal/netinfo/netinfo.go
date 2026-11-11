@@ -76,13 +76,7 @@ func gatherIP() string {
 			continue
 		}
 		for _, addr := range addrs {
-			var ip net.IP
-			switch v := addr.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			}
+			ip := addrIP(addr)
 			if ip == nil || ip.IsLoopback() {
 				continue
 			}

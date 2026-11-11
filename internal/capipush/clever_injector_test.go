@@ -197,6 +197,7 @@ func TestCleverInjector_TerminalGoneMarksDead(t *testing.T) {
 	defer srv.Close()
 
 	inj := NewCleverInjector(srv.URL, "some-old-guid", "pin")
+	inj.scanPorts = []int{} // T177: no loopback sweep — this test is about the final terminal_gone
 	if !inj.Configured() {
 		t.Fatal("setup: injector should start Configured (has an endpoint)")
 	}

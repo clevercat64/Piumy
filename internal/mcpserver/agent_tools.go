@@ -7,6 +7,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"piumy-gateway/internal/netinfo"
 	"piumy-gateway/internal/store"
 )
 
@@ -51,6 +52,7 @@ func addAgentTools(s *server.MCPServer, d Deps) {
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
+			endpoint = netinfo.LocalizeEndpoint(endpoint, d.IsOwnIP)
 			antTerminalID, err := r.RequireString("antenna_terminal_id")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
@@ -121,7 +123,7 @@ func addAgentTools(s *server.MCPServer, d Deps) {
 			}
 
 			if v := r.GetString("endpoint", ""); v != "" {
-				existing.Endpoint = v
+				existing.Endpoint = netinfo.LocalizeEndpoint(v, d.IsOwnIP)
 			}
 			if v := r.GetString("antenna_terminal_id", ""); v != "" {
 				existing.AntennaTerminalID = v

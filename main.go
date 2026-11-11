@@ -26,6 +26,7 @@ import (
 	"piumy-gateway/internal/i18n"
 	"piumy-gateway/internal/mcpguard"
 	"piumy-gateway/internal/mcpserver"
+	"piumy-gateway/internal/netinfo"
 	"piumy-gateway/internal/restapi"
 	"piumy-gateway/internal/router"
 	"piumy-gateway/internal/sessionbackup"
@@ -601,6 +602,9 @@ func main() {
 		// OnAgentUpsert wires a new/updated CleverInjector into the pusher
 		// in caliente whenever register_agent or set_agent_capi succeeds.
 		OnAgentUpsert: onAgentUpsert,
+		// IsOwnIP (T177): an endpoint that is this PC's own LAN IP is stored and
+		// wired as 127.0.0.1 — see netinfo.LocalizeEndpoint.
+		IsOwnIP: netinfo.IsOwnIP,
 		// OnAgentDelete (ct-2026-07-29, agentes paso 3): the SAME closure
 		// restapi.Deps uses below — delete_agent (MCP) unregisters the live
 		// injector exactly like POST /api/admin/agent-delete already does.
@@ -737,6 +741,7 @@ func main() {
 		// like register_agent/set_agent_capi already do.
 		OnAgentUpsert: onAgentUpsert,
 		OnAgentDelete: onAgentDelete,
+		IsOwnIP:       netinfo.IsOwnIP, // T177: same as mcpserver.Deps above
 		// Resetter/MediaDir: D4's "partir de 0" reset (ct-2026-07-22-2100) —
 		// gw (whatsmeow.Adapter) implements restapi.Resetter (KickResync);
 		// MediaDir is the same directory the adapter itself downloads into

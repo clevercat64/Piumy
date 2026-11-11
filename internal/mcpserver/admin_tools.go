@@ -22,6 +22,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"piumy-gateway/internal/capiconn"
+	"piumy-gateway/internal/netinfo"
 	"piumy-gateway/internal/store"
 )
 
@@ -404,7 +405,7 @@ func updatePrincipalConnector(d Deps, endpoint, terminalID, pinpass, name string
 		return store.Agent{}, fmt.Errorf("store: %w", err)
 	}
 	if endpoint != "" {
-		current.Endpoint = endpoint
+		current.Endpoint = netinfo.LocalizeEndpoint(endpoint, d.IsOwnIP)
 	}
 	if terminalID != "" {
 		current.AntennaTerminalID = terminalID
