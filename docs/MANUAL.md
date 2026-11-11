@@ -8570,6 +8570,44 @@ Cada negativa es **código**, nunca un aviso ni una skill.
   relanza esa), único `Piumy.exe` (el Setup mata TODOS por nombre de imagen) y
   cola vacía. Códigos: `BlockedNotInstalled`, `BlockedOtherAccount`,
   `BlockedOtherInstance`, `BlockedBusy`, `BlockedNoKey`.
+- **Respaldo de la sesión antes de instalar** (T193 parte B,
+  ct-2026-11-11-1039). `(*Updater) SetSessionBackup(func() error)` cablea una
+  copia inmediata de la sesión de WhatsApp que se toma **justo antes** de
+  lanzar el instalador; si falla, NO se instala y el motivo es
+  `BlockedNoSessionBackup` (`no_session_backup`). Una actualización
+  postergada cuesta una mirada más; una sesión perdida cuesta re-escanear el
+  QR.
+  - **Va en `apply()`, NO en `gateBlock()`**, a propósito: ese se documenta
+    como "cheapest first" y corre en CADA tick, así que una copia cifrada de
+    la base se estaría tomando una y otra vez por una actualización que puede
+    faltar horas. Acá se toma **una por intento real de instalación**, después
+    de `verifyReady`. Hay un test que lo fija (`TestTheBackupIsNotTakenOnEveryLook`).
+  - **`nil` no bloquea**: sin nada cableado —o con un backup que decide que no
+    hay nada que hacer, porque el dueño no configuró clave— se instala igual
+    que antes de T193. Negarle las actualizaciones para siempre a quien eligió
+    no tener copias sería una decisión de producto que nadie tomó.
+  - Se cablea con un setter y no por `Config` porque en `main.go` el
+    gateway y el `Backuper` nacen DESPUÉS del `Updater` (misma razón que
+    `pusher.SetState`/`SetDrift`); se llama en el arranque, antes de `Run`.
+  - **Copia `whatsmeow.db`, NO el `store.db` propio.** Lo hace
+    `whatsmeow.Adapter.SessionSnapshot` (mismo `SnapshotSQLite`, mismo
+    nombre y misma rotación que la copia previa a migrar), **no**
+    `sessionbackup.Backuper`: ese apunta a `cfg.DBPath` (piumy.db), no a
+    `cfg.WADBPath`, y su propio doc de paquete lo dice. La primera versión
+    de esta parte lo cableó mal y habría frenado las actualizaciones por una
+    copia del archivo equivocado mientras le decía al dueño que le protegía
+    la sesión de WhatsApp. Dos cosas lo impiden ahora: el cableado pide un
+    `sessionSnapshotter` (el `Backuper` no tiene ese método, así que no
+    compila), y `TestSessionSnapshotCopiesTheWhatsAppSessionNotAnotherDatabase`
+    pone una base señuelo al lado y comprueba que la copia trae el
+    dispositivo pareado dentro.
+  - El cableado vive en **`autoupdate_wire.go`** (junto a `updateIdle`),
+    no en `main.go`, porque lleva lógica y ahí tiene test:
+    `sessionBackupBeforeUpdate` **verifica que la copia quedó escrita**
+    (`os.Stat` + que no esté vacía) en vez de creerle al "escribí" — un
+    respaldo que nadie mira es el que aparece vacío el día que hace falta.
+    El texto del motivo en el tablero vive en el catálogo i18n
+    (`modal.update_blocked_no_session_backup`).
 - **Sin bucles**: 3 intentos por versión como máximo y 24 h entre intentos
   (firma rechazada, hashes que no cuadran, instalador que no arranca o que no
   dejó el programa nuevo). Los fallos de red no cuentan.
