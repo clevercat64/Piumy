@@ -176,6 +176,85 @@ func TestPendingRejectionNoteEmptyForFreshChat(t *testing.T) {
 	}
 }
 
+// TestRedraftSameSecondAsRejectionSelfClearsAndContinuesRound (T205, Ruby):
+// created_ts is seconds (mcpserver's draft tool uses time.Now().Unix()) — a
+// redraft typed right after a rejection routinely lands in the SAME second
+// as the draft it answers, so "ORDER BY created_ts DESC" alone ties between
+// them. Measured directly (not a flake): without a secondary id DESC, that
+// tie let the OLDER, rejected row win over its own redraft —
+// PendingRejectionNote kept reporting the stale rejection as still
+// outstanding even after the agent had already answered it, and
+// nextDraftRound could read the wrong row when deciding the next draft's
+// round. id DESC (the row actually inserted last always has the higher id)
+// makes "most recent" exact regardless of the created_ts tie.
+//
+// NOTE: this is unrelated to T191's e2e flake (TestOperatorToolsCoverage),
+// which creates a SECOND, unrelated, still-pending draft before rejecting
+// the chat's third one — at that point the unrelated pending draft
+// genuinely IS the chat's most recent (higher id, tie or no tie), so
+// PendingRejectionNote correctly reports no outstanding rejection by this
+// function's own "most recent draft" contract; confirmed with a throwaway
+// probe, with and without a created_ts tie, same result either way. T205's
+// own attempted fix for that flake (resetting capipush's redispatch backoff
+// off PendingRejectionNote) was reverted — measured live in a failing run,
+// it never fired (PendingRejectionNote never saw the rejection as "most
+// recent" there either). That flake's real cause is still open.
+func TestRedraftSameSecondAsRejectionSelfClearsAndContinuesRound(t *testing.T) {
+	s := openTestStore(t)
+	chat := "555000060@c.us"
+	const sameSecond = 100
+	if err := s.AddDraft(chat, "intento 1", "m", sameSecond); err != nil {
+		t.Fatal(err)
+	}
+	first, err := s.PendingDrafts(10)
+	if err != nil || len(first) != 1 {
+		t.Fatalf("PendingDrafts = %+v, err=%v", first, err)
+	}
+	if _, _, round, ok, err := s.RejectDraft(first[0].ID, "no corresponde"); err != nil || !ok || round != 1 {
+		t.Fatalf("RejectDraft: round=%d ok=%v err=%v", round, ok, err)
+	}
+
+	// The redraft — same chat, same second as the rejection it answers.
+	if err := s.AddDraft(chat, "intento 2", "m", sameSecond); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, ok, err := s.PendingRejectionNote(chat); err != nil || ok {
+		t.Errorf("PendingRejectionNote after a same-second redraft: ok=%v err=%v, want false (self-cleared by the redraft, not the stale rejection)", ok, err)
+	}
+	second, err := s.PendingDrafts(10)
+	if err != nil || len(second) != 1 {
+		t.Fatalf("PendingDrafts = %+v, err=%v", second, err)
+	}
+	if second[0].Round != 2 {
+		t.Errorf("redraft round = %d, want 2 (continues the rejection's chain despite the created_ts tie)", second[0].Round)
+	}
+
+	// Ruby (T205 review): the check above never actually exercises
+	// nextDraftRound's own id DESC — at that insert, "intento 1" was the
+	// ONLY existing row, so there was nothing to tie against. The tie
+	// nextDraftRound actually needs to break only appears once there are
+	// TWO prior rows sharing the max created_ts: reject "intento 2" too
+	// (same second) and insert a THIRD draft — now nextDraftRound's query
+	// ties between "intento 1" (round 1, rejected) and "intento 2" (round
+	// 2, rejected). Without id DESC this read the wrong (lower-id) row and
+	// gave "intento 3" round 2 instead of 3 (confirmed: Ruby's sabotage of
+	// nextDraftRound alone left the test above green, catching nothing).
+	if _, _, round, ok, err := s.RejectDraft(second[0].ID, "sigue sin corresponder"); err != nil || !ok || round != 2 {
+		t.Fatalf("RejectDraft(intento 2): round=%d ok=%v err=%v", round, ok, err)
+	}
+	if err := s.AddDraft(chat, "intento 3", "m", sameSecond); err != nil {
+		t.Fatal(err)
+	}
+	third, err := s.PendingDrafts(10)
+	if err != nil || len(third) != 1 {
+		t.Fatalf("PendingDrafts = %+v, err=%v", third, err)
+	}
+	if third[0].Round != 3 {
+		t.Errorf("intento 3 round = %d, want 3 (nextDraftRound must read 'intento 2' — round 2, rejected — not 'intento 1', despite both tying on created_ts)", third[0].Round)
+	}
+}
+
 // TestEditDraftReplacesTextWithoutApproving is "editar sin aprobar" — text
 // changes, status stays pending, still needs approve_draft.
 func TestEditDraftReplacesTextWithoutApproving(t *testing.T) {

@@ -117,7 +117,14 @@ func (s *Store) AddMediaDraftWithConfirmer(chatJID, text, model, confirmer, send
 func (s *Store) nextDraftRound(chatJID string) (int, error) {
 	var status string
 	var round int
-	err := s.db.QueryRow(`SELECT status, round FROM drafts WHERE chat_jid = ? ORDER BY created_ts DESC LIMIT 1`, chatJID).
+	// T205 (Ruby, found reviewing T205's own fix): created_ts is seconds
+	// (time.Now().Unix()) — two drafts for the same chat within the same
+	// second tie on it, and plain "ORDER BY created_ts DESC" leaves the tie
+	// unresolved (SQLite's pick among tied rows isn't insertion order,
+	// confirmed: a 4-drafts-in-one-second probe returned the wrong row
+	// outright, not flakily). id DESC breaks the tie deterministically in
+	// favor of the one actually inserted last.
+	err := s.db.QueryRow(`SELECT status, round FROM drafts WHERE chat_jid = ? ORDER BY created_ts DESC, id DESC LIMIT 1`, chatJID).
 		Scan(&status, &round)
 	if err == sql.ErrNoRows {
 		return 1, nil
@@ -287,7 +294,10 @@ func (s *Store) RejectDraft(id int64, reason string) (chatJID string, burstMaxTS
 // draft lookup naturally returns that one instead, not the old rejection.
 func (s *Store) PendingRejectionNote(chatJID string) (reason, text string, ok bool, err error) {
 	var status string
-	err = s.db.QueryRow(`SELECT status, COALESCE(reject_reason,''), text FROM drafts WHERE chat_jid = ? ORDER BY created_ts DESC LIMIT 1`, chatJID).
+	// T205 (Ruby): see nextDraftRound's comment — created_ts ties (same
+	// second) need id DESC to deterministically mean "most recently
+	// inserted", or this silently returns a DIFFERENT draft's state.
+	err = s.db.QueryRow(`SELECT status, COALESCE(reject_reason,''), text FROM drafts WHERE chat_jid = ? ORDER BY created_ts DESC, id DESC LIMIT 1`, chatJID).
 		Scan(&status, &reason, &text)
 	if err == sql.ErrNoRows {
 		return "", "", false, nil
