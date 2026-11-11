@@ -282,6 +282,20 @@ var esCatalog = map[string]string{
 	"status.disconnected": "desconectado",
 	"badge.off":           "apagado",
 
+	// T190 (ct-2026-11-11-101756): POR QUÉ está desconectado, no solo que
+	// lo está — con un único texto genérico, una desvinculación se ve
+	// igual que un corte de red y puede quedar inadvertida.
+	// Son los códigos cerrados de state.WADownReason; el tray usa estas
+	// MISMAS claves (tray_appearance.go), una sola fuente de verdad para
+	// el nombre del motivo. "status.disconnected" de arriba SIGUE SIENDO
+	// el respaldo cuando el motivo viene vacío (un arranque que nunca
+	// llegó a WhatsApp): no se borra.
+	"status.disconnected_logged_out": "desvinculado",
+	"status.disconnected_temp_ban":   "bloqueado temporalmente",
+	"status.disconnected_replaced":   "sesión abierta en otro dispositivo",
+	"status.disconnected_outdated":   "Piumy desactualizado",
+	"status.disconnected_no_network": "sin conexión",
+
 	// T188: el ánimo del gateway (GET /api/status mood, state.ValidMoods) en el idioma del
 	// tablero — antes salía el valor crudo del backend, en inglés, en el renglón de estado.
 	"status.alive":    "activo",
@@ -504,6 +518,15 @@ var esCatalog = map[string]string{
 	// letra — no tocar este valor sin avisar primero.
 	"server.agent_unreachable": "agente sin conexión",
 	"server.recovery_code":     "🔐 Código de recuperación del dashboard Piumy: {code} — vence en 10 minutos, un solo uso.",
+
+	// T190 (ct-2026-11-11-101756): el aviso que Piumy le manda al agente
+	// principal por la antena cuando WhatsApp se cae, y el de cuando
+	// vuelve. Los produce internal/wanotice vía autoupdate_wire-style
+	// cableado; el motivo {reason} sale de las claves
+	// status.disconnected_* de más arriba. Sin datos personales: ni JID,
+	// ni número, ni nombre — por eso el motivo es un código cerrado.
+	"server.wa_down_notice": "WhatsApp se desconectó: {reason}. Desde {since}. Abre el tablero de Piumy y pulsa Conectar QR.",
+	"server.wa_back_notice": "WhatsApp volvió a conectarse. Estuvo caído {duration}.",
 
 	// server.* — etapa 3b (T160, ct-2026-09-16-1828): errores de la API que
 	// SÍ llegan a pantalla (via app.js's t("error.prefix") + e.message) y
@@ -793,6 +816,19 @@ var enCatalog = map[string]string{
 	"status.connected":    "connected",
 	"status.disconnected": "disconnected",
 
+	// T190 (ct-2026-11-11-101756): WHY it is disconnected, not just that it
+	// is — with a single generic word, an unlink looks exactly like a
+	// network drop and can go unnoticed. These are
+	// state.WADownReason's closed codes; the tray uses these SAME keys
+	// (tray_appearance.go), one source of truth for what an outage is
+	// called. "status.disconnected" above REMAINS the fallback for an empty
+	// reason (a boot that never reached WhatsApp): it is not removed.
+	"status.disconnected_logged_out": "unlinked",
+	"status.disconnected_temp_ban":   "temporarily blocked",
+	"status.disconnected_replaced":   "session opened on another device",
+	"status.disconnected_outdated":   "Piumy out of date",
+	"status.disconnected_no_network": "no connection",
+
 	// T188: the gateway mood (GET /api/status mood, state.ValidMoods) in the dashboard's
 	// language — it used to print the backend's raw value in the status line.
 	"status.alive":         "alive",
@@ -972,6 +1008,14 @@ var enCatalog = map[string]string{
 	// value is free to read naturally; the Spanish one is pinned verbatim.
 	"server.agent_unreachable": "Agent unreachable",
 	"server.recovery_code":     "🔐 Piumy dashboard recovery code: {code} — expires in 10 minutes, single use.",
+
+	// T190 (ct-2026-11-11-101756): the notice Piumy sends the principal
+	// agent over the antenna when WhatsApp drops, and the one when it comes
+	// back. Produced by internal/wanotice through its wiring; {reason}
+	// comes from the status.disconnected_* keys above. No personal data: no
+	// JID, no number, no name — which is why the reason is a closed code.
+	"server.wa_down_notice": "WhatsApp disconnected: {reason}. Since {since}. Open the Piumy dashboard and press Connect QR.",
+	"server.wa_back_notice": "WhatsApp is connected again. It was down for {duration}.",
 
 	// server.* — etapa 3b, see the matching comment in esCatalog.
 	//

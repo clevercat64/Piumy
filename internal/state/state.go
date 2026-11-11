@@ -69,6 +69,51 @@ func moodTier(mood string) int {
 	}
 }
 
+// WADownReason is WHY WhatsApp is not connected, as a closed set of codes —
+// never free text, never the library's own English error string. The
+// dashboard translates the code through its catalog and internal/wanotice
+// turns it into the notice it sends the principal agent, so the same value
+// reaches both without either of them parsing prose. Same rule qr_error
+// already follows (T187, ct-2026-11-11-0953).
+//
+// It is a named type, not a bare string, on purpose: handleDisconnect takes
+// it next to `mood` (also a string), and the compiler now rejects passing
+// one where the other goes.
+//
+// A code must never carry anything personal — no JID, no phone number, no
+// name. That is the point of the set being closed.
+type WADownReason string
+
+const (
+	// WADownLoggedOut: WhatsApp unlinked the account (events.LoggedOut).
+	// Cannot recover on its own — the owner has to scan a QR again.
+	WADownLoggedOut WADownReason = "logged_out"
+	// WADownTempBan: WhatsApp banned the account temporarily
+	// (events.TemporaryBan). Also cannot recover on its own.
+	WADownTempBan WADownReason = "temp_ban"
+	// WADownReplaced: another session took these credentials
+	// (events.StreamReplaced).
+	WADownReplaced WADownReason = "replaced"
+	// WADownOutdated: the whatsmeow library is too old for the server
+	// (events.ClientOutdated / ConnectFailureBadUserAgent).
+	WADownOutdated WADownReason = "outdated"
+	// WADownNoNetwork: a plain drop — disconnect, connect failure or a
+	// failing keepalive. Recovers by itself once the network is back.
+	WADownNoNetwork WADownReason = "no_network"
+)
+
+// NotPaired reports whether this install has never completed a QR pairing:
+// not connected BY DESIGN, so not an outage. Lives next to Status because
+// three separate watchers were each asking it with their own copy of the
+// same three-field expression (internal/driftreport's notPaired,
+// internal/wanotice and the tray) — one criterion, one place.
+//
+// OwnJID is seeded from status.json on every boot after a pairing, so a
+// paired install that cannot reconnect still counts as paired.
+func NotPaired(s Status) bool {
+	return s.ShowQR || s.Mood == "qr" || s.OwnJID == ""
+}
+
 // Status is the core <-> display contract.
 type Status struct {
 	Mood        string `json:"mood"`
@@ -117,6 +162,14 @@ type Status struct {
 	// the count/threshold that triggered it, "" while not swamped.
 	Backpressure       bool   `json:"backpressure"`
 	BackpressureReason string `json:"backpressure_reason,omitempty"`
+
+	// WADownReason (T190, ct-2026-11-11-101756) is why WAConnected is
+	// false. Empty while connected, and also empty when nothing classified
+	// the outage (a boot that never reached WhatsApp) — the dashboard falls
+	// back to its generic "disconnected" for that case rather than invent a
+	// reason. Written by whatsmeow's handleDisconnect, cleared by
+	// clearErrorState when a real reconnect happens.
+	WADownReason WADownReason `json:"wa_down_reason,omitempty"`
 }
 
 // Write persists the status atomically (tmp + rename) and stamps UpdatedAt.

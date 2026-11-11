@@ -88,6 +88,16 @@ const (
 	// fallback when unset.
 	SettingSessionPreMigrationKeep = "session_pre_migration_keep"
 
+	// SettingWADownNoticeAfter (T190, ct-2026-11-11-101756) — how long
+	// WhatsApp has to stay down before the principal agent is told about
+	// it. Only for the outages that can fix themselves (a network drop): an
+	// unlink or a temporary ban cannot, so those go out on the first look
+	// and ignore this value entirely. Lower it and a flaky network starts
+	// pestering the agent; raise it and a real outage stays quiet longer,
+	// which is how an unlink ends up going unnoticed. Unset falls back to
+	// wanotice.DefaultThreshold.
+	SettingWADownNoticeAfter = "wa_down_notice_after"
+
 	// SettingCapipushMaxRedispatch / SettingCapipushDispatchStaleAfter (S4b,
 	// ct-2026-07-30-1255) — two of the "three clocks" (sweep interval,
 	// redispatch cap, stale-dispatch reclaim) calibrated together. MaxRedispatch

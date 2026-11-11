@@ -701,7 +701,12 @@ func main() {
 	// (backup off), a real race under load.
 	var bg sync.WaitGroup
 	watchWhatsApp := func(ctx context.Context) { driftreport.WatchWhatsApp(ctx, sm, drift) }
-	for _, run := range []func(context.Context){pusher.Run, bk.RunPeriodic, watchWhatsApp, updater.Run} {
+	// T190 (ct-2026-11-11-101756): the one that tells the PRINCIPAL AGENT
+	// when WhatsApp drops — watchWhatsApp above only feeds the anonymous
+	// vendor telemetry, which the owner never sees. All of its logic lives
+	// in wanotice_wire.go, where a test can reach it.
+	warnWADown := func(ctx context.Context) { startWANotice(ctx, sm, s, pusher, cfg.DefaultTerminalID) }
+	for _, run := range []func(context.Context){pusher.Run, bk.RunPeriodic, watchWhatsApp, warnWADown, updater.Run} {
 		bg.Add(1)
 		go func(r func(context.Context)) { defer bg.Done(); r(ctx) }(run)
 	}

@@ -1942,6 +1942,24 @@ Rol: contrato mood/`status.json` para un consumidor de display externo (opcional
 - `SetMood/SetResting/React(mood, speech, ttl)/SetMuted(...)` — `React`/`SetResting` respetan el tier del mood actual.
 - `(*Manager) Snapshot() Status`
 - `Write(path, Status) error` — escritura atómica standalone.
+- `NotPaired(Status) bool` (T190, `ct-2026-11-11-101756`) — si esta
+  instalación nunca completó un pareo: desconectada **por diseño**, así que
+  no es una caída. Vive acá porque tres vigías distintos lo preguntaban cada
+  uno con su propia copia de la misma expresión de tres campos
+  (`driftreport.notPaired`, `wanotice`, la bandeja). Un criterio, un lugar.
+- `Status.WADownReason` + `WADownReason` (tipo) y sus códigos
+  `WADownLoggedOut`/`WADownTempBan`/`WADownReplaced`/`WADownOutdated`/`WADownNoNetwork`
+  (T190) — **por qué** `WAConnected` es `false`, como conjunto CERRADO de
+  códigos, nunca texto libre ni el error en inglés de la librería. Lo escribe
+  `whatsmeow.handleDisconnect` y lo limpia `clearErrorState` al reconectar.
+  Un solo campo sirve a dos consumidores: `internal/wanotice` arma con él el
+  aviso al agente, y `GET /api/status` lo publica como `wa_down_reason` para
+  que el tablero diga «desvinculado» en vez de solo «desconectado» (el
+  catálogo traduce el código: `status.disconnected_*`; vacío o desconocido
+  cae al genérico `status.disconnected`, que SIGUE existiendo). Es un tipo
+  nombrado y no un `string` a propósito: `handleDisconnect` lo recibe al lado
+  de `mood`, también `string`, y así el compilador rechaza confundirlos.
+  Mismo molde que `qr_error` (T187).
 - `Status.OwnJID`/`OwnName` (ct-2026-07-10-2312) — el JID/nombre de la
   cuenta vinculada. Antes definidos pero nunca escritos; ahora
   `whatsmeow.Adapter.recordOwnIdentity` los llena al conectar (lee
@@ -8490,6 +8508,76 @@ plantados en el chat, la ruta y el error del inyector, la petición HTTP real
   código) y datos `555` de punta a punta. Se verificó con sabotaje que los
   tests pueden fallar (cada regla rota a propósito hizo caer al menos uno).
 
+## wanotice — `internal/wanotice`
+
+Rol: decidir CUÁNDO hay que avisarle al **agente principal** que WhatsApp se
+cayó, y cuándo que volvió (T190, `ct-2026-11-11-101756`). Hermano de
+`driftreport` y fácil de confundir con él: **`driftreport` le cuenta a los
+desarrolladores, anónimo y apagado por defecto, cada 6–9 h; `wanotice` le
+cuenta al agente del dueño, siempre, en el momento.** Lo que lo justifica:
+cuando WhatsApp desvincula la cuenta, Piumy pone el kill switch y antes no
+avisaba a nadie — la desvinculación quedaba invisible hasta que alguien
+abriera el tablero, con todo lo que llegaba yendo a ninguna parte.
+
+**Solo decide.** No redacta el texto ni conoce la antena: entrega un `Notice`
+a un `Sender` que le pasa el cableado (`wanotice_wire.go`, en la raíz). Por
+eso se testea con un reloj y un estado falsos, sin catálogo ni antena.
+
+- `New(src StateSource, send Sender, threshold func() time.Duration) *Watcher`
+  — `threshold` se pregunta en CADA mirada, no se captura: el dueño lo cambia
+  y toma efecto sin reiniciar (`store.SettingWADownNoticeAfter`, default
+  `DefaultThreshold` = 5 min).
+- `Watch(ctx, *Watcher)` — mira `state.Status` cada minuto hasta `ctx.Done()`.
+- `(*Watcher) Observe(now, state.Status)` — una mirada; es por donde entran
+  los tests con su propio reloj.
+- `Notice{Kind, Reason, Since, Down}` · `KindDown`/`KindBack` · `Sender func(Notice) error`.
+
+**Por qué mira `state.Status` y no los eventos de whatsmeow** (medido, no
+elegido por gusto): ningún hook de whatsmeow ve todas las formas de estar
+caído — `handleDisconnect` **no corre cuando Piumy arranca sin red**, porque
+nunca hubo una conexión que se cortara. Es el mismo razonamiento que
+`driftreport.WatchWhatsApp` ya documenta.
+
+**Las reglas, todas probadas con sabotaje** (quitando cada guarda cae al menos
+un test): un motivo terminal (`logged_out`/`temp_ban`) avisa en la PRIMERA
+mirada, porque la cuenta no se arregla sola; el resto espera el umbral, así
+que un parpadeo de red no molesta a nadie; **un aviso por incidente**, y el
+incidente termina cuando vuelve la conexión (ahí sale el de «volvió», con la
+duración medida); un motivo que ESCALA (red → desvinculado) gana UN aviso
+más, porque es información nueva que el dueño tiene que accionar; esperar el
+primer QR **no es una caída** (`state.NotPaired`); un envío que falla NO se
+reintenta en cada mirada (decisión de Citrino: el tablero y la bandeja lo
+muestran igual).
+
+**Reinicio durante un incidente = un aviso más.** El dedupe no se persiste, a
+diferencia del tope de `driftreport`: declarado, no olvidado.
+
+**Lo que no resuelve:** el aviso viaja por la antena, así que si el agente
+principal está caído al mismo tiempo, no llega. No hay buzón ni reintento —
+sería otro contrato. El tablero y la bandeja lo muestran igual.
+
+### Cableado — `wanotice_wire.go` (raíz)
+
+Quién lo recibe y en qué palabras. Vive en la raíz y no en `main.go` porque
+lleva lógica y ahí tiene test, mismo criterio que `autoupdate_wire.go` (T193-B);
+`main.go` queda con UNA línea.
+
+- `startWANotice(ctx, sm, st, res injectorResolver, principal)` — arranca el
+  vigía. **Sin terminal principal configurado no arranca y lo dice en el log**:
+  un vigía sin destinatario decidiría avisos al vacío toda la vida del proceso.
+- `waNoticeSender(st, res, principal) wanotice.Sender` — inyecta por la MISMA
+  vía que un despacho (`Injector.Inject`), con `from = "piumy-alert"` para que
+  el agente distinga un aviso automático de un mensaje despachado sin leer el
+  texto (no necesita `get_instructions` ni respuesta). El texto sale del
+  catálogo en el idioma configurado (`server.wa_down_notice` /
+  `server.wa_back_notice`) y termina en una línea estable **`WA:<código>`**
+  (`WA:back` al volver, `WA:unknown` si nada lo clasificó), misma convención
+  que el `NC:` del ping: la prosa es para quien la lea, el código es para que
+  el agente actúe sin interpretar un idioma.
+- **Sin datos personales, y probado como tal**: un test exige que el payload no
+  tenga ni una arroba ni una cifra de 7+ dígitos. Lo único variable es un
+  código cerrado, una hora y una duración.
+
 ## clientsfile — `internal/clientsfile`
 
 Rol: leer el `clients.json` de CleverCoder (T172c, `ct-2026-11-10-2254`;
@@ -11336,6 +11424,31 @@ es un paso aparte, conjunto con el boss (no en `main.go`).
       bullet propio de `trayicon_recolor.go` más abajo. Cualquier error
       cae al ícono embebido sin tocar + `log.Printf("tray: recolor
       icon...")`.
+    - **La marca de caída — `AlertTrayIcon(trayIcon, hue)` y
+      `trayIconFor(base, account, alert)`** (T190, `ct-2026-11-11-101756`):
+      mientras WhatsApp está caído, el ícono lleva un punto rojo **ENCIMA**
+      del color de cuenta, y el título/tooltip dicen la cuenta **y** el
+      motivo (`appearanceFor`, en `tray_appearance.go`, función pura y con
+      test). La alerta **no pisa** el tinte de cuenta: regla del boss — el
+      distintivo va en todas partes y recortarlo de una superficie es un
+      defecto, y con dos Piumys abiertos hay que poder ver CUÁL se cayó.
+      - **Dos trampas que esto esquiva, las dos del mismo tipo** (el caso más
+        común quedándose sin la función, en silencio, con todo en verde):
+        (1) `RecolorTrayIcon` devuelve el contenedor INTACTO cuando
+        `hueDelta == 0`, que es justo la cuenta por defecto — colgar la marca
+        de ese atajo dejaba sin alerta a la instalación más habitual, así que
+        `AlertTrayIcon` **no tiene atajo** y
+        `TestAlertMarkIsPaintedForTheDefaultAccount` falla si alguien lo
+        agrega; (2) el tick del tray existía solo `if account != ""` (solo
+        miraba el label), así que la cuenta por defecto no sondeaba nada:
+        ahora **corre siempre**, tal como pedía el propio comentario de
+        `accountLabelPollEvery` para el día en que el tray mirara algo más.
+      - `tray_appearance.go` **no tiene build tag** (su test corre en todas
+        las plataformas), así que no puede llamar a `trayTitle` ni a
+        `trayIcon`, que son `//go:build windows`: por eso `appearanceFor`
+        recibe el título ya armado y `trayIconFor` recibe los bytes. Medido:
+        la versión que sí llamaba a `trayTitle` compilaba en Windows y
+        **rompía el build de Linux** (`undefined: trayTitle`).
     - Verificado con captura real (instancia aislada, mismo método que T37
       — nunca la instalación viva del dueño): dos cuentas a la vez, en la
       bandeja de Windows, dan dos colores CLARAMENTE distintos entre sí y

@@ -135,12 +135,23 @@ func runTrayOrWait(ctx context.Context, stop context.CancelFunc, dashboardURL st
 
 		go func() {
 			curLang := lang
-			var labelTick <-chan time.Time // nil for the default account: never fires
-			if account != "" {
-				ticker := time.NewTicker(accountLabelPollEvery)
-				defer ticker.Stop()
-				labelTick = ticker.C
-			}
+			// T190 (ct-2026-11-11-101756): this tick now runs ALWAYS, also
+			// on the default account. It used to exist only for a named
+			// account, because the label was the only thing the tray
+			// watched — accountLabelPollEvery's own comment asked for this
+			// to be revisited the day the tray watched more than that
+			// field, and that day is today: it also refreshes the alert
+			// mark. Leaving it conditional would have left the DEFAULT
+			// install — the most common one — with no outage mark in the
+			// tray at all, silently.
+			trayTicker := time.NewTicker(accountLabelPollEvery)
+			defer trayTicker.Stop()
+			trayTick := trayTicker.C
+			// What the tray is showing right now, so a tick that changes
+			// nothing costs no Win32 calls. The icon was painted above
+			// without the mark, and the tooltip from the plain title.
+			alertShown := false
+			shownTooltip := title
 			for {
 				select {
 				case <-mOpen.ClickedCh:
@@ -151,18 +162,31 @@ func runTrayOrWait(ctx context.Context, stop context.CancelFunc, dashboardURL st
 					// Own goroutine: it runs powershell (about a second) and must
 					// not freeze this loop — Quit and language changes keep working.
 					go openAnotherPiumy(st)
-				case <-labelTick:
-					newLabel, newBare := accountLabels(account, sm)
-					if newLabel == label {
-						continue
+				case <-trayTick:
+					if account != "" {
+						if newLabel, newBare := accountLabels(account, sm); newLabel != label {
+							previous := label
+							label = newLabel
+							mAccount.SetTitle(i18n.T(curLang, "account.label", "account", label))
+							mAccount.SetTooltip(i18n.T(curLang, "account.label", "account", label))
+							go renameShortcutsToLabel(account, label, previous, newBare)
+						}
 					}
-					previous := label
-					label = newLabel
-					systray.SetTitle(trayTitle(label))
-					systray.SetTooltip(trayTitle(label))
-					mAccount.SetTitle(i18n.T(curLang, "account.label", "account", label))
-					mAccount.SetTooltip(i18n.T(curLang, "account.label", "account", label))
-					go renameShortcutsToLabel(account, label, previous, newBare)
+					// The title/tooltip are set from appearanceFor, not from
+					// trayTitle directly: while WhatsApp is down the tooltip
+					// also carries the motive, and the mouse hovers BEFORE
+					// the click — the same reason the account name is in the
+					// tooltip at all (see this function's own header).
+					look := appearanceFor(sm.Snapshot(), trayTitle(label), curLang)
+					if look.Tooltip != shownTooltip {
+						shownTooltip = look.Tooltip
+						systray.SetTitle(trayTitle(label))
+						systray.SetTooltip(look.Tooltip)
+					}
+					if look.Alert != alertShown {
+						alertShown = look.Alert
+						systray.SetIcon(trayIconFor(trayIcon, account, look.Alert))
+					}
 				case <-mQuit.ClickedCh:
 					stop()
 					systray.Quit()

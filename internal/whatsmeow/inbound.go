@@ -55,9 +55,9 @@ func (a *Adapter) handleEvent(evt any) {
 		// whatsmeow's own event dispatcher on processing it.
 		go a.handleHistorySync(v)
 	case *events.LoggedOut:
-		a.handleDisconnect("logged out from WhatsApp ("+v.Reason.String()+")", true, "error")
+		a.handleDisconnect("logged out from WhatsApp ("+v.Reason.String()+")", true, "error", state.WADownLoggedOut)
 	case *events.TemporaryBan:
-		a.handleDisconnect(v.String(), true, "error")
+		a.handleDisconnect(v.String(), true, "error", state.WADownTempBan)
 	case *events.StreamReplaced:
 		// T98 (ct-2026-08-29-0621): mood "alert", no "error" — la señal
 		// EXACTA de "otro proceso te tomó la sesión de WhatsApp" se
@@ -67,11 +67,11 @@ func (a *Adapter) handleEvent(evt any) {
 		// arrastra un significado previo: su propio código (no el
 		// comentario de cabecera, desactualizado) usaba "paused" para el
 		// estado de "me rendí" — "alert" nunca se asignó en ningún lado.
-		a.handleDisconnect("stream replaced — another session connected with the same credentials", false, "alert")
+		a.handleDisconnect("stream replaced — another session connected with the same credentials", false, "alert", state.WADownReplaced)
 	case *events.ClientOutdated:
-		a.handleDisconnect("client outdated — whatsmeow library needs an update", false, "error")
+		a.handleDisconnect("client outdated — whatsmeow library needs an update", false, "error", state.WADownOutdated)
 	case *events.Disconnected:
-		a.handleDisconnect("disconnected", false, "error")
+		a.handleDisconnect("disconnected", false, "error", state.WADownNoNetwork)
 		// T99 (ct-2026-08-29-1607): el único disconnect que whatsmeow deja
 		// llegar acá sin haber llamado ya expectDisconnect() por su cuenta
 		// (ver reconnect.go's package doc) — el caso que de verdad necesita
@@ -93,7 +93,7 @@ func (a *Adapter) handleEvent(evt any) {
 		if v.Message != "" {
 			reason += " — " + v.Message
 		}
-		a.handleDisconnect("connect failure: "+reason, false, "error")
+		a.handleDisconnect("connect failure: "+reason, false, "error", connectFailureReason(v.Reason))
 	case *events.KeepAliveTimeout:
 		a.handleKeepAliveTimeout(v)
 	case *events.KeepAliveRestored:
@@ -170,7 +170,12 @@ func (a *Adapter) handleEvent(evt any) {
 // "error" — StreamReplaced needs a visibly stronger signal ("alert", see
 // its own call site) than a generic disconnect; every other caller still
 // passes "error", unchanged behavior.
-func (a *Adapter) handleDisconnect(reason string, kill bool, mood string) {
+// down (T190, ct-2026-11-11-101756): the closed code that says WHY, for the
+// dashboard and for internal/wanotice's notice to the principal agent —
+// explicit per caller, same reason mood is (a caller knows which event it
+// is handling; this function does not). `reason` stays what it always was:
+// free text for the log only, never shown to anyone and never sent.
+func (a *Adapter) handleDisconnect(reason string, kill bool, mood string, down state.WADownReason) {
 	if kill {
 		log.Printf("whatsmeow: FATAL — %s — tripping kill switch", reason)
 	} else {
@@ -180,6 +185,7 @@ func (a *Adapter) handleDisconnect(reason string, kill bool, mood string) {
 		_ = a.state.UpdateMood(func(s *state.Status) {
 			s.Mood = mood
 			s.WAConnected = false
+			s.WADownReason = down
 			if kill {
 				s.Muted = true
 			}
@@ -190,6 +196,32 @@ func (a *Adapter) handleDisconnect(reason string, kill bool, mood string) {
 	}
 	if a.bus != nil {
 		a.bus.Publish(eventbus.Event{Type: "wa_disconnected", TS: time.Now().Unix()})
+	}
+}
+
+// connectFailureReason classifies a ConnectFailure for T190's "say the real
+// motive" (ct-2026-11-11-101756). ConnectFailure is whatsmeow's catch-all
+// bucket and the codes inside it mean VERY different things — measured
+// against the vendored library (types/events/events.go:197-215): 401 is a
+// logout and 402 a temporary ban, right next to 405/409 (outdated) and
+// 500/503 (the server). Mapping the whole bucket to one motive would tell
+// the owner "Piumy is out of date" while WhatsApp had actually unlinked the
+// account — the exact wrong-motive problem this contract exists to fix.
+//
+// Only the codes whatsmeow names unambiguously are mapped. Everything else
+// returns "" on purpose: the dashboard then shows its generic
+// "disconnected", which is the truth (it is down and we do not know why)
+// rather than a motive nobody measured.
+func connectFailureReason(r events.ConnectFailureReason) state.WADownReason {
+	switch r {
+	case events.ConnectFailureLoggedOut:
+		return state.WADownLoggedOut
+	case events.ConnectFailureTempBanned:
+		return state.WADownTempBan
+	case events.ConnectFailureClientOutdated, events.ConnectFailureBadUserAgent:
+		return state.WADownOutdated
+	default:
+		return ""
 	}
 }
 
@@ -221,7 +253,7 @@ func (a *Adapter) handleDisconnect(reason string, kill bool, mood string) {
 // puntual deja de correr (su connCtx muere con el frame socket), así que
 // no puede dispararse dos veces por el mismo episodio.
 func (a *Adapter) handleKeepAliveTimeout(v *events.KeepAliveTimeout) {
-	a.handleDisconnect(fmt.Sprintf("keepalive failing (%d intentos seguidos)", v.ErrorCount), false, "error")
+	a.handleDisconnect(fmt.Sprintf("keepalive failing (%d intentos seguidos)", v.ErrorCount), false, "error", state.WADownNoNetwork)
 	if time.Since(v.LastSuccess) < wmeow.KeepAliveMaxFailTime {
 		return
 	}
@@ -323,6 +355,11 @@ func (a *Adapter) clearErrorState() {
 		}
 		s.WAConnected = true
 		s.ShowQR = false
+		// T190 (ct-2026-11-11-101756): the outage is over, so the code that
+		// explained it must go with it — a stale reason would make the
+		// dashboard keep naming a motive for a connection that is back, and
+		// would leave wanotice unable to tell this outage from the next one.
+		s.WADownReason = ""
 	})
 	if a.bus != nil {
 		a.bus.Publish(eventbus.Event{Type: "wa_connected", TS: time.Now().Unix()})

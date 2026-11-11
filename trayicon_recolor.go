@@ -53,6 +53,19 @@ func RecolorTrayIcon(icoData []byte, hueDelta float64) ([]byte, error) {
 	if hueDelta == 0 {
 		return icoData, nil
 	}
+	return transformTrayIcon(icoData, func(img image.Image) *image.NRGBA {
+		return rotateHue(img, hueDelta)
+	})
+}
+
+// transformTrayIcon runs paint over every image embedded in the container
+// and re-packs the result. Extracted from RecolorTrayIcon (T190,
+// ct-2026-11-11-101756) so the alert mark reuses this exact decode/encode
+// path instead of growing a second copy of it; the ONLY behavior that
+// belongs to a caller is which pixels change and whether the all-identity
+// case is worth skipping (see RecolorTrayIcon's hueDelta==0 shortcut, and
+// AlertTrayIcon's deliberate lack of one).
+func transformTrayIcon(icoData []byte, paint func(image.Image) *image.NRGBA) ([]byte, error) {
 	entries, err := parseICO(icoData)
 	if err != nil {
 		return icoData, err
@@ -69,7 +82,7 @@ func RecolorTrayIcon(icoData []byte, hueDelta float64) ([]byte, error) {
 			return icoData, fmt.Errorf("trayicon: entry %d: decode png: %w", i, err)
 		}
 		var buf bytes.Buffer
-		if err := png.Encode(&buf, rotateHue(img, hueDelta)); err != nil {
+		if err := png.Encode(&buf, paint(img)); err != nil {
 			return icoData, fmt.Errorf("trayicon: entry %d: encode png: %w", i, err)
 		}
 		payloads[i] = buf.Bytes()

@@ -380,6 +380,27 @@
   // fila, nunca hace falta distinguirlo de otro, así que se tapa entero
   // (sin prefijo ni tag) en vez del tapado parcial que sí necesitan los
   // números de chat, donde distinguir una fila de otra es todo el punto.
+  // waDownText (T190): wa_down_reason llega como CÓDIGO cerrado del
+  // backend (state.WADownReason), nunca como texto — el catálogo lo
+  // traduce, mismo molde que qr_error. Un código vacío o desconocido cae
+  // al genérico "desconectado": antes que inventar un motivo, se dice lo
+  // único que se sabe. Las claves van escritas una por una, literales,
+  // porque el test que cruza catálogo y app.js busca la clave escrita
+  // entera dentro de la llamada de traducción — un mapa indexado las
+  // dejaría "sin pedir" y el catálogo en rojo. Ese escáner NO distingue
+  // código de comentario, así que acá tampoco se escribe una llamada de
+  // ejemplo con una clave inventada: la toma por real y rompe el test.
+  function waDownText(reason) {
+    switch (reason) {
+      case "logged_out": return t("status.disconnected_logged_out");
+      case "temp_ban": return t("status.disconnected_temp_ban");
+      case "replaced": return t("status.disconnected_replaced");
+      case "outdated": return t("status.disconnected_outdated");
+      case "no_network": return t("status.disconnected_no_network");
+      default: return t("status.disconnected");
+    }
+  }
+
   function ownNumberDisplay(jid) {
     if (!jid) return "—";
     if (state.privacyMode) return "•••••••";
@@ -518,7 +539,7 @@
         st.textContent = "\ud83d\udfe2 " + t("status.connected") + (s.own_number ? " \u00b7 " + ownNumberDisplay(s.own_number) : "");
         st.classList.remove("disconnected");
       } else {
-        st.textContent = "\ud83d\udd34 " + t("status.disconnected");
+        st.textContent = "\ud83d\udd34 " + waDownText(s.wa_down_reason);
         st.classList.add("disconnected");
       }
       // T172b tramo 3: los estados de la barra de salud se dicen con un

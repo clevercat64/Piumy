@@ -159,6 +159,15 @@ func (d Deps) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"muted":      snap.Muted,
 		"mood":       snap.Mood,
 		"queue":      snap.Queue,
+		// wa_down_reason (T190, ct-2026-11-11-101756): WHY it is not
+		// connected, so the dashboard says "desvinculado" instead of just
+		// "desconectado" — with only the generic word on screen, an unlink
+		// can sit there unnoticed. A stable code from a
+		// closed set (state.WADownReason) that the dashboard's catalog
+		// translates, never prose from here, exactly like qr_error below.
+		// Empty while connected, and also when nothing classified the
+		// outage; app.js falls back to the generic word for that.
+		"wa_down_reason": snap.WADownReason,
 
 		"antenna_configured":          antennaConfigured,
 		"factory_password":            factoryPassword,
