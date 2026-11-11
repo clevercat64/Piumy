@@ -924,9 +924,15 @@ td.list-sub::before { content: none; } /* sin data-label — no heredar el ::bef
   tr { border-bottom: 1px solid var(--border); padding: 8px 10px; }
   /* Etiqueta arriba, valor abajo — no label-izq/valor-der: varias columnas
      reales llevan grupos de botones o texto multilínea, no un valor corto. */
+  /* stretch y no flex-start (T188, regresión de 462dcc9 medida por Calcite): con
+     flex-start cada hijo tomaba el ancho de su contenido — una vista previa
+     larga ensanchaba la fila a 793px dentro de una tarjeta de 686, el "…" no
+     salía nunca y el texto se iba por el borde. Estirados al ancho de la
+     tarjeta, el nombre y la vista previa se recortan con "…" y el selector de
+     agente se achica. */
   td {
     border: none; padding: 5px 0; display: flex; flex-direction: column;
-    align-items: flex-start; gap: 2px; font-size: 13px; text-align: left;
+    align-items: stretch; gap: 2px; font-size: 13px; text-align: left;
   }
   /* T172b tramo 3: en el teléfono la tabla se apila y cada celda muestra el
      nombre de su columna. Era el último rincón con mayúsculas espaciadas,
