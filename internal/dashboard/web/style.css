@@ -862,6 +862,11 @@ td.list-empty::before { content: none; }
 /* ── tab Contactos (S1h-fix, simplificado D1 ct-2026-07-22-2100 — solo
    state.chats, miembros de grupo viven únicamente en la pestaña Grupos) ── */
 #contactlist { margin-top: 20px; }
+/* T197: el renglón de una lista que todavía no llegó o cuyo primer pedido
+   falló (listStatus en app.js), y el «Mostrar 50 más» de cada sección. */
+p.list-empty { color: var(--dim); margin: 0; padding: 16px 12px; }
+td.list-empty p.list-empty { padding: 0; }
+.contacts-more { margin: 10px 0 18px; }
 
 /* ── footer: confirmaciones pendientes (Tramo C, ct-2026-07-22-1235) ──── */
 #pendingcount { color: var(--dim); font-size: 12px; margin: 2px 0 12px; }

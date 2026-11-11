@@ -9247,13 +9247,22 @@ del dueño desde la LAN, sin agente de por medio. Grupo/perfil NO están acá
     `origin` (`inbound_spoke|synced_contact|group_discovered`), `contact`
     (`1|0`), `q` (sin acentos ni mayúsculas, como `foldAccents` de app.js,
     sobre `contact_name`, `name`, número del jid y número resuelto), `sort`
-    (`recent` por defecto | `name`, el `contactLabel` de app.js), `limit`
+    (`recent` por defecto | `name`: agenda, si no nombre de WhatsApp, si no
+    número), `limit`
     (1..500) y `offset`. Con alguno → `{"chats":[…],"total":N}` (`total` =
     filas que pasan el filtro, antes de cortar); inválido → 400. Sin
     ninguno (`key` no cuenta) → el arreglo de siempre, byte a byte
     (`testdata/chats-golden.json`). Pestaña Chats:
     `?type=p2p&origin=inbound_spoke`; Contactos:
     `?type=p2p&contact=1&sort=name&limit=50` (y `contact=0` para Números).
+    **El tablero lo usa así (T197, ct-2026-11-11-1144,
+    `docs/T197-TABLERO-DEMO1.md`):** ya no pide la lista entera.
+    `loadConversations` (Chats, la única que se recarga con cada `message`
+    del SSE), `loadGroups` (`?type=group,group_member`), `loadContactsPage`
+    (Contactos: al entrar a la pestaña, páginas de 50 con «Mostrar más»,
+    `q` = el buscador de esa pestaña, dedup por jid) y el buscador de
+    Agentes (`?type=p2p&q=…&limit=8`). Sin parámetros solo lo pide una
+    0.13.x instalada.
   - `GET /api/messages?chat=<jid>&limit=50` (ct-2026-07-10-2312 addendum,
     panel de chat) → `[]{from_me, text, ts}`, lee `store.GetMessages` (ya
     existía) y invierte el orden (newest-first → oldest-first, un log de

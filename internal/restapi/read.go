@@ -911,8 +911,8 @@ func (q chatsQuery) keep(c chatOut) bool {
 }
 
 // sortRows orders a paged answer: "recent" by last_ts, newest first;
-// "name" by app.js's contactLabel (agenda name, else WhatsApp name, else
-// the number), folded. The jid breaks ties, so pages never overlap.
+// "name" by contactKey (agenda name, else WhatsApp name, else the number),
+// folded. The jid breaks ties, so pages never overlap.
 func (q chatsQuery) sortRows(rows []chatRow) {
 	sort.SliceStable(rows, func(i, j int) bool {
 		a, b := rows[i].out, rows[j].out

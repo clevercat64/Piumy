@@ -54,7 +54,7 @@
     document.getElementById("loginmodal").classList.add("hidden");
   }
 
-  var state = { chats: [], groups: [], groupMembers: [], agents: [], originAgentDefaults: {}, selectedJID: null, appliedSort: "recientes", filterText: "", lastStatus: null, lastUpdate: null, updateUnreachable: false, privacyMode: false, i18n: { lang: "es", language: "", texts: {} } };
+  var state = { chats: [], groups: [], groupMembers: [], loaded: { chats: false, groups: false }, failed: { chats: false, groups: false }, agents: [], originAgentDefaults: {}, selectedJID: null, appliedSort: "recientes", filterText: "", lastStatus: null, lastUpdate: null, updateUnreachable: false, privacyMode: false, i18n: { lang: "es", language: "", texts: {} } };
 
   // ── i18n (T153 etapa 1, ct-2026-09-08-1656): un solo catálogo de textos,
   // servido por el backend — el tablero no guarda su propia lista (si la
@@ -754,22 +754,6 @@
     return fallback;
   }
 
-  // isRealConversation: the Chats-tab filter — "Chats" means real
-  // conversations only, not every address-book contact or group-only
-  // number. Contacts with zero messages still exist in state.chats (type
-  // p2p) — they just move to the Contactos tab (renderContacts) instead of
-  // showing here.
-  //
-  // T18 (ct-2026-08-05-1243, boss: su bandeja mezclaba gente que le
-  // escribió con números que solo aparecieron en un grupo) — was
-  // has_messages (store.ChatJIDsWithMessages' criterion); now c.origin ===
-  // "inbound_spoke" (store.ChatOrigin, T18-fixed to count a real message in
-  // EITHER direction — a chat the boss started and nobody answered still
-  // counts). Same underlying "does this chat have a real message" question
-  // as has_messages, one source now instead of two computations that could
-  // quietly disagree — see docs/T18-DIAGRAMA-SEPARAR-POR-ORIGEN.md.
-  function isRealConversation(c) { return c.origin === "inbound_spoke"; }
-
   // historyBadge (ct-2026-07-21-1837): ícono sutil de history_state junto al
   // nombre — "pending" (o ausente, chat no tocado aún por el worker) no
   // dibuja nada, per contrato ("nada si pending").
@@ -822,20 +806,46 @@
     return t("time.ago_days", { n: Math.round(hrs / 24) });
   }
 
-  // /api/chats returns one flat list tagged by type (S1g, ct-2026-07-19-1801):
-  // "p2p" (real 1:1, existing table, unchanged), "group" (an @g.us row,
-  // collapsible header) and "group_member" (synthetic, projected from
-  // group_members — not a real chat, just a name+number under a group).
-  // Splitting here keeps every existing p2p sort/filter/render function
-  // untouched; only render() and the new renderGroups() need to know the
-  // three arrays exist.
-  function loadChats() {
-    return api("/api/chats").then(function (all) {
-      state.chats = all.filter(function (c) { return c.type === "p2p"; });
-      state.groups = all.filter(function (c) { return c.type === "group"; });
-      state.groupMembers = all.filter(function (c) { return c.type === "group_member"; });
+  // T197 (P4, sobre T198): cada lista le pide a /api/chats solo lo suyo, en
+  // vez de traer la lista entera (en el Piumy real, 2.023 filas en ≈5 s) y
+  // separarla acá. Ver docs/T197-TABLERO-DEMO1.md.
+  //
+  // loadConversations: la tabla Chats, que muestra SOLO conversaciones
+  // reales — origin=inbound_spoke (T18, ct-2026-08-05-1243: hubo un mensaje
+  // de verdad, en cualquier dirección; ver docs/T18-DIAGRAMA-SEPARAR-POR-
+  // ORIGEN.md). Los contactos sin conversación viven en Contactos. Es la
+  // única lista que se recarga con cada mensaje que llega (REFRESH_ON).
+  function loadConversations() {
+    return api("/api/chats?type=p2p&origin=inbound_spoke").then(function (r) {
+      state.chats = r.chats;
+      state.loaded.chats = true;
+      state.failed.chats = false;
+      render();
+    }, function () {
+      state.failed.chats = true;
       render();
     });
+  }
+  // loadGroups: los grupos y sus miembros ("group_member": sintéticos,
+  // proyectados desde group_members — no son un chat, solo nombre y número
+  // bajo un grupo, S1g ct-2026-07-19-1801).
+  function loadGroups() {
+    return api("/api/chats?type=group,group_member").then(function (r) {
+      state.groups = r.chats.filter(function (c) { return c.type === "group"; });
+      state.groupMembers = r.chats.filter(function (c) { return c.type === "group_member"; });
+      state.loaded.groups = true;
+      state.failed.groups = false;
+      render();
+    }, function () {
+      state.failed.groups = true;
+      render();
+    });
+  }
+  // loadChats: las dos de arriba — lo que hay que volver a pedir cuando
+  // cambió un chat (nivel, agente, reglas: tanto un 1:1 como un grupo los
+  // tienen) o al (re)conectar.
+  function loadChats() {
+    return Promise.all([loadConversations(), loadGroups()]);
   }
 
   // Filtro de búsqueda: client-side sobre lo ya cargado (misma lógica que el
@@ -860,12 +870,9 @@
   }
 
   function render() {
-    // Chats = SOLO conversaciones reales (origin === "inbound_spoke", T18) —
-    // el filtro corre ANTES del agrupamiento por nivel (config_level, punto
-    // 6) más abajo. Los contactos sin conversación real (agenda pura, o
-    // vistos solo en un grupo) viven en el tab Contactos (renderContacts),
-    // no acá.
-    var sorted = state.chats.filter(isRealConversation).filter(matchesFilter).sort(SORTERS[state.appliedSort] || SORTERS.recientes);
+    // state.chats ya es SOLO conversaciones reales (loadConversations) — el
+    // agrupamiento por nivel (config_level, punto 6) corre sobre eso.
+    var sorted = state.chats.filter(matchesFilter).sort(SORTERS[state.appliedSort] || SORTERS.recientes);
     var tbody = document.getElementById("chatrows");
     tbody.innerHTML = "";
     // Agrupar por config_level (punto 6 parte 2) — el sort ya aplicado
@@ -899,22 +906,44 @@
     var emptyTable = !tbody.children.length;
     if (emptyTable) tbody.appendChild(renderEmptyRow());
     document.getElementById("legend").classList.toggle("hidden", emptyTable);
-    var totalLoaded = state.chats.length + state.groups.length + state.groupMembers.length;
-    document.getElementById("more").textContent = totalLoaded >= 5000 ? t("chat.load_limit_notice", { n: 5000 }) : "";
     renderGroups();
     renderContacts();
   }
 
   // renderEmptyRow: la fila única de una tabla sin conversaciones — con la
   // búsqueda activa dice que nada coincide, sin ella que todavía no hay.
+  // T197: antes de la primera respuesta no dice "no hay" (sería mentira: no
+  // se sabe todavía) sino "cargando", y si ese primer pedido falló, eso.
   function renderEmptyRow() {
     var tr = document.createElement("tr");
     var td = document.createElement("td");
     td.className = "list-empty";
     td.colSpan = document.querySelectorAll("#chattable thead th").length || 4;
-    td.textContent = state.filterText ? t("chat.empty_filter") : t("chat.empty_none");
+    var status = listStatus(state.loaded.chats, state.failed.chats, loadConversations);
+    if (status) td.appendChild(status);
+    else td.textContent = state.filterText ? t("chat.empty_filter") : t("chat.empty_none");
     tr.appendChild(td);
     return tr;
+  }
+
+  // listStatus: el renglón de una lista que todavía no llegó, o el de "no se
+  // pudo cargar" + Reintentar si ese primer pedido falló; null si ya llegó.
+  // Una recarga que falla después no borra lo que ya se ve: el próximo
+  // evento del SSE la vuelve a pedir.
+  function listStatus(loaded, failed, retry) {
+    if (loaded) return null;
+    var p = document.createElement("p");
+    p.className = "list-empty";
+    p.textContent = failed ? t("list.load_failed") + " " : t("action.loading");
+    if (failed) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "smbtn";
+      btn.textContent = t("action.retry");
+      btn.onclick = retry;
+      p.appendChild(btn);
+    }
+    return p;
   }
 
   // renderSectionHeader: una <tr> de ancho completo (colspan = nº de
@@ -954,6 +983,8 @@
   function renderGroups() {
     var container = document.getElementById("grouplist");
     container.innerHTML = "";
+    var status = listStatus(state.loaded.groups, state.failed.groups, loadGroups);
+    if (status) { container.appendChild(status); return; }
     var needle = state.filterText ? foldAccents(state.filterText.toLowerCase()) : "";
 
     var groups = state.groups.slice().sort(function (a, b) {
@@ -1125,12 +1156,12 @@
   // smoke. Dos secciones planas por is_contact (chatOut, backend):
   //   - "Contactos": is_contact=true (agenda real). Alfabético por nombre.
   //   - "Números": el resto (chats sin contact_name).
-  function contactLabel(c) { return c.contact_name || c.name || jidNumber(c.jid); }
-  // contactDisplayLabel: como contactLabel pero para PINTAR (T93) — cuando
-  // no hay ni contact_name ni name, lo único que queda es el número crudo,
-  // y ESE sigue tapado (el mandato es "solo números", no "solo si hay
-  // nombre al lado"). contactLabel sigue intacto: lo usan buscador y orden
-  // alfabético, que necesitan el dato real.
+  // El orden alfabético y la búsqueda los hace el servidor desde T197 (ver
+  // loadContactsPage), sobre el nombre real, no el tapado.
+  // contactDisplayLabel: el nombre a PINTAR (T93) — agenda, si no el nombre
+  // de WhatsApp; sin ninguno, lo único que queda es el número crudo, y ESE
+  // sigue tapado (el mandato es "solo números", no "solo si hay nombre al
+  // lado").
   function contactDisplayLabel(c) { return maskedName(c.contact_name) || maskedName(c.name) || maskNumber(jidNumber(c.jid)); }
   function sectionHeader(text) {
     var div = document.createElement("div");
@@ -1139,25 +1170,80 @@
     return div;
   }
 
+  // T197 (P4, sobre T198): cada sección llega por páginas de 50, ya ordenada
+  // por el servidor (sort=name, mismo contactLabel que acá: no se reordena
+  // en el cliente, o el orden cambiaría entre páginas) y filtrada por él
+  // (q, el buscador de esta pestaña). Se pide al ENTRAR a la pestaña
+  // (loadContacts), no en el arranque: en el Piumy real son ≈1.370 filas que
+  // antes se dibujaban todas de una vez.
+  var CONTACTS_PAGE = 50;
+  var contactSections = {
+    contacts: { param: "1", rows: [], offset: 0, total: 0, loaded: false, failed: false },
+    numbers: { param: "0", rows: [], offset: 0, total: 0, loaded: false, failed: false },
+  };
+  // loadContactsPage: la página siguiente de una sección, o la primera con
+  // reset. offset avanza por lo que el servidor YA entregó, no por las filas
+  // que quedan después de deduplicar por jid (una fila puede repetirse entre
+  // páginas si su orden cambió): si no, una repetida haría que "mostrar más"
+  // vuelva a pedir lo mismo.
+  function loadContactsPage(key, reset) {
+    var s = contactSections[key];
+    var q = state.filterText.trim();
+    var offset = reset ? 0 : s.offset;
+    return api("/api/chats?type=p2p&contact=" + s.param + "&sort=name&limit=" + CONTACTS_PAGE + "&offset=" + offset + (q ? "&q=" + encodeURIComponent(q) : "")).then(function (r) {
+      if (q !== state.filterText.trim()) return; // llegó tarde: ya hay otra búsqueda en camino
+      var rows = reset ? [] : s.rows;
+      var seen = {};
+      rows.forEach(function (c) { seen[c.jid] = true; });
+      r.chats.forEach(function (c) { if (!seen[c.jid]) { seen[c.jid] = true; rows.push(c); } });
+      s.rows = rows;
+      s.offset = offset + r.chats.length;
+      s.total = r.total;
+      s.loaded = true;
+      s.failed = false;
+      renderContacts();
+    }, function () {
+      s.failed = true;
+      renderContacts();
+    });
+  }
+  function loadContacts() {
+    return Promise.all([loadContactsPage("contacts", true), loadContactsPage("numbers", true)]);
+  }
+  function contactsVisible() {
+    return !document.getElementById("view-resumen").classList.contains("hidden") &&
+      !!document.querySelector('.tab-panel.active[data-panel="contactos"]');
+  }
+  function refreshContactsIfVisible() {
+    if (contactsVisible()) loadContacts();
+  }
+
   function renderContacts() {
     var container = document.getElementById("contactlist");
     container.innerHTML = "";
-    var needle = state.filterText ? foldAccents(state.filterText.toLowerCase()) : "";
     var frag = document.createDocumentFragment();
-
-    var chats = state.chats.filter(function (c) { return !needle || matchesNeedle(contactLabel(c), c.jid, needle); });
-
-    var contactChats = chats.filter(function (c) { return c.is_contact; })
-      .sort(function (a, b) { return contactLabel(a).localeCompare(contactLabel(b)); });
-    frag.appendChild(sectionHeader(t("contacts.section_contacts", { n: contactChats.length })));
-    contactChats.forEach(function (c) { frag.appendChild(contactRow(contactDisplayLabel(c), c.jid, c.resolved_number)); });
-
-    var numberChats = chats.filter(function (c) { return !c.is_contact; })
-      .sort(function (a, b) { return contactLabel(a).localeCompare(contactLabel(b)); });
-    frag.appendChild(sectionHeader(t("contacts.section_numbers", { n: numberChats.length })));
-    numberChats.forEach(function (c) { frag.appendChild(contactRow(contactDisplayLabel(c), c.jid, c.resolved_number)); });
-
+    var cs = contactSections.contacts, ns = contactSections.numbers;
+    frag.appendChild(sectionHeader(t("contacts.section_contacts", { n: cs.loaded ? cs.total : "…" })));
+    appendContactSection(frag, "contacts");
+    frag.appendChild(sectionHeader(t("contacts.section_numbers", { n: ns.loaded ? ns.total : "…" })));
+    appendContactSection(frag, "numbers");
     container.appendChild(frag);
+  }
+  // appendContactSection: las filas de una sección y, si quedan, "mostrar
+  // más" — o el renglón de cargando/falló mientras no llegó la primera.
+  function appendContactSection(frag, key) {
+    var s = contactSections[key];
+    var status = listStatus(s.loaded, s.failed, function () { loadContactsPage(key, true); });
+    if (status) { frag.appendChild(status); return; }
+    s.rows.forEach(function (c) { frag.appendChild(contactRow(contactDisplayLabel(c), c.jid, c.resolved_number)); });
+    if (s.offset < s.total) {
+      var more = document.createElement("button");
+      more.type = "button";
+      more.className = "smbtn contacts-more";
+      more.textContent = t("contacts.show_more", { n: Math.min(CONTACTS_PAGE, s.total - s.offset), shown: s.offset, total: s.total });
+      more.onclick = function () { more.disabled = true; loadContactsPage(key, false); };
+      frag.appendChild(more);
+    }
   }
 
   // ── tab Agentes (M1, ct-2026-07-22-1301; paso 2 editar/crear/borrar +
@@ -1546,11 +1632,10 @@
 
   // renderAssignSearch (Agentes paso 2, ct-2026-07-29 — boss: "que tenga un
   // buscador de numeros y contactos... eso es pedirle al usuario que hable
-  // como la base de datos") — reusa matchesNeedle/foldAccents, la MISMA
-  // lógica del buscador de Conversaciones (#search), no una segunda
-  // implementación. Busca sobre state.chats (p2p) — contactos Y
-  // conversaciones son la misma fuente, ya la comparten los tabs Chats/
-  // Contactos.
+  // como la base de datos") — busca en todos los 1:1, contactos Y
+  // conversaciones. T197: la búsqueda la hace el servidor (?q=, mismo
+  // plegado de acentos que foldAccents, T198): state.chats ya no trae los
+  // contactos sin conversación.
   function renderAssignSearch(agentID, assignedList) {
     var wrap = document.createElement("div");
     wrap.className = "agentassign-form";
@@ -1562,13 +1647,17 @@
     var results = document.createElement("div");
     results.className = "agentsearch-results hidden";
 
-    function renderResults(query) {
+    var searchSeq = 0; // la respuesta de una búsqueda vieja no pisa a la nueva
+    function search() {
+      var query = input.value.trim();
+      var seq = ++searchSeq;
+      if (!query) { renderResults([]); return; }
+      api("/api/chats?type=p2p&limit=8&q=" + encodeURIComponent(query)).then(function (r) {
+        if (seq === searchSeq) renderResults(r.chats);
+      }).catch(function () {});
+    }
+    function renderResults(matches) {
       results.innerHTML = "";
-      if (!query) { results.classList.add("hidden"); return; }
-      var needle = foldAccents(query.toLowerCase());
-      var matches = state.chats.filter(function (c) {
-        return matchesNeedle(contactLabel(c), c.jid, needle);
-      }).slice(0, 8);
       if (!matches.length) { results.classList.add("hidden"); return; }
       matches.forEach(function (c) {
         var row = document.createElement("div");
@@ -1596,8 +1685,8 @@
       });
       results.classList.remove("hidden");
     }
-    input.addEventListener("input", function () { renderResults(input.value.trim()); });
-    input.addEventListener("focus", function () { renderResults(input.value.trim()); });
+    input.addEventListener("input", debounce(search));
+    input.addEventListener("focus", search);
     input.addEventListener("blur", function () { results.classList.add("hidden"); });
 
     wrap.appendChild(input);
@@ -2051,9 +2140,12 @@
       .catch(function (e) { alert(t("error.prefix") + e.message); });
   });
 
+  // En Contactos filtra el servidor (T197): se espera a que el dueño deje de
+  // tipear para no pedir una página por tecla. Chats y Grupos filtran acá.
   document.getElementById("search").addEventListener("input", function (ev) {
     state.filterText = ev.target.value;
-    render();
+    if (contactsVisible()) debouncedRefreshContacts();
+    else render();
   });
 
   // searchPlaceholder (T14, ct-2026-08-05-1232; i18n T153 2b-iv) — el ÚNICO
@@ -2123,6 +2215,9 @@
       // mano cada vez.
       applySearchForTab(true);
       render();
+      // T197: Contactos se pide al entrar, como Clientes — es cuando más
+      // importa que sea de ahora.
+      if (name === "contactos") loadContacts();
     });
   });
   applySearchForTab(false);
@@ -2986,6 +3081,10 @@
   // recarga de cada vista, no una por tipo de evento.
   var debouncedLoadStatus = debounce(function () { loadStatus().catch(function () {}); });
   var debouncedLoadChats = debounce(loadChats);
+  // T197: un mensaje nuevo cambia la tabla Chats (fila nueva, último texto,
+  // orden), no Grupos ni Contactos — se recargan solo las conversaciones.
+  var debouncedLoadConversations = debounce(loadConversations);
+  var debouncedRefreshContacts = debounce(refreshContactsIfVisible);
   // T16 (ct-2026-08-05-123257, Citrino: "que el contador se actualice
   // solo... un borrador que aparece y no se ve hasta recargar es una
   // respuesta que salió tarde") — mismo colgado del ciclo existente que
@@ -2997,10 +3096,10 @@
   // hace nada", pero si necesita más hay que declararlo acá, no hay dónde
   // esconder el olvido.
   var REFRESH_ON = {
-    wa_connected: [debouncedLoadStatus, debouncedLoadChats],
+    wa_connected: [debouncedLoadStatus, debouncedLoadChats, debouncedRefreshContacts],
     wa_disconnected: [debouncedLoadStatus],
-    history_batch: [debouncedLoadStatus, debouncedLoadChats],
-    message: [debouncedLoadStatus, debouncedLoadChats],
+    history_batch: [debouncedLoadStatus, debouncedLoadChats, debouncedRefreshContacts],
+    message: [debouncedLoadStatus, debouncedLoadConversations],
     draft: [debouncedLoadPendingDrafts],
   };
   var DEFAULT_REFRESH = [debouncedLoadStatus];
@@ -3011,6 +3110,7 @@
   function refreshEverything() {
     debouncedLoadStatus();
     debouncedLoadChats();
+    debouncedRefreshContacts();
     loadPendingDrafts().catch(function () {});
     loadAgents().catch(function () {});
     // T172d: Clientes entra a la red de seguridad por el MISMO argumento
@@ -4112,6 +4212,7 @@
   loadI18n().then(applyAllI18n).catch(function () {}).then(function () {
     return loadStatus();
   }).then(function () {
+    render(); // T197: las listas dicen "Cargando…" mientras llega su primera respuesta, no quedan en blanco
     loadChats();
     loadPendingDrafts();
     loadAgents();

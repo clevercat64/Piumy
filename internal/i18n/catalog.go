@@ -427,11 +427,12 @@ var esCatalog = map[string]string{
 	// "chat.alias_prefix" — IDÉNTICO en los dos idiomas: "alias" ya es
 	// préstamo inglés en el español de esta interfaz (mismo criterio que
 	// error.prefix/sync.summary).
-	"chat.alias_prefix":      " · alias: ",
-	"chat.type_group":        "grupo",
-	"chat.empty_none":        "Todavía no hay conversaciones. Aparecen aquí cuando alguien te escribe.",
-	"chat.empty_filter":      "Ninguna conversación coincide con la búsqueda.",
-	"chat.load_limit_notice": "+ posiblemente más conversaciones (límite de carga: {n})",
+	"chat.alias_prefix": " · alias: ",
+	"chat.type_group":   "grupo",
+	"chat.empty_none":   "Todavía no hay conversaciones. Aparecen aquí cuando alguien te escribe.",
+	"chat.empty_filter": "Ninguna conversación coincide con la búsqueda.",
+	"list.load_failed":  "No se pudo cargar la lista.",
+	"action.retry":      "Reintentar",
 
 	"level.label_auto":       "Respuesta automática",
 	"level.label_confirm":    "Con tu confirmación",
@@ -448,6 +449,7 @@ var esCatalog = map[string]string{
 
 	"contacts.section_contacts": "👤 Contactos ({n})",
 	"contacts.section_numbers":  "🔢 Números ({n})",
+	"contacts.show_more":        "Mostrar {n} más · {shown} de {total}",
 
 	"action.edit":        "Editar",
 	"action.approve_msg": "Aprueba MSG",
@@ -929,11 +931,12 @@ var enCatalog = map[string]string{
 	"history.tooltip_downloading": "History: downloading…",
 	"history.tooltip_loaded":      "History: complete",
 
-	"chat.alias_prefix":      " · alias: ",
-	"chat.type_group":        "group",
-	"chat.empty_none":        "No conversations yet. They show up here when someone messages you.",
-	"chat.empty_filter":      "No conversation matches the search.",
-	"chat.load_limit_notice": "+ possibly more conversations (load limit: {n})",
+	"chat.alias_prefix": " · alias: ",
+	"chat.type_group":   "group",
+	"chat.empty_none":   "No conversations yet. They show up here when someone messages you.",
+	"chat.empty_filter": "No conversation matches the search.",
+	"list.load_failed":  "Couldn't load the list.",
+	"action.retry":      "Retry",
 
 	"level.label_auto":       "Automatic reply",
 	"level.label_confirm":    "With your confirmation",
@@ -949,6 +952,7 @@ var enCatalog = map[string]string{
 
 	"contacts.section_contacts": "👤 Contacts ({n})",
 	"contacts.section_numbers":  "🔢 Numbers ({n})",
+	"contacts.show_more":        "Show {n} more · {shown} of {total}",
 
 	"action.edit":        "Edit",
 	"action.approve_msg": "Approve MSG",
