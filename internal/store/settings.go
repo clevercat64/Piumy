@@ -77,6 +77,14 @@ const (
 	SettingCapipushSwampedAt     = "capipush_swamped_at"
 	SettingCapipushSwampedWindow = "capipush_swamped_window"
 
+	// SettingUpdateQuietWindow (T206, ct-2026-11-11-1912) bounds how far back
+	// the self-updater looks for pending messages when deciding whether now
+	// is a quiet moment. Old debt must never block an update: a pending
+	// message survives the restart, while a conversation in progress does
+	// not. See updateIdle (autoupdate_wire.go) for the code-level default and
+	// why it is sized against capipush's MaxDispatchDebounce.
+	SettingUpdateQuietWindow = "update_quiet_window"
+
 	// SettingSessionPreMigrationKeep (T193, ct-2026-11-11-1039) — how many
 	// pre-migration copies of whatsmeow's session DB to keep beside it.
 	// Piumy takes one whenever a new version is about to migrate that DB to

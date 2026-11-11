@@ -882,3 +882,57 @@ func TestUnhandledIDsBoundsAndScope(t *testing.T) {
 		t.Fatalf("UnhandledIDs(100..200) = %v, want only m2", ids)
 	}
 }
+
+// TestCountPendingDedicatedSinceWindowsTheDebt covers T206's new count
+// (ct-2026-11-11-1912) at the store level: the same rows as
+// CountPendingDedicated, minus everything older than the window.
+func TestCountPendingDedicatedSinceWindowsTheDebt(t *testing.T) {
+	s := openTestStore(t)
+
+	const chat = "555000000001@s.whatsapp.net"
+	if err := s.TouchChat(chat, "Contacto Uno", 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetMode(chat, "dedicated"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetActive(chat, true); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().Unix()
+	// One old, one fresh — different on purpose: if both ages gave the same
+	// answer, the window would not be doing anything.
+	if err := s.AddMessage(Message{ChatJID: chat, ID: "old", Text: "viejo", TS: now - 86400}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddMessage(Message{ChatJID: chat, ID: "fresh", Text: "nuevo", TS: now - 30}); err != nil {
+		t.Fatal(err)
+	}
+
+	if n, err := s.CountPendingDedicated(); err != nil || n != 2 {
+		t.Fatalf("CountPendingDedicated = %d (err %v), want 2 — the unbounded count must still see the whole debt", n, err)
+	}
+	if n, err := s.CountPendingDedicatedSince(now - 600); err != nil || n != 1 {
+		t.Errorf("CountPendingDedicatedSince(10 min) = %d (err %v), want only the fresh one", n, err)
+	}
+	if n, err := s.CountPendingDedicatedSince(now - 10); err != nil || n != 0 {
+		t.Errorf("CountPendingDedicatedSince(10 s) = %d (err %v), want 0", n, err)
+	}
+	// The boundary is inclusive (ts >= since): a message sitting exactly on
+	// the edge still counts, which is the cautious side to err on.
+	if n, err := s.CountPendingDedicatedSince(now - 30); err != nil || n != 1 {
+		t.Errorf("CountPendingDedicatedSince(exactly the message's ts) = %d (err %v), want 1", n, err)
+	}
+
+	// is_boss is INCLUDED here, unlike CountRecentPendingNonBoss: a fresh
+	// message from the owner is exactly the turn an update must not cut.
+	if err := s.SetIsBoss(chat, true); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.CountPendingDedicatedSince(now - 600); err != nil || n != 1 {
+		t.Errorf("CountPendingDedicatedSince on a boss chat = %d (err %v), want 1", n, err)
+	}
+	if n, err := s.CountRecentPendingNonBoss(now - 600); err != nil || n != 0 {
+		t.Errorf("CountRecentPendingNonBoss on a boss chat = %d (err %v), want 0 — the two counts differ on purpose", n, err)
+	}
+}

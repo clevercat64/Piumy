@@ -267,18 +267,52 @@ func (s *Store) MarkPendingBefore(chatJID string, tsResp int64) error {
 	return err
 }
 
+// pendingDedicatedWhere is the ONE condition both counts below share with
+// PendingDedicated — same mode/config_level gate, including the
+// StatusBroadcastJID exclusion (T84, ct-2026-08-27-2314). It is a single
+// constant rather than three copies because T5 already warned what a
+// mismatch costs: the queue count would lie about what is actually pending.
+// Keeping them in lockstep by construction beats keeping them by discipline.
+const pendingDedicatedWhere = `m.from_me = 0 AND m.handled = 0
+	AND c.mode IN ('dedicated', 'auto')
+	AND (c.is_boss = 1 OR (c.active = 1 AND ` + offStatusSQL + `))
+	AND ` + notStatusBroadcastSQL
+
 // CountPendingDedicated returns the total number of unhandled inbound
-// messages PendingDedicated would return — same mode/config_level gate,
-// kept in lockstep (T5) including the StatusBroadcastJID exclusion (T84,
-// ct-2026-08-27-2314): a mismatch here would make the queue count lie
-// about what's actually pending.
+// messages PendingDedicated would return, with no time limit — this is what
+// feeds the dashboard's "cola: N" badge, so it counts the whole debt.
 func (s *Store) CountPendingDedicated() (int, error) {
 	var count int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM messages m
 		JOIN chats c ON c.jid = m.chat_jid
-		WHERE m.from_me = 0 AND m.handled = 0 AND c.mode IN ('dedicated', 'auto')
-		AND (c.is_boss = 1 OR (c.active = 1 AND ` + offStatusSQL + `))
-		AND ` + notStatusBroadcastSQL + ``).Scan(&count)
+		WHERE ` + pendingDedicatedWhere).Scan(&count)
+	return count, err
+}
+
+// CountPendingDedicatedSince counts the same pending messages as
+// CountPendingDedicated but only those that arrived at or after sinceTS.
+//
+// Why it exists (T206, ct-2026-11-11-1912): the self-updater used the
+// unbounded count to decide "is this a quiet moment?", so a single pending
+// message nobody will ever answer — a chat whose agent no longer exists, a
+// group whose antenna is off — blocked every future update forever. Measured
+// on a real install: 41 old pending, the oldest 9 days, the update held at
+// blocked=busy with a verified build already downloaded.
+//
+// A pending message survives a restart, so restarting does not lose it. What
+// a restart could actually cut is a conversation happening RIGHT NOW, and
+// that is what a window measures.
+//
+// Unlike CountRecentPendingNonBoss (capipush's backpressure, S3) this does
+// NOT exclude is_boss: a storm from the owner must not throttle dispatch to
+// everyone else, but a message the owner sent a minute ago is exactly the
+// turn an update must not interrupt.
+func (s *Store) CountPendingDedicatedSince(sinceTS int64) (int, error) {
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM messages m
+		JOIN chats c ON c.jid = m.chat_jid
+		WHERE `+pendingDedicatedWhere+`
+		AND m.ts >= ?`, sinceTS).Scan(&count)
 	return count, err
 }
 
