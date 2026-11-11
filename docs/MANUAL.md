@@ -7045,6 +7045,10 @@ desde T149 ct-2026-09-07-1730 — ver sus propias entradas más abajo)
   no `done` (locked/noting/ready). Lo usa `capipush` para no interrumpir
   trabajo en curso (refinamiento de eficiencia, no la garantía de
   seguridad — esa es `RegisterDispatch`'s force-replace).
+- `(*Gate) AnyInFlight() bool` (T176, ct-2026-11-10-2103) — lo mismo que
+  `InFlight` pero de CUALQUIER terminal: `true` si alguno tiene un dispatch
+  no `done`. Lo pregunta el actualizador (`main.go: updateIdle`) para no
+  reiniciar Piumy en medio del turno de un agente.
 - Tools nuevas (`gate_tools.go`): `get_instructions`, `unlock`, `remember`,
   `skip` — ninguna lleva terminal_id explícito (se lee del contexto);
   `get_instructions(nonce)`/`unlock(token)` son las únicas con parámetro
@@ -7064,10 +7068,6 @@ desde T149 ct-2026-09-07-1730 — ver sus propias entradas más abajo)
     `dispatchStaleAfter`, **5min desde T105, ct-2026-08-29-2129 — 15min
     entre S4b (ct-2026-07-30-1255) y T105, 1h antes de S4b**: "red de
     último recurso para que no pase nunca" no es lo mismo que "recuperarse
-- `(*Gate) AnyInFlight() bool` (T176, ct-2026-11-10-2103) — lo mismo que
-  `InFlight` pero de CUALQUIER terminal: `true` si alguno tiene un dispatch
-  no `done`. Lo pregunta el actualizador (`main.go: updateIdle`) para no
-  reiniciar Piumy en medio del turno de un agente.
     rápido", y 15min seguía siendo un turno entero de terminal bloqueado
     para un agente que se colgó — 5min sigue siendo más que el paso más
     largo del backoff Fibonacci de `capipush`, 13min, ver su sección
@@ -8295,25 +8295,6 @@ ARCHIVO y nada de Piumy: cruzar un cliente con un chat es del handler REST.
   sexto estado: nunca sale como `missing` (diría «CleverCoder no está acá»).
   Lo mismo un archivo «tomado» por otro proceso en Windows.
 
-## i18n — `internal/i18n`
-
-Rol: el mecanismo de idioma de Piumy (T153, ct-2026-09-08-1656) —
-un `map[string]string` por idioma, servido por `restapi` (`GET /api/i18n`)
-como la ÚNICA lista de textos: el tablero nunca guarda su propia copia.
-
-- `Lang` (`ES`/`EN`) — `Catalog(lang) map[string]string` (fallback a `ES`
-  para cualquier idioma no soportado) — `Valid(lang) bool`.
-- `Detect() Lang` — lee el locale de la máquina que corre Piumy (NO el del
-  navegador): `detect_windows.go` (registro `HKCU\Control
-  Panel\International\LocaleName`, mismo mecanismo que `tray_windows.go` ya
-  usa, sin dependencia nueva) / `detect_other.go` (`LC_ALL`/`LANG`, Linux y
-  Mac, T113) — mismo split por build tag que `tray_windows.go`/
-  `tray_other.go` en la raíz. Cualquier locale no reconocido cae en `ES`.
-- `catalog.go`: `esCatalog`/`enCatalog`. `esCatalog`'s valores son el
-  string EXACTO que vivía a mano antes de cada pasada, letra por letra.
-  `TestCatalogsAreComplete` (`catalog_test.go`) garantiza que ambos mapas
-  tengan exactamente las mismas claves y ninguna vacía — guarda real dado
-  el volumen escrito a mano. `TestAllKeysMatchBetweenFrontendAndCatalog`
 ## releasesig — `internal/releasesig`
 
 Rol: el formato y la firma del `SHA256SUMS` de una release (T176,
@@ -8410,6 +8391,25 @@ mismo nombre, un nombre que Piumy no aceptaría y firmar el propio `SHA256SUMS`.
 Imprime la clave pública con la que firmó, para compararla con la construida
 en Piumy.
 
+## i18n — `internal/i18n`
+
+Rol: el mecanismo de idioma de Piumy (T153, ct-2026-09-08-1656) —
+un `map[string]string` por idioma, servido por `restapi` (`GET /api/i18n`)
+como la ÚNICA lista de textos: el tablero nunca guarda su propia copia.
+
+- `Lang` (`ES`/`EN`) — `Catalog(lang) map[string]string` (fallback a `ES`
+  para cualquier idioma no soportado) — `Valid(lang) bool`.
+- `Detect() Lang` — lee el locale de la máquina que corre Piumy (NO el del
+  navegador): `detect_windows.go` (registro `HKCU\Control
+  Panel\International\LocaleName`, mismo mecanismo que `tray_windows.go` ya
+  usa, sin dependencia nueva) / `detect_other.go` (`LC_ALL`/`LANG`, Linux y
+  Mac, T113) — mismo split por build tag que `tray_windows.go`/
+  `tray_other.go` en la raíz. Cualquier locale no reconocido cae en `ES`.
+- `catalog.go`: `esCatalog`/`enCatalog`. `esCatalog`'s valores son el
+  string EXACTO que vivía a mano antes de cada pasada, letra por letra.
+  `TestCatalogsAreComplete` (`catalog_test.go`) garantiza que ambos mapas
+  tengan exactamente las mismas claves y ninguna vacía — guarda real dado
+  el volumen escrito a mano. `TestAllKeysMatchBetweenFrontendAndCatalog`
   (`catalog_usage_test.go`, T153 2b-iii) es el cruce completo hecho test
   de repo — antes lo corría Citrino a mano después de cada pasada; falla
   si `t(...)` en `app.js` o `data-i18n*` en `index.html` piden una clave
@@ -8699,6 +8699,17 @@ del dueño desde la LAN, sin agente de por medio. Grupo/perfil NO están acá
   reiniciar. Un cuerpo sin `enabled` se rechaza con 400 (no se lee como
   "apagado"). Misma autenticación que el resto de `/api/admin/*`. Ver
   `driftreport`: qué sale y qué nunca sale.
+- **T176 (ct-2026-11-10-2103) — `GET /api/update` y `POST
+  /api/admin/auto-update` (`update.go`).** La ventana del tablero sobre
+  `autoupdate`. `GET` → `autoupdate.Status` (`enabled`, `supported`, `blocked`,
+  `current`, `latest`, `available`, `ready`, `checked_at`, `pending`,
+  `installed_version`, `installed_at`, `given_up`, `failure`, `last_error`);
+  `blocked` es un CÓDIGO (`busy`, `other_instance`, `no_key`, …), la frase la
+  arma la UI. `POST {"enabled": bool}` lo guarda en `store.SettingAutoUpdate`,
+  el mismo ajuste que el actualizador pregunta en cada vuelta (aplica en el
+  acto) y devuelve el `Status`. Un cuerpo sin `enabled` es 400, no «apagado».
+  Ambas con `d.auth`; sin actualizador cableado (`Deps.AutoUpdate == nil`) →
+  503. Fragmento de UI para Ópalo en `docs/T176-AUTOUPDATE.md`.
 - `handleEvents` (ct-2026-07-24-0527, auto-refresco del dashboard): el
   heartbeat de 20s (mantiene vivo un proxy/load-balancer) pasó de ser un
   comentario SSE crudo (`: keep-alive\n\n`, invisible para
@@ -8718,17 +8729,6 @@ del dueño desde la LAN, sin agente de por medio. Grupo/perfil NO están acá
   `docs/DASHBOARD-AUTO-REFRESH-2026-07-24.md` para el rediseño completo del
   lado `app.js` (tabla declarativa evento→loaders, debounce, reconexión
   con backoff + watchdog).
-- **T176 (ct-2026-11-10-2103) — `GET /api/update` y `POST
-  /api/admin/auto-update` (`update.go`).** La ventana del tablero sobre
-  `autoupdate`. `GET` → `autoupdate.Status` (`enabled`, `supported`, `blocked`,
-  `current`, `latest`, `available`, `ready`, `checked_at`, `pending`,
-  `installed_version`, `installed_at`, `given_up`, `failure`, `last_error`);
-  `blocked` es un CÓDIGO (`busy`, `other_instance`, `no_key`, …), la frase la
-  arma la UI. `POST {"enabled": bool}` lo guarda en `store.SettingAutoUpdate`,
-  el mismo ajuste que el actualizador pregunta en cada vuelta (aplica en el
-  acto) y devuelve el `Status`. Un cuerpo sin `enabled` es 400, no «apagado».
-  Ambas con `d.auth`; sin actualizador cableado (`Deps.AutoUpdate == nil`) →
-  503. Fragmento de UI para Ópalo en `docs/T176-AUTOUPDATE.md`.
 
 - `Deps{Bus *eventbus.Bus, Store *store.Store, Governor *governor.Limiter,
   State *state.Manager, Router *router.Manager, APIKey string}` — `APIKey`
