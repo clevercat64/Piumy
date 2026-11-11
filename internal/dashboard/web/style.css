@@ -196,6 +196,31 @@ body {
   padding: 11px 24px; border-bottom: 1px solid var(--border);
   background: var(--bg2);
 }
+/* T197 (P2, demo 1): la franja dice dónde estás — el título de la sección
+   a la izquierda, el renglón vivo y, a la derecha, Privacidad y
+   Configuración, siempre a la vista. Sin WhatsApp vinculado Privacidad no
+   tapa nada (no hay números todavía) y se va; Configuración se queda: el
+   idioma y la contraseña se cambian también antes de vincular. */
+.sec-title { margin: 0 auto 0 0; font-size: 19px; font-weight: 600; letter-spacing: -.015em; color: var(--text); }
+.sec-actions { display: flex; gap: 8px; }
+.app:has(#adminpanel.hidden) #privacybtn { display: none; }
+/* Una pantalla por sección: el Resumen es identidad + «Necesita tu
+   atención» + contadores + salud; cada sección de lista, solo su panel. */
+.app[data-sec="resumen"] #convcard { display: none; }
+.app:not([data-sec="resumen"]) :is(.dash-hero, #attention, #healthcard) { display: none; }
+#attention + #healthcard { margin-top: 16px; }
+/* «Necesita tu atención» (renderAttention): cada ítem lleva a su sección. */
+.todo-list { display: flex; flex-direction: column; gap: 8px; }
+.todo-item {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; text-align: left;
+  padding: 12px 16px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--panel); color: var(--text); font: inherit; cursor: pointer;
+}
+.todo-item:hover { border-color: var(--phos); }
+.todo-item b { font-size: 18px; min-width: 28px; color: var(--amber); }
+.todo-go { margin-left: auto; color: var(--dim); font-size: 18px; }
+.todo-list .sub { margin: 0; }
+
 /* El contenido. Hereda el mismo respiro que tenía .screen, para que las
    tarjetas de adentro no se enteren del cambio de marco. */
 .content { padding: 18px 24px 34px; }
@@ -278,6 +303,19 @@ body {
   .live { flex-wrap: wrap; }
   .live .fresh { width: 100%; }
   .live .fresh::before { content: none; }
+  /* T197 (impeccable critique): la franja es fija y en el teléfono llegó a
+     tres renglones, con los dos botones con texto en uno propio. Acá el
+     título y los botones comparten el primero —los botones solo con su
+     ícono, de 44 px para el dedo (apple-hig-expert)— y el renglón vivo baja
+     entero. El texto de los botones no se borra: sigue ahí para el lector
+     de pantalla. */
+  .topbar { gap: 4px 8px; padding-top: 8px; padding-bottom: 8px; }
+  .sec-title { font-size: 17px; }
+  .topbar .live { order: 3; width: 100%; }
+  .sec-actions > .btn.sm { min-width: 44px; min-height: 44px; padding: 8px 12px; justify-content: center; } /* le gana a .btn.sm, que está más abajo */
+  #privacybtn [data-i18n] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  #configbtn { font-size: 0; }
+  #configbtn::after { content: "⚙"; font-size: 16px; line-height: 1; }
 }
 .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity: .35; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.15); } }
@@ -446,11 +484,6 @@ body {
 .pip.ok { background: var(--green); }
 .pip.off { background: transparent; border: 1.5px solid var(--border); }
 .pip.bad { background: var(--red); }
-.status-actions {
-  grid-column: 1 / -1; display: flex; gap: 10px; align-items: center;
-  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);
-}
-.status-actions .cfg { margin-left: auto; }
 
 /* ── barra de orden (existente, re-skin) ──────────────────────────────── */
 #sortbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0 0 14px; }
@@ -535,10 +568,9 @@ body {
    pestañas se ven pero conmutan paneles de un bloque oculto, que es
    inofensivo). */
 .app:has(#adminpanel.hidden) .side .tabs { display: none; }
-.side-title {
-  padding: 10px 10px 4px; font-size: 11.5px; color: var(--dim);
-}
-.app:has(#adminpanel.hidden) .side-title { display: none; }
+/* T197: el ícono del demo 1 delante de cada sección. */
+.side .tab-btn .ico { width: 17px; text-align: center; font-size: 13px; opacity: .85; flex: none; }
+.side .tab-btn.active .ico { opacity: 1; }
 
 /* En pantalla angosta la ventana deja de ser una ventana: ocupa todo y la
    barra lateral se acuesta arriba, con las pestañas en una fila que se
@@ -555,17 +587,14 @@ body {
     padding: 10px 12px 0; gap: 0;
   }
   .brand { padding: 2px 2px 10px; }
-  .side-title { display: none; }
   .side .tabs {
     flex-direction: row; gap: 4px; overflow-x: auto; padding-bottom: 8px;
     scrollbar-width: none;
   }
   .side .tabs::-webkit-scrollbar { display: none; }
   .side .tab-btn { width: auto; white-space: nowrap; padding: 6px 11px; }
-  /* T188: Resumen y Clientes eran dos botones apilados a todo el ancho; en fila
-     ocupan una línea en vez de dos. */
-  .side .viewnav { flex-direction: row; gap: 4px; margin-bottom: 4px; }
-  .side .nav-btn { padding: 6px 11px; }
+  .side .tab-btn .ico { display: none; } /* en una fila que se arrastra, el texto solo (demo 1) */
+  .side .tab-btn { min-height: 44px; } /* T197: blanco táctil de 44 px (apple-hig-expert) */
   .topbar { padding: 10px 14px; }
   .content { padding: 14px 14px 26px; }
 }
@@ -1181,27 +1210,6 @@ body.qr-open::before, body.qr-open::after { display: none; }
 .footer-brand { display: inline-flex; align-items: center; gap: 6px; }
 .footer-logo { width: 16px; height: 16px; }
 .footer-sep { opacity: .5; }
-
-/* ── navegación de vistas (T172d, ct-2026-11-10-225415) ──────────────── */
-/* Los botones de vista son los MISMOS de la barra lateral que las pestañas
-   de Conversaciones: el demo 1 que el boss eligió no distinguía las dos
-   filas visualmente, y distinguirlas acá sería inventar jerarquía donde él
-   no la pidió. Se hereda el aspecto en vez de copiarlo: una sola regla
-   define los dos, así un cambio de estilo de la barra no deja una fila
-   atrás. */
-.viewnav { display: flex; flex-direction: column; gap: 1px; margin-bottom: 14px; }
-.nav-btn {
-  appearance: none; background: transparent; border: 0; border-radius: 7px;
-  color: var(--dim); font: inherit; font-size: 13.5px; text-align: left;
-  padding: 7px 10px; cursor: pointer;
-}
-.nav-btn:hover { background: var(--fill-2); color: var(--text); }
-.nav-btn.active { background: var(--tint); color: var(--phos); font-weight: 600; }
-/* Sin WhatsApp vinculado no hay grupos, y un cliente ES un grupo: la
-   navegación desaparece con las pestañas, igual que .side-title. El
-   selector es el mismo :has(#adminpanel.hidden) que ya usa .side .tabs —
-   una sola condición para toda la barra, no dos que puedan discrepar. */
-.app:has(#adminpanel.hidden) .viewnav { display: none; }
 
 /* ── vistas ───────────────────────────────────────────────────────────── */
 /* ── Clientes (T172d) ─────────────────────────────────────────────────── */

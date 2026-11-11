@@ -70,17 +70,17 @@ var esCatalog = map[string]string{
 	"badge.history":   "Historial",
 	"badge.privacy":   "Privacidad",
 
-	// Pestañas de Conversaciones. "Chats"/"Drafts" quedan IDÉNTICAS en los
-	// dos idiomas (T165, ct-2026-09-16-2016) — préstamos ingleses ya
-	// establecidos en este tablero técnico, mismo criterio que
-	// agent.label_endpoint/label_pin más abajo.
-	"tab.conversations": "Conversaciones",
-	"tab.chats":         "Chats",
-	"tab.groups":        "Grupos",
-	"tab.contacts":      "Contactos",
-	"tab.agents":        "Agentes",
-	"tab.rules":         "Reglas",
-	"tab.drafts":        "Drafts",
+	// Secciones de la barra. "Chats" queda IDÉNTICA en los dos idiomas
+	// (T165, ct-2026-09-16-2016) — préstamo inglés ya establecido en este
+	// tablero, mismo criterio que agent.label_endpoint/label_pin más abajo.
+	// "Drafts" pasó a "Borradores" en T197: es como la llamaba el demo 1 que
+	// eligió el boss.
+	"tab.chats":    "Chats",
+	"tab.groups":   "Grupos",
+	"tab.contacts": "Contactos",
+	"tab.agents":   "Agentes",
+	"tab.rules":    "Reglas",
+	"tab.drafts":   "Borradores",
 
 	"sort.label":   "Ordenar por:",
 	"sort.recent":  "recientes",
@@ -599,8 +599,13 @@ var esCatalog = map[string]string{
 	// los nombres de chat de la etapa 2b-iv.
 	// Los cuatro textos de status son los que fijó el contrato, letra por
 	// letra: el tablero no inventa su propia versión de "no está al día".
-	"nav.views":                      "Vistas",
 	"nav.summary":                    "Resumen",
+	"attention.title":                "Necesita tu atención",
+	"attention.drafts_one":           "borrador espera tu aprobación",
+	"attention.drafts_many":          "borradores esperan tu aprobación",
+	"attention.unattended_one":       "chat sin atender: nadie le contesta",
+	"attention.unattended_many":      "chats sin atender: nadie les contesta",
+	"attention.all_clear":            "Todo al día.",
 	"nav.clients":                    "Clientes",
 	"clients.intro":                  "Cada cliente es un grupo de WhatsApp. Las cuotas y el consumo los lleva CleverCoder.",
 	"clients.meta_fresh":             "clientes: {count} · foto de las {time}",
@@ -649,13 +654,12 @@ var enCatalog = map[string]string{
 	"badge.history":   "History",
 	"badge.privacy":   "Privacy",
 
-	"tab.conversations": "Conversations",
-	"tab.chats":         "Chats",
-	"tab.groups":        "Groups",
-	"tab.contacts":      "Contacts",
-	"tab.agents":        "Agents",
-	"tab.rules":         "Rules",
-	"tab.drafts":        "Drafts",
+	"tab.chats":    "Chats",
+	"tab.groups":   "Groups",
+	"tab.contacts": "Contacts",
+	"tab.agents":   "Agents",
+	"tab.rules":    "Rules",
+	"tab.drafts":   "Drafts",
 
 	"sort.label":   "Sort by:",
 	"sort.recent":  "recent",
@@ -1059,8 +1063,13 @@ var enCatalog = map[string]string{
 	"server.recovery_email_body":    "Your recovery code is: {code}\n\nExpires in 10 minutes and is single-use. If you didn't request this, ignore this email.\n",
 	// ── Clients (T172d) — see the Spanish block for the model: one client
 	// is ONE WhatsApp group. Group name and tier are DATA, never translated.
-	"nav.views":                      "Views",
 	"nav.summary":                    "Summary",
+	"attention.title":                "Needs your attention",
+	"attention.drafts_one":           "draft is waiting for your approval",
+	"attention.drafts_many":          "drafts are waiting for your approval",
+	"attention.unattended_one":       "unattended chat: nobody answers it",
+	"attention.unattended_many":      "unattended chats: nobody answers them",
+	"attention.all_clear":            "All caught up.",
 	"nav.clients":                    "Clients",
 	"clients.intro":                  "Each client is a WhatsApp group. Quotas and usage are tracked by CleverCoder.",
 	"clients.meta_fresh":             "clients: {count} · snapshot at {time}",

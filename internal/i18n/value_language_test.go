@@ -52,7 +52,6 @@ var identicalValueExceptions = map[string]string{
 	// catalog.go cuando se tomó la decisión. Cambiarlos es una decisión de
 	// producto, no un arreglo de traducción.
 	"tab.chats":             "préstamo inglés establecido en este tablero técnico (T165) — la decisión está escrita en catalog.go",
-	"tab.drafts":            "mismo caso que tab.chats, misma decisión de T165",
 	"media.sticker_alt":     "\"sticker\" es el término corriente en español rioplatense para esto; traducirlo sonaría ajeno",
 	"badge.governor_killed": "\"kill\" y \"Governor\" son préstamos ya establecidos acá (ver el comentario de badge.governor_killed en catalog.go)",
 

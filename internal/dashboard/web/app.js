@@ -54,7 +54,7 @@
     document.getElementById("loginmodal").classList.add("hidden");
   }
 
-  var state = { chats: [], groups: [], groupMembers: [], loaded: { chats: false, groups: false }, failed: { chats: false, groups: false }, agents: [], originAgentDefaults: {}, selectedJID: null, appliedSort: "recientes", filterText: "", lastStatus: null, lastUpdate: null, updateUnreachable: false, privacyMode: false, i18n: { lang: "es", language: "", texts: {} } };
+  var state = { chats: [], groups: [], groupMembers: [], loaded: { chats: false, groups: false }, failed: { chats: false, groups: false }, pendingDrafts: null, agents: [], originAgentDefaults: {}, selectedJID: null, appliedSort: "recientes", filterText: "", lastStatus: null, lastUpdate: null, updateUnreachable: false, privacyMode: false, i18n: { lang: "es", language: "", texts: {} } };
 
   // ── i18n (T153 etapa 1, ct-2026-09-08-1656): un solo catálogo de textos,
   // servido por el backend — el tablero no guarda su propia lista (si la
@@ -342,6 +342,10 @@
     }
     document.getElementById("qrbtn").classList.remove("hidden");
     document.getElementById("disconnectbtn").classList.add("hidden");
+    // T197: sin WhatsApp la barra se oculta y la única pantalla es el
+    // Resumen ("Conecta tu WhatsApp"); quedarse en otra sección dejaría la
+    // página en blanco, sin cómo volver.
+    if (currentSection !== "resumen") showSection("resumen");
     // P1 (ct-2026-07-24-0015): QR overlay NO se abre solo al desconectar —
     // solo cuando el boss hace click en "Conectar QR". Pero precargamos el
     // QR data para que el overlay tenga algo que mostrar al abrirse.
@@ -906,8 +910,46 @@
     var emptyTable = !tbody.children.length;
     if (emptyTable) tbody.appendChild(renderEmptyRow());
     document.getElementById("legend").classList.toggle("hidden", emptyTable);
+    renderAttention();
     renderGroups();
     renderContacts();
+  }
+
+  // renderAttention (T197, P2): «Necesita tu atención», lo primero del
+  // Resumen — lo que espera una acción del dueño, con el camino a dónde
+  // hacerla: los borradores que esperan su aprobación y las conversaciones
+  // sin atender (nadie les contesta). "Todo al día" solo cuando las dos
+  // cuentas llegaron: antes de eso no se sabe, y decirlo sería mentir.
+  function renderAttention() {
+    var list = document.getElementById("attentionlist");
+    list.innerHTML = "";
+    var drafts = state.pendingDrafts || 0;
+    var unattended = state.chats.filter(function (c) { return chatLevel(c) === "unattended"; }).length;
+    if (drafts) list.appendChild(attentionItem(drafts, drafts === 1 ? t("attention.drafts_one") : t("attention.drafts_many"), "drafts"));
+    if (unattended) list.appendChild(attentionItem(unattended, unattended === 1 ? t("attention.unattended_one") : t("attention.unattended_many"), "chats"));
+    if (list.children.length) return;
+    var p = document.createElement("p");
+    p.className = "sub";
+    p.textContent = state.loaded.chats && state.pendingDrafts !== null ? t("attention.all_clear") : t("action.loading");
+    list.appendChild(p);
+  }
+  function attentionItem(n, text, sec) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "todo-item";
+    var num = document.createElement("b");
+    num.textContent = n;
+    var label = document.createElement("span");
+    label.textContent = text;
+    var go = document.createElement("span");
+    go.className = "todo-go";
+    go.setAttribute("aria-hidden", "true");
+    go.textContent = "›";
+    btn.appendChild(num);
+    btn.appendChild(label);
+    btn.appendChild(go);
+    btn.onclick = function () { showSection(sec); };
+    return btn;
   }
 
   // renderEmptyRow: la fila única de una tabla sin conversaciones — con la
@@ -1210,12 +1252,8 @@
   function loadContacts() {
     return Promise.all([loadContactsPage("contacts", true), loadContactsPage("numbers", true)]);
   }
-  function contactsVisible() {
-    return !document.getElementById("view-resumen").classList.contains("hidden") &&
-      !!document.querySelector('.tab-panel.active[data-panel="contactos"]');
-  }
   function refreshContactsIfVisible() {
-    if (contactsVisible()) loadContacts();
+    if (currentSection === "contactos") loadContacts();
   }
 
   function renderContacts() {
@@ -2144,7 +2182,7 @@
   // tipear para no pedir una página por tecla. Chats y Grupos filtran acá.
   document.getElementById("search").addEventListener("input", function (ev) {
     state.filterText = ev.target.value;
-    if (contactsVisible()) debouncedRefreshContacts();
+    if (currentSection === "contactos") debouncedRefreshContacts();
     else render();
   });
 
@@ -2165,23 +2203,41 @@
     return null;
   }
 
-  // ── tabs: chats / grupos / contactos / agentes / reglas / drafts (S1h
-  // shell, extendido T14) — un search/estado compartido, el switch alterna
-  // qué panel se ve Y si el buscador aplica acá.
-  var tabBtns = document.querySelectorAll(".tab-btn");
+  // ── navegación (T197, P2 — demo 1): una sola lista en la barra, una
+  // pantalla por ítem. Antes eran dos (Vistas y Conversaciones), podían
+  // quedar dos ítems marcados, y después de Clientes las pestañas
+  // conmutaban paneles de una vista oculta. showSection es el ÚNICO lugar
+  // que cambia de pantalla: marca un solo botón, deja ver la vista y el
+  // panel de la sección (el data-sec de .app: el CSS esconde lo que no es
+  // de ella), pone el título de la franja y el buscador, y pide lo que se
+  // pide al entrar. El buscador sigue siendo UNO (T14), compartido.
+  var tabBtns = document.querySelectorAll(".side .tab-btn");
   var tabPanels = document.querySelectorAll(".tab-panel");
   var searchInput = document.getElementById("search");
+  var currentSection = "resumen";
+
+  // sectionTitle: el título de la franja — las mismas claves que los
+  // botones de la barra, escritas literales (TestAllKeysMatchBetween-
+  // FrontendAndCatalog solo ve una clave escrita dentro de t(...)).
+  function sectionTitle(sec) {
+    if (sec === "resumen") return t("nav.summary");
+    if (sec === "chats") return t("tab.chats");
+    if (sec === "grupos") return t("tab.groups");
+    if (sec === "contactos") return t("tab.contacts");
+    if (sec === "clientes") return t("nav.clients");
+    if (sec === "agentes") return t("tab.agents");
+    if (sec === "rules") return t("tab.rules");
+    if (sec === "drafts") return t("tab.drafts");
+    return "";
+  }
 
   // applySearchPlaceholder (T165, ct-2026-09-16-2016): SOLO la parte de
   // abajo que también hay que re-correr cada vez que el catálogo cambia —
   // separada de applySearchForTab (que además resetea el filtro/valor, algo
   // que NO querés hacer con el texto que el dueño ya tecleó solo porque
-  // cambió el idioma en Opciones). Lee la pestaña activa del DOM en vez de
-  // recibirla por parámetro — así funciona igual llamada desde un click de
-  // pestaña o desde applyAllI18n(), sin que ninguna le tenga que pasar nada.
+  // cambió el idioma en Opciones). La llaman showSection y applyAllI18n().
   function applySearchPlaceholder() {
-    var activeBtn = document.querySelector(".tab-btn.active");
-    var placeholder = searchPlaceholder(activeBtn && activeBtn.getAttribute("data-tab"));
+    var placeholder = searchPlaceholder(currentSection);
     searchInput.classList.toggle("hidden", !placeholder);
     if (placeholder) searchInput.placeholder = placeholder;
     return placeholder;
@@ -2202,23 +2258,31 @@
     if (focusInput) searchInput.focus();
   }
 
-  tabBtns.forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      tabBtns.forEach(function (b) { b.classList.remove("active"); });
-      btn.classList.add("active");
-      var name = btn.getAttribute("data-tab");
-      tabPanels.forEach(function (p) {
-        p.classList.toggle("active", p.getAttribute("data-panel") === name);
-      });
-      // Fix del smoke (ct-2026-07-22-2018): foco automático al buscador al
-      // cambiar de subpestaña — antes había que hacer click en el campo a
-      // mano cada vez.
-      applySearchForTab(true);
-      render();
-      // T197: Contactos se pide al entrar, como Clientes — es cuando más
-      // importa que sea de ahora.
-      if (name === "contactos") loadContacts();
+  function showSection(sec) {
+    currentSection = sec;
+    document.querySelector(".app").setAttribute("data-sec", sec);
+    tabBtns.forEach(function (b) {
+      var on = b.getAttribute("data-tab") === sec;
+      b.classList.toggle("active", on);
+      if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); // el lector de pantalla dice dónde estás
     });
+    tabPanels.forEach(function (p) { p.classList.toggle("active", p.getAttribute("data-panel") === sec); });
+    document.getElementById("view-resumen").classList.toggle("hidden", sec === "clientes");
+    document.getElementById("view-clientes").classList.toggle("hidden", sec !== "clientes");
+    document.getElementById("sectitle").textContent = sectionTitle(sec);
+    // Fix del smoke (ct-2026-07-22-2018): foco automático al buscador al
+    // cambiar de sección — antes había que hacer click en el campo a mano
+    // cada vez.
+    applySearchForTab(true);
+    render();
+    // Al ENTRAR se pide de nuevo lo que tiene que ser de ahora, en vez de
+    // mostrar la foto que quedó en memoria: Contactos (T197) y Clientes
+    // (T172d) — el dueño acaba de hacer click, es cuando más le importa.
+    if (sec === "contactos") loadContacts();
+    if (sec === "clientes") loadClients().catch(function () {});
+  }
+  tabBtns.forEach(function (btn) {
+    btn.addEventListener("click", function () { showSection(btn.getAttribute("data-tab")); });
   });
   applySearchForTab(false);
 
@@ -2791,6 +2855,8 @@
     return isGroup(chatJID) ? jidNumber(chatJID) : maskNumber(jidNumber(chatJID));
   }
   function renderPendingDrafts(drafts) {
+    state.pendingDrafts = drafts.length;
+    renderAttention();
     var countLabel = t("draft.pending_count", { n: drafts.length, s: drafts.length === 1 ? "" : "s" });
     document.getElementById("draftcount").textContent = countLabel;
     var badge = document.getElementById("draftbadge");
@@ -3443,6 +3509,7 @@
   function applyAllI18n() {
     applyI18n();
     renderMoodLabel();
+    document.getElementById("sectitle").textContent = sectionTitle(currentSection);
     applySearchPlaceholder();
     refreshGovernorInfo();
     refreshUpdateInfo();
@@ -4175,26 +4242,6 @@
     if (!view || view.classList.contains("hidden")) return;
     loadClients().catch(function () {});
   }
-
-  // ── navegación de vistas (T172d) ──────────────────────────────────────
-  // Dos vistas: el tablero de siempre (#view-resumen) y Clientes. El
-  // switch es el MISMO patrón que las pestañas de Conversaciones de arriba
-  // (toggle de .active en el botón, toggle de .hidden en el contenido), para
-  // que este tablero tenga un solo modo de cambiar de pantalla y no dos.
-  var viewBtns = document.querySelectorAll(".nav-btn");
-  viewBtns.forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      viewBtns.forEach(function (b) { b.classList.remove("active"); });
-      btn.classList.add("active");
-      var name = btn.getAttribute("data-view");
-      document.getElementById("view-resumen").classList.toggle("hidden", name !== "resumen");
-      document.getElementById("view-clientes").classList.toggle("hidden", name !== "clientes");
-      // Al ENTRAR a Clientes se pide el archivo de nuevo en vez de mostrar
-      // la foto que quedó en memoria: el dueño acaba de hacer click, es el
-      // momento en que más le importa que el dato sea de ahora.
-      if (name === "clientes") loadClients().catch(function () {});
-    });
-  });
 
   // T153 2b-i: loadI18n() PRIMERO, no en paralelo — loadStatus() ya usa
   // t() para armar el status/badges (ver su propio código), y si corriera

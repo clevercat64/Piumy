@@ -19,8 +19,10 @@
        Ningún id ni clase que app.js busque cambió de nombre: la carita
        (#face), el ánimo (#moodlabel), el estado (#status), la frescura
        (#fresh), la cuenta (#brandaccount) y las pestañas (.tab-btn) son los
-       mismos elementos, movidos de lugar. -->
-  <div class="app">
+       mismos elementos, movidos de lugar.
+       T197: data-sec dice qué sección se ve (app.js#showSection); el CSS
+       esconde lo que no es de ella. Nace en "resumen", como la barra. -->
+  <div class="app" data-sec="resumen">
     <aside class="side">
 
       <!-- topbar: la marca (carita + "piumy"), arriba de todo, chica y
@@ -64,41 +66,27 @@
           <span class="brand-account hidden" id="brandaccount"></span>
         </div>
 
-        <!-- Las pestañas de Conversaciones, mudadas acá tal cual desde la
-             tarjeta donde vivían (T172b tramo 1). Mismos botones, mismas
-             clases, mismo data-tab: app.js las engancha con
-             querySelectorAll(".tab-btn"), que no mira dónde están, así que
-             la mudanza no le pide una sola línea. El CSS las apila y las
-             esconde cuando #adminpanel está cerrado (sin WhatsApp vinculado
-             no hay nada que navegar). -->
-        <!-- T172d (ct-2026-11-10-225415): la navegacion de VISTAS, que el
-             demo 1 tenia (data-view) y el tramo 1 de T172b no portó — hasta
-             hoy la barra lateral solo llevaba las pestañas de Conversaciones.
-             Resumen es todo el tablero de siempre; Clientes es la vista
-             nueva. Dos botones, no un menú: son dos y el boss eligió el
-             demo donde se ven los dos de una.
-             Se oculta junto con las pestañas cuando #adminpanel está
-             cerrado (mismo :has() del CSS): sin WhatsApp vinculado no hay
-             grupos, y un cliente ES un grupo. -->
-        <div class="side-title" data-i18n="nav.views">Vistas</div>
-        <div class="viewnav">
-          <button class="nav-btn active" type="button" data-view="resumen" data-i18n="nav.summary">Resumen</button>
-          <button class="nav-btn" type="button" data-view="clientes" data-i18n="nav.clients">Clientes</button>
-        </div>
-
-        <div class="side-title" data-i18n="tab.conversations">Conversaciones</div>
+        <!-- T197 (P2, demo 1): UNA sola lista en la barra, una pantalla por
+             ítem y un único ítem marcado. Antes eran dos filas (Vistas:
+             Resumen/Clientes, y las pestañas de Conversaciones) que podían
+             quedar marcadas a la vez, y después de Clientes las pestañas
+             conmutaban paneles de una vista oculta. app.js#showSection
+             decide qué se ve según data-tab. El texto de cada botón va en
+             su PROPIO span (T165, ct-2026-09-16-2016): applyI18n() hace
+             el.textContent = text sobre el elemento con data-i18n — puesto
+             en el <button>, borraría el ícono y el <span id="draftbadge">.
+             Los íconos son los del demo 1; en pantalla angosta se esconden.
+             Sin WhatsApp vinculado la lista entera se oculta (:has() del
+             CSS): no hay nada que navegar. -->
         <div class="tabs">
-          <button class="tab-btn active" type="button" data-tab="chats" data-i18n="tab.chats">Chats</button>
-          <button class="tab-btn" type="button" data-tab="grupos" data-i18n="tab.groups">Grupos</button>
-          <button class="tab-btn" type="button" data-tab="contactos" data-i18n="tab.contacts">Contactos</button>
-          <button class="tab-btn" type="button" data-tab="agentes" data-i18n="tab.agents">Agentes</button>
-          <button class="tab-btn" type="button" data-tab="rules" data-i18n="tab.rules">Reglas</button>
-          <!-- "Drafts" va en su PROPIO span, no data-i18n directo en el
-               botón (T165, ct-2026-09-16-2016): applyI18n() hace
-               el.textContent = text sobre el elemento con data-i18n —
-               puesto en el <button>, borraría el <span id="draftbadge">
-               vecino en cada pasada. -->
-          <button class="tab-btn" type="button" data-tab="drafts"><span data-i18n="tab.drafts">Drafts</span> <span id="draftbadge" class="tabbadge hidden">0</span></button>
+          <button class="tab-btn active" type="button" data-tab="resumen" aria-current="page"><span class="ico" aria-hidden="true">◉</span><span data-i18n="nav.summary">Resumen</span></button>
+          <button class="tab-btn" type="button" data-tab="chats"><span class="ico" aria-hidden="true">✉</span><span data-i18n="tab.chats">Chats</span></button>
+          <button class="tab-btn" type="button" data-tab="grupos"><span class="ico" aria-hidden="true">⛉</span><span data-i18n="tab.groups">Grupos</span></button>
+          <button class="tab-btn" type="button" data-tab="contactos"><span class="ico" aria-hidden="true">⚇</span><span data-i18n="tab.contacts">Contactos</span></button>
+          <button class="tab-btn" type="button" data-tab="clientes"><span class="ico" aria-hidden="true">◈</span><span data-i18n="nav.clients">Clientes</span></button>
+          <button class="tab-btn" type="button" data-tab="agentes"><span class="ico" aria-hidden="true">✸</span><span data-i18n="tab.agents">Agentes</span></button>
+          <button class="tab-btn" type="button" data-tab="rules"><span class="ico" aria-hidden="true">≣</span><span data-i18n="tab.rules">Reglas</span></button>
+          <button class="tab-btn" type="button" data-tab="drafts"><span class="ico" aria-hidden="true">✎</span><span data-i18n="tab.drafts">Borradores</span> <span id="draftbadge" class="tabbadge hidden">0</span></button>
         </div>
       </aside>
 
@@ -117,7 +105,22 @@
         <!-- T188: "alive" e "idle" salían en inglés y en mayúsculas espaciadas
              aunque el tablero estuviera en español. Ahora los dos viven en el
              catálogo; #moodlabel nace vacío y lo llena applyMood (app.js). -->
+        <!-- T197 (P2, demo 1): la franja dice DÓNDE estás (#sectitle, lo
+             llena app.js#showSection) y deja a la vista Privacidad y
+             Configuración, que antes vivían al pie de la tarjeta de salud —
+             a 360/768 px, debajo del primer pantallazo. -->
+        <h1 class="sec-title" id="sectitle"></h1>
         <span class="live"><span class="pulse"></span> <span data-i18n="status.alive">activo</span> · <span id="moodlabel"></span> · <span class="badge" id="status">—</span><span class="fresh" id="fresh"></span></span>
+        <!-- Modo privacidad (T85, ct-2026-08-28-0059; alcance corregido a
+             SOLO números en T93) — ojito que tapa números de teléfono
+             (incluido el propio) para mostrar el tablero en stream sin
+             exponerlos. Nombres, avatares y el nombre propio quedan
+             visibles — el title lo deja explícito para que el dueño no
+             dé por tapado algo que no lo está. -->
+        <div class="sec-actions">
+          <button class="btn gho sm" type="button" id="privacybtn" title="Oculta SOLO números de teléfono (incluido el tuyo) en todo el tablero. Nombres y avatares quedan visibles. Los MENSAJES no se ocultan — si alguien escribió un número a mano en un mensaje, sigue visible." data-i18n-title="tooltip.privacy"><span class="eye" id="privacyeye">◕</span> <span data-i18n="badge.privacy">Privacidad</span></button>
+          <button class="btn gho sm cfg" type="button" id="configbtn" data-i18n="modal.settings_title">Config ⚙</button>
+        </div>
         </div><!-- /.topbar -->
 
         <div class="content">
@@ -230,8 +233,16 @@
       <!-- panel admin: oculto hasta vincular WhatsApp (S1f, ct-2026-07-19-1735) -->
       <div id="adminpanel" class="hidden">
 
-      <!-- estado: compacto, una fila -->
-      <div class="card">
+      <!-- T197 (P2): «Necesita tu atención» — lo que el Resumen contesta
+           primero: ¿hay algo que tenga que hacer? Cada ítem lleva a su
+           sección. Lo llena app.js#renderAttention. Solo en el Resumen. -->
+      <div class="card" id="attention">
+        <span class="eyebrow" data-i18n="attention.title">Necesita tu atención</span>
+        <div class="todo-list" id="attentionlist"></div>
+      </div>
+
+      <!-- estado: compacto, una fila. Solo en el Resumen (T197). -->
+      <div class="card" id="healthcard">
         <div class="status-bar">
           <span class="sbadge">WhatsApp <b id="badgewa">⚪</b></span>
           <span class="sbadge"><span data-i18n="badge.antenna">Antena</span> <b id="badgeantena">⚪</b></span>
@@ -240,28 +251,20 @@
           <span class="sbadge"><span data-i18n="badge.encrypted">Cifrado</span> <b id="badgecifrado">⚪</b></span>
           <span class="sbadge" title="Historial de conversaciones descargadas (backfill): completas / total — se completa solo, en segundo plano" data-i18n-title="tooltip.history"><span data-i18n="badge.history">Historial</span> <b id="badgehistory">—</b></span>
           <span class="sbadge" title="Sincronización de historial en vivo tras un re-pareo" data-i18n-title="tooltip.sync">Sync <b id="badgesync">—</b></span>
-          <!-- Modo privacidad (T85, ct-2026-08-28-0059; alcance corregido a
-               SOLO números en T93) — ojito que tapa números de teléfono
-               (incluido el propio) para mostrar el tablero en stream sin
-               exponerlos. Nombres, avatares y el nombre propio quedan
-               visibles — el title lo deja explícito para que el dueño no
-               dé por tapado algo que no lo está. -->
-          <!-- T172b tramo 2: los dos botones salen de la grilla de renglones
-               y van juntos abajo, separados por un filete. -->
-          <div class="status-actions">
-          <button class="btn gho sm" type="button" id="privacybtn" title="Oculta SOLO números de teléfono (incluido el tuyo) en todo el tablero. Nombres y avatares quedan visibles. Los MENSAJES no se ocultan — si alguien escribió un número a mano en un mensaje, sigue visible." data-i18n-title="tooltip.privacy"><span class="eye" id="privacyeye">◕</span> <span data-i18n="badge.privacy">Privacidad</span></button>
-          <button class="btn gho sm cfg" type="button" id="configbtn" data-i18n="modal.settings_title">Config ⚙</button>
-          </div>
         </div>
       </div>
 
-      <!-- conversaciones: 3 tabs (S1h shell — subcontrato de tabs, ct-2026-07-19) -->
-      <div class="card">
-        <span class="eyebrow" data-i18n="tab.conversations">Conversaciones</span>
+      <!-- las secciones de listas (Chats, Grupos, Contactos, Agentes, Reglas,
+           Borradores): una sola tarjeta, de la que se ve el panel de la
+           sección elegida. Sin título propio desde T197: el título está en
+           la franja de arriba (#sectitle). Oculta en el Resumen. -->
+      <div class="card" id="convcard">
 
         <!-- Las pestañas vivían acá (.tabs-head) hasta T172b tramo 1: se
              mudaron a la barra lateral, arriba en este mismo archivo. El
-             buscador NO se movió — sigue pegado a los paneles que filtra. -->
+             buscador NO se movió — sigue pegado a los paneles que filtra
+             (T197 lo dejó acá a propósito: en la franja de arriba, fija, le
+             quitaría alto a la pantalla del teléfono). -->
 
         <!-- T14 (ct-2026-08-05-1232): un solo buscador, nunca repetido por
              pestaña — vive acá, DENTRO del bloque de pestañas (debajo de
