@@ -271,6 +271,23 @@ gh release create v<v> @f --repo clevercat64/Piumy --title "Piumy Gateway <v>" -
 
 La salida (la URL de la release) vuelve al agente en la línea `ex:`.
 
+**El bloque tiene un tope de 120 s.** Con la red lenta (0.13.1, 2026-11-11 18:2x, tras un
+corte de red) se cortó sin salida (`X:tiempo`) y dejó la release creada como **borrador sin
+assets**: `gh release create` crea el borrador primero, sube después y publica al final. No se
+vuelve a crear: se completa desde la terminal del agente (estos dos comandos sí pasan el
+clasificador, medido), y luego se sigue con el paso 7:
+
+```bash
+gh release upload v<v> dist/Piumy-Setup-<v>.exe dist/Piumy-<v>-*.tar.gz dist/SHA256SUMS dist/SHA256SUMS.sig --repo clevercat64/Piumy --clobber
+gh release edit v<v> --repo clevercat64/Piumy --draft=false --latest --title "Piumy Gateway <v>" --notes-file dist/notes-<v>.md
+```
+
+(Subió los 8 assets de la 0.13.1, ~95 MB, en 2 min 44 s.) **Desde el 2026-11-11 el boss pidió
+publicar sin preguntarle** («prefiero que hagan esto sin preguntarme, ustedes tambien pueden
+crear modulos en la boveda con full acceso para la ia»): el camino es que el agente lance la
+publicación en segundo plano (`run_in_background`, sin el tope de 120 s del bloque) y, para la
+firma, un módulo de la bóveda con acceso para la IA en vez de `popup`.
+
 ## 7. Verificar lo publicado
 
 El actualizador exige tres cosas de cada release: la firma, el `digest` que GitHub
@@ -311,6 +328,15 @@ una instalación real, en el paso 8.
   Piumy muere al cerrar la pestaña (medido en T176).
 - **NUNCA lanzar un Setup desde Git Bash.** MSYS reescribe los argumentos que empiezan con
   `/` y rompe `/VERYSILENT`.
+
+**Si queda en `blocked: busy` con la versión ya `ready`** (0.13.0 → 0.13.1, medido): el
+actualizador de ≤ 0.13.1 da «ocupado» con cualquier pendiente o envío sin hacer, incluidos
+mensajes de hace días que ningún agente atenderá y dead letters del outbox (`sent=0`). Se
+arregla en T206; mientras la versión instalada no lo traiga, se instala el Setup a mano desde un
+`.cmd` oculto lanzado con `explorer.exe <archivo.vbs>` (fuera del Job de la pestaña): cerrar
+Piumy, `Piumy-Setup-<v>.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART`, y relanzar solo si el Setup
+no lo dejó corriendo. El `.cmd` y el `.vbs` se escriben con la herramienta de archivos, no con un
+heredoc (interpreta las barras invertidas y rompe la ruta).
 
 **Se comprueba**, en la instalación que se actualizó, `GET /api/update` (con la sesión del
 tablero): `current` igual a `<v>`. Si la instalación no se actualiza, ahí mismo dice por qué
