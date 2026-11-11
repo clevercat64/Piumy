@@ -5,10 +5,15 @@ package restapi
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
+
+	"golang.org/x/text/unicode/norm"
 
 	"piumy-gateway/internal/capipush"
 	"piumy-gateway/internal/config"
@@ -340,7 +345,7 @@ func (d Deps) siblingJIDs(ctx context.Context, jid string) ([]string, error) {
 	if d.Store == nil {
 		return []string{jid}, nil
 	}
-	chats, err := d.Store.ListChats(dashboardChatLimit)
+	chats, err := d.Store.ListChatRows(dashboardChatLimit) // T198: only the jids are compared, no enrich
 	if err != nil {
 		return nil, err
 	}
@@ -510,6 +515,17 @@ func rulesSourceFor(c store.Chat, isGroup bool, typeGroup, originNew, originCont
 // T18B retired chat_groups and rewired ChatOrigin onto group_members —
 // same table this exclusion already used, so the two answer the same
 // question from the same source now. Consolidated onto ChatOrigin here too.
+//
+// T198 (ct-2026-11-11-1145, the real account took ≈5 s for 2.023 rows):
+// the rows come from ListChatRows, not ListChats — enrichChat's 3-4 queries
+// per chat are gone. Origin is store.OriginFor over withMessages and the
+// group_members rows already loaded (ChatOrigin's own criterion), and
+// last_text is read only for the rows actually sent (chatRow.textJID).
+// Optional ?type/origin/contact/q/sort/limit/offset (parseChatsQuery) answer
+// one page plus the total; without them the answer is the bare array of
+// every row, byte for byte what it was before (testdata/chats-golden.json).
+// Members and withMessages are never cut to the page: they decide which
+// rows exist (dedup, «gana el 1:1», group_discovered) and the total.
 
 // manuallyDecided (T66b, ct-2026-08-11-1827) reports whether the owner
 // explicitly decided something about c — as opposed to c sitting at
@@ -537,7 +553,12 @@ func (d Deps) handleChats(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "store not available"})
 		return
 	}
-	chats, err := d.Store.ListChats(dashboardChatLimit)
+	q, err := parseChatsQuery(r.URL.Query())
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	chats, err := d.Store.ListChatRows(dashboardChatLimit)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -568,6 +589,13 @@ func (d Deps) handleChats(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
+	}
+	inGroup := map[string]bool{}
+	for _, m := range members {
+		inGroup[m.MemberJID] = true
+	}
+	for i := range chats {
+		chats[i].Origin = store.OriginFor(withMessages[chats[i].JID], inGroup[chats[i].JID])
 	}
 
 	ctx := r.Context()
@@ -607,7 +635,7 @@ func (d Deps) handleChats(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	out := []chatOut{}
+	rows := []chatRow{}
 	seenCanon := map[string]bool{}
 	for _, c := range chats {
 		if c.JID == store.StatusBroadcastJID {
@@ -632,17 +660,17 @@ func (d Deps) handleChats(w http.ResponseWriter, r *http.Request) {
 		if t == "p2p" && canon != c.JID {
 			resolvedNumber = canon
 		}
-		// hasMessages/lastTS/lastText: prefer this row's OWN message data,
+		// hasMessages/lastTS/textJID: prefer this row's OWN message data,
 		// but fall back to canonMessageChat[canon] when a deduped-away
 		// sibling (see canonMessageChat's doc) is the one actually holding
 		// the conversation — same person, so its last message IS this row's
 		// last message for display purposes.
 		hasMessages := withMessages[c.JID] || withMessages[canon]
-		lastTS, lastText := c.LastTS, c.LastText
+		lastTS, textJID := c.LastTS, c.JID
 		if msgChat, ok := canonMessageChat[canon]; ok {
 			hasMessages = true
 			if msgChat.LastTS > lastTS {
-				lastTS, lastText = msgChat.LastTS, msgChat.LastText
+				lastTS, textJID = msgChat.LastTS, msgChat.JID
 			}
 		}
 		// T18B: rebased onto c.Origin (single source now — see the doc
@@ -652,7 +680,7 @@ func (d Deps) handleChats(w http.ResponseWriter, r *http.Request) {
 		if t == "p2p" && c.ContactName == "" && c.Origin == "group_discovered" {
 			continue
 		}
-		out = append(out, chatOut{
+		rows = append(rows, chatRow{textJID: textJID, out: chatOut{
 			// nil sender (T132, ct-2026-09-03-0624): this is a chat LISTING,
 			// no specific speaker in context — the chat's own level, same as
 			// before that contract.
@@ -660,13 +688,13 @@ func (d Deps) handleChats(w http.ResponseWriter, r *http.Request) {
 			IsBoss: c.IsBoss, IsApprover: c.IsApprover, ConfirmationMode: c.ConfirmationMode, Status: c.Status,
 			ConfigLevel: store.ConfigLevel(c),
 			LastTS:      lastTS, Rules: c.Rules, Memory: c.Memory, Context: c.Context,
-			ContactName: c.ContactName, LastText: lastText,
-			Type: t, HasMessages: hasMessages, Origin: c.Origin,
+			ContactName: c.ContactName,
+			Type:        t, HasMessages: hasMessages, Origin: c.Origin,
 			HistoryState:   c.HistoryState,
 			ResolvedNumber: resolvedNumber,
 			IsContact:      c.ContactName != "",
 			RulesSource:    rulesSourceFor(c, isGroup, rulesTypeGroup, rulesOriginNew, rulesOriginContact),
-		})
+		}})
 	}
 	for _, m := range members {
 		canon := d.resolveCanonical(ctx, m.MemberJID)
@@ -712,9 +740,223 @@ func (d Deps) handleChats(w http.ResponseWriter, r *http.Request) {
 				row.Mode = info.Mode
 			}
 		}
-		out = append(out, row)
+		rows = append(rows, chatRow{out: row})
 	}
-	writeJSON(w, http.StatusOK, out)
+	if !q.paged {
+		out, err := d.withLastText(rows)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	kept := rows[:0]
+	for _, row := range rows {
+		if q.keep(row.out) {
+			kept = append(kept, row)
+		}
+	}
+	q.sortRows(kept)
+	page, err := d.withLastText(q.page(kept))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, chatsPage{Chats: page, Total: len(kept)})
+}
+
+// chatRow is one chatOut before its last_text is read: textJID is the jid
+// whose LastMessage gives it — the row's own, or the deduped-away @lid
+// sibling that holds the conversation (canonMessageChat). Empty for a
+// group_member pseudo-row. Reading it only for the rows actually sent is
+// what keeps a page cheap (T198).
+type chatRow struct {
+	out     chatOut
+	textJID string
+}
+
+// withLastText reads each row's last_text (one LastMessage per row, the
+// same read enrichChat did for every chat before T198) and returns the
+// chatOuts, never nil — an empty list still serializes as [].
+func (d Deps) withLastText(rows []chatRow) ([]chatOut, error) {
+	out := make([]chatOut, 0, len(rows))
+	for _, row := range rows {
+		if row.textJID != "" {
+			m, ok, err := d.Store.LastMessage(row.textJID)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				row.out.LastText = m.Text
+			}
+		}
+		out = append(out, row.out)
+	}
+	return out, nil
+}
+
+// chatsPage is GET /api/chats' answer when any T198 parameter came: one page
+// plus how many rows passed the filter before the cut («N de M»).
+type chatsPage struct {
+	Chats []chatOut `json:"chats"`
+	Total int       `json:"total"`
+}
+
+// chatsMaxLimit caps ?limit: a page, not a way around paging.
+const chatsMaxLimit = 500
+
+// chatsParams are the query parameters that switch GET /api/chats to its
+// paged answer. ?key= isn't one: the dashboard sends it on every call.
+var chatsParams = []string{"type", "origin", "contact", "q", "sort", "limit", "offset"}
+
+// chatsQuery is GET /api/chats' optional filter and page (T198,
+// ct-2026-11-11-1145). paged is false when none of chatsParams came; the
+// endpoint then answers the bare array, every row, as before T198.
+type chatsQuery struct {
+	paged   bool
+	types   map[string]bool // empty = every type
+	origin  string
+	contact string // "1" | "0" | "" (both)
+	needle  string // ?q folded by foldSearch
+	sort    string // "recent" | "name"
+	limit   int    // 0 = no cut
+	offset  int
+}
+
+func parseChatsQuery(v url.Values) (chatsQuery, error) {
+	q := chatsQuery{sort: "recent"}
+	for _, k := range chatsParams {
+		q.paged = q.paged || v.Has(k)
+	}
+	if s := v.Get("type"); s != "" {
+		q.types = map[string]bool{}
+		for _, t := range strings.Split(s, ",") {
+			if t != "p2p" && t != "group" && t != "group_member" {
+				return q, fmt.Errorf("type %q: want p2p, group or group_member", t)
+			}
+			q.types[t] = true
+		}
+	}
+	switch q.origin = v.Get("origin"); q.origin {
+	case "", "inbound_spoke", "synced_contact", "group_discovered":
+	default:
+		return q, fmt.Errorf("origin %q: want inbound_spoke, synced_contact or group_discovered", q.origin)
+	}
+	switch q.contact = v.Get("contact"); q.contact {
+	case "", "1", "0":
+	default:
+		return q, fmt.Errorf("contact %q: want 1 or 0", q.contact)
+	}
+	if s := v.Get("sort"); s != "" {
+		if s != "recent" && s != "name" {
+			return q, fmt.Errorf("sort %q: want recent or name", s)
+		}
+		q.sort = s
+	}
+	q.needle = foldSearch(v.Get("q"))
+	var err error
+	if q.limit, err = intParam(v, "limit", 1, chatsMaxLimit); err != nil {
+		return q, err
+	}
+	if q.offset, err = intParam(v, "offset", 0, math.MaxInt); err != nil {
+		return q, err
+	}
+	return q, nil
+}
+
+// intParam reads an optional integer query parameter within [min, max];
+// 0 when it's absent.
+func intParam(v url.Values, key string, min, max int) (int, error) {
+	s := v.Get(key)
+	if s == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < min || n > max {
+		return 0, fmt.Errorf("%s %q: want an integer from %d to %d", key, s, min, max)
+	}
+	return n, nil
+}
+
+// keep reports whether c passes every filter q carries. ?q matches the
+// agenda name, the WhatsApp name, the jid's number and the @lid's resolved
+// number — everything app.js's matchesNeedle compares, on both tabs.
+func (q chatsQuery) keep(c chatOut) bool {
+	if len(q.types) > 0 && !q.types[c.Type] {
+		return false
+	}
+	if q.origin != "" && c.Origin != q.origin {
+		return false
+	}
+	if q.contact != "" && c.IsContact != (q.contact == "1") {
+		return false
+	}
+	if q.needle == "" {
+		return true
+	}
+	return strings.Contains(foldSearch(c.ContactName), q.needle) ||
+		strings.Contains(foldSearch(c.Name), q.needle) ||
+		strings.Contains(jidUser(c.JID), q.needle) ||
+		strings.Contains(jidUser(c.ResolvedNumber), q.needle)
+}
+
+// sortRows orders a paged answer: "recent" by last_ts, newest first;
+// "name" by app.js's contactLabel (agenda name, else WhatsApp name, else
+// the number), folded. The jid breaks ties, so pages never overlap.
+func (q chatsQuery) sortRows(rows []chatRow) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		a, b := rows[i].out, rows[j].out
+		if q.sort == "name" {
+			if ka, kb := contactKey(a), contactKey(b); ka != kb {
+				return ka < kb
+			}
+		} else if a.LastTS != b.LastTS {
+			return a.LastTS > b.LastTS
+		}
+		return a.JID < b.JID
+	})
+}
+
+// page cuts rows to q's offset and limit.
+func (q chatsQuery) page(rows []chatRow) []chatRow {
+	if q.offset >= len(rows) {
+		return nil
+	}
+	rows = rows[q.offset:]
+	if q.limit > 0 && q.limit < len(rows) {
+		rows = rows[:q.limit]
+	}
+	return rows
+}
+
+func contactKey(c chatOut) string {
+	switch {
+	case c.ContactName != "":
+		return foldSearch(c.ContactName)
+	case c.Name != "":
+		return foldSearch(c.Name)
+	}
+	return jidUser(c.JID)
+}
+
+// jidUser is app.js's jidNumber: the part of a jid before the @.
+func jidUser(jid string) string {
+	user, _, _ := strings.Cut(jid, "@")
+	return user
+}
+
+// foldSearch is app.js's foldAccents on the server — lowercase, NFD, then
+// drop U+0300..U+036F (combining diacritical marks) — so ?q finds what the
+// dashboard's own filter finds: "mama" matches "Mamá".
+func foldSearch(s string) string {
+	var b strings.Builder
+	for _, r := range norm.NFD.String(strings.ToLower(s)) {
+		if r < 0x300 || r > 0x36f {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // messageMediaOut is messageOut's media sub-shape (ct-2026-07-21-1358, popup

@@ -680,6 +680,14 @@ Piumy. Ver `docs/F1A-STORE-ACCESO.md`.
   `ConfirmationMode` ∈ `none|discretion|always` (F4-DESIGN §4); validar el
   enum es responsabilidad del caller (mcpserver/restapi), no de este método.
 - `ListChats(limit)` / `GetChat(jid) (Chat, ok, error)`
+- `ListChatRows(limit)` (T198, ct-2026-11-11-1145) — `ListChats` sin
+  `enrichChat`: las columnas tal cual, sin `Origin`/`LastSpeaker`/`LastText`/
+  `LastModel` (y el claim crudo, no el efectivo). Para quien lee muchas filas
+  y solo necesita columnas: `enrichChat` cuesta 3-4 consultas por chat. La
+  usan `GET /api/chats` y `siblingJIDs`; `ListChats` = esto + enrich.
+- `OriginFor(hasRealMessage, inGroup)` (T198) — el mapeo de `ChatOrigin`
+  con sus dos búsquedas ya hechas; `ChatOrigin` lo usa, y `GET /api/chats`
+  lo aplica en memoria con `ChatJIDsWithMessages` + `ListAllGroupMembers`.
 - `ChatOrigin(jid)` — inbound_spoke | group_discovered | synced_contact.
   `inbound_spoke` = existe un mensaje REAL (`realMessageSQL`, excluye ruido
   de protocolo y `status@broadcast`) en CUALQUIER dirección — no exige que
@@ -9146,6 +9154,18 @@ del dueño desde la LAN, sin agente de por medio. Grupo/perfil NO están acá
     a la otra. `status` expuesto crudo (no un bool derivado) — el dashboard
     solo mira si es `"ignored"`, pero nada se esconde a quien pegue a la API
     directo.
+    **Por partes (T198, ct-2026-11-11-1145, `docs/T198-CHATS-POR-PARTES.md`):**
+    parámetros opcionales `type` (`p2p,group,group_member`, con comas),
+    `origin` (`inbound_spoke|synced_contact|group_discovered`), `contact`
+    (`1|0`), `q` (sin acentos ni mayúsculas, como `foldAccents` de app.js,
+    sobre `contact_name`, `name`, número del jid y número resuelto), `sort`
+    (`recent` por defecto | `name`, el `contactLabel` de app.js), `limit`
+    (1..500) y `offset`. Con alguno → `{"chats":[…],"total":N}` (`total` =
+    filas que pasan el filtro, antes de cortar); inválido → 400. Sin
+    ninguno (`key` no cuenta) → el arreglo de siempre, byte a byte
+    (`testdata/chats-golden.json`). Pestaña Chats:
+    `?type=p2p&origin=inbound_spoke`; Contactos:
+    `?type=p2p&contact=1&sort=name&limit=50` (y `contact=0` para Números).
   - `GET /api/messages?chat=<jid>&limit=50` (ct-2026-07-10-2312 addendum,
     panel de chat) → `[]{from_me, text, ts}`, lee `store.GetMessages` (ya
     existía) y invierte el orden (newest-first → oldest-first, un log de

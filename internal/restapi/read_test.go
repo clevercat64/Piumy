@@ -4,10 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -1690,5 +1697,333 @@ func TestAgentChatsEndpointRequiresAgentID(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("status without agent_id = %d, want 400", resp.StatusCode)
+	}
+}
+
+// chatsShape sizes seedChats' synthetic 555 base (T198, ct-2026-11-11-1145).
+type chatsShape struct {
+	conversations   int // p2p with real messages; every other one lives under a @lid sibling
+	contacts        int // agenda entries never messaged
+	numbers         int // WhatsApp-name-only rows never messaged, in no group
+	groups          int
+	membersPerGroup int
+	messagesPerChat int
+}
+
+// goldenChats walks every branch of handleChats with a few rows each.
+// realChats is the owner's account as T192 measured it over GET (12 groups,
+// ≈650 member rows, ≈620 agenda contacts, ≈750 numbers, 13 conversations);
+// the real message count can't be seen over GET, ≈20.000 is a guess.
+var (
+	goldenChats = chatsShape{conversations: 4, contacts: 2, numbers: 2, groups: 2, membersPerGroup: 5, messagesPerChat: 2}
+	realChats   = chatsShape{conversations: 13, contacts: 620, numbers: 750, groups: 12, membersPerGroup: 54, messagesPerChat: 760}
+)
+
+// seedChats fills st with s and returns the @lid map the rows need. Every
+// row gets its own last_ts, so ORDER BY last_ts never has to break a tie.
+func seedChats(tb testing.TB, st *store.Store, s chatsShape) fakeLIDResolver {
+	tb.Helper()
+	must := func(err error) {
+		tb.Helper()
+		if err != nil {
+			tb.Fatal(err)
+		}
+	}
+	lids := fakeLIDResolver{}
+	seq, ts := 0, int64(0)
+	jid := func(domain string) string { seq++; return fmt.Sprintf("555%07d@%s", seq, domain) }
+	touch := func(j, name string) { ts++; must(st.TouchChat(j, name, ts)) }
+	talk := func(chat string) {
+		for i := 0; i < s.messagesPerChat; i++ {
+			ts++
+			must(st.AddMessage(store.Message{ChatJID: chat, ID: fmt.Sprintf("m%d", ts), FromMe: i%3 == 0, Text: fmt.Sprintf("mensaje %d", ts), TS: ts}))
+		}
+	}
+
+	must(st.KVSet(store.SettingRulesTypeGroup, "reglas de grupo"))
+	must(st.KVSet(store.SettingRulesDefaultContact, "reglas de contacto"))
+
+	boss := jid("s.whatsapp.net")
+	touch(boss, "Dueño")
+	must(st.SetIsBoss(boss, true))
+	must(st.SetChatRules(boss, "sé breve"))
+	talk(boss)
+	approver := jid("s.whatsapp.net")
+	touch(approver, "Secretaría")
+	must(st.SetIsApprover(approver, true))
+	talk(store.StatusBroadcastJID)
+	lidOnly := jid("lid") // resolves to a number with no chats row of its own
+	lids[lidOnly] = jid("s.whatsapp.net")
+	talk(lidOnly)
+
+	var talkers []string
+	for i := 0; i < s.conversations; i++ {
+		pn := jid("s.whatsapp.net")
+		touch(pn, "")
+		must(st.SetContactName(pn, fmt.Sprintf("Contacto %d", i)))
+		chat := pn
+		if i%2 == 1 {
+			chat = jid("lid")
+			lids[chat] = pn
+			touch(chat, fmt.Sprintf("Contacto %d (lid)", i))
+		}
+		talk(chat)
+		talkers = append(talkers, chat)
+	}
+	mama := jid("s.whatsapp.net")
+	touch(mama, "")
+	must(st.SetContactName(mama, "Mamá"))
+	agenda := []string{mama}
+	for i := 0; i < s.contacts; i++ {
+		j := jid("s.whatsapp.net")
+		touch(j, "")
+		must(st.SetContactName(j, fmt.Sprintf("Agenda %d", i)))
+		agenda = append(agenda, j)
+	}
+	for i := 0; i < s.numbers; i++ {
+		touch(jid("s.whatsapp.net"), fmt.Sprintf("Número %d", i))
+	}
+	for g := 0; g < s.groups; g++ {
+		group := jid("g.us")
+		touch(group, fmt.Sprintf("Grupo %d", g))
+		for m := 0; m < s.membersPerGroup; m++ {
+			member := jid("s.whatsapp.net")
+			switch m % 5 {
+			case 1: // known only from the group: a phantom p2p row the list hides
+				touch(member, fmt.Sprintf("Miembro %d-%d", g, m))
+				if m == 1 {
+					must(st.SetStatus(member, "agent_exclusive:agente-1")) // T66b: a decision, not noise
+				}
+			case 2: // a @lid member who is an agenda contact
+				member = jid("lid")
+				lids[member] = agenda[(g*s.membersPerGroup+m)%len(agenda)]
+			case 3: // someone who also talks 1:1 («gana el 1:1»)
+				member = talkers[(g+m)%len(talkers)]
+			}
+			ts++
+			must(st.UpsertGroupMember(group, member, "", ts))
+		}
+		talk(group)
+	}
+	return lids
+}
+
+// updateGolden rewrites testdata/chats-golden.json from the handler as it
+// stands: go test ./internal/restapi -run ChatsEndpointNoParams -update-golden
+var updateGolden = flag.Bool("update-golden", false, "rewrite testdata/chats-golden.json")
+
+// TestChatsEndpointNoParamsMatchesGolden (T198, ct-2026-11-11-1145): without
+// T198's parameters GET /api/chats answers byte for byte what it answered
+// before them — the golden was written by the handler before T198 touched
+// it. ?key= is what the dashboard always sends: it must not switch the
+// paged answer on. Compared indented so a diff reads row by row.
+func TestChatsEndpointNoParamsMatchesGolden(t *testing.T) {
+	st := newTestStore(t)
+	srv := httptest.NewServer(NewMux(Deps{Store: st, LIDResolver: seedChats(t, st, goldenChats)}))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/chats?key=x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got bytes.Buffer
+	if err := json.Indent(&got, body, "", "  "); err != nil {
+		t.Fatalf("indent: %v (body=%s)", err, body)
+	}
+	golden := filepath.Join("testdata", "chats-golden.json")
+	if *updateGolden {
+		if err := os.MkdirAll("testdata", 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(golden, got.Bytes(), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got.Bytes(), bytes.ReplaceAll(want, []byte("\r\n"), []byte("\n"))) {
+		t.Errorf("GET /api/chats without parameters changed:\n%s", got.String())
+	}
+}
+
+func getChatsPage(t *testing.T, base, query string) chatsPage {
+	t.Helper()
+	var p chatsPage
+	if resp := getJSON(t, base+"/api/chats?"+query, &p); resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/chats?%s: status %d", query, resp.StatusCode)
+	}
+	return p
+}
+
+// byIdentity sorts rows by jid, then group_jid — one row per pair.
+func byIdentity(rows []chatOut) []chatOut {
+	rows = append([]chatOut(nil), rows...)
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].JID != rows[j].JID {
+			return rows[i].JID < rows[j].JID
+		}
+		return rows[i].GroupJID < rows[j].GroupJID
+	})
+	return rows
+}
+
+// TestChatsEndpointPagesAddUpToTheList (T198, ct-2026-11-11-1145): the pages
+// of a filter, put together, are exactly that filter over the unpaged list —
+// same rows and fields, last_text from a @lid sibling included, no row twice
+// — total counts them, and each sort holds across page boundaries.
+func TestChatsEndpointPagesAddUpToTheList(t *testing.T) {
+	st := newTestStore(t)
+	srv := httptest.NewServer(NewMux(Deps{Store: st, LIDResolver: seedChats(t, st, goldenChats)}))
+	defer srv.Close()
+	var all []chatOut
+	getJSON(t, srv.URL+"/api/chats", &all)
+
+	for _, tc := range []struct {
+		query string
+		want  func(chatOut) bool
+	}{
+		{"type=p2p,group,group_member", func(chatOut) bool { return true }},
+		{"type=p2p&origin=inbound_spoke", func(c chatOut) bool { return c.Type == "p2p" && c.Origin == "inbound_spoke" }},
+		{"type=p2p&contact=1&sort=name", func(c chatOut) bool { return c.Type == "p2p" && c.IsContact }},
+		{"type=p2p&contact=0", func(c chatOut) bool { return c.Type == "p2p" && !c.IsContact }},
+		{"type=group,group_member", func(c chatOut) bool { return c.Type != "p2p" }},
+	} {
+		var want []chatOut
+		for _, c := range all {
+			if tc.want(c) {
+				want = append(want, c)
+			}
+		}
+		var got []chatOut
+		for offset := 0; ; offset += 3 {
+			p := getChatsPage(t, srv.URL, fmt.Sprintf("%s&limit=3&offset=%d", tc.query, offset))
+			if p.Total != len(want) {
+				t.Errorf("%s offset=%d: total = %d, want %d", tc.query, offset, p.Total, len(want))
+			}
+			if len(p.Chats) == 0 {
+				break
+			}
+			got = append(got, p.Chats...)
+		}
+		if len(want) == 0 {
+			t.Fatalf("%s: the fixture has no such row, the case proves nothing", tc.query)
+		}
+		if !reflect.DeepEqual(byIdentity(got), byIdentity(want)) {
+			t.Errorf("%s: pages put together =\n%+v\nwant\n%+v", tc.query, got, want)
+		}
+		if !strings.Contains(tc.query, "sort=name") {
+			for i := 1; i < len(got); i++ {
+				if got[i].LastTS > got[i-1].LastTS {
+					t.Errorf("%s: row %d last_ts %d after %d, want newest first", tc.query, i, got[i].LastTS, got[i-1].LastTS)
+				}
+			}
+			continue
+		}
+		var names []string
+		for _, c := range got {
+			names = append(names, c.ContactName)
+		}
+		if want := []string{"Agenda 0", "Agenda 1", "Contacto 0", "Contacto 1", "Contacto 2", "Contacto 3", "Mamá"}; !reflect.DeepEqual(names, want) {
+			t.Errorf("%s: names = %q, want %q", tc.query, names, want)
+		}
+	}
+}
+
+// TestChatsEndpointSearch (T198): ?q folds case and accents the way app.js
+// does ("mama" finds "Mamá"), matches a @lid row by the number it resolves
+// to, and an empty result is still a list.
+func TestChatsEndpointSearch(t *testing.T) {
+	st := newTestStore(t)
+	srv := httptest.NewServer(NewMux(Deps{Store: st, LIDResolver: seedChats(t, st, goldenChats)}))
+	defer srv.Close()
+	var all []chatOut
+	getJSON(t, srv.URL+"/api/chats", &all)
+
+	for _, q := range []string{"mama", url.QueryEscape("MAMÁ")} {
+		if p := getChatsPage(t, srv.URL, "q="+q); len(p.Chats) != 1 || p.Chats[0].ContactName != "Mamá" || p.Total != 1 {
+			t.Errorf("q=%s: %+v, want only Mamá", q, p)
+		}
+	}
+
+	var lidRow chatOut
+	for _, c := range all {
+		if c.Type == "p2p" && strings.HasSuffix(c.JID, "@lid") {
+			lidRow = c
+		}
+	}
+	if lidRow.ResolvedNumber == "" {
+		t.Fatal("the fixture has no @lid-only row")
+	}
+	number := jidUser(lidRow.ResolvedNumber)
+	if p := getChatsPage(t, srv.URL, "q="+number); len(p.Chats) != 1 || p.Chats[0].JID != lidRow.JID {
+		t.Errorf("q=%s: %+v, want only %s", number, p.Chats, lidRow.JID)
+	}
+
+	resp, err := http.Get(srv.URL + "/api/chats?q=nadie")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !bytes.Contains(body, []byte(`"chats":[]`)) || !bytes.Contains(body, []byte(`"total":0`)) {
+		t.Errorf("q=nadie: body = %s, want an empty list and total 0", body)
+	}
+}
+
+// TestChatsEndpointRejectsBadParams (T198): a parameter it can't honor is a
+// 400, never a silently different list.
+func TestChatsEndpointRejectsBadParams(t *testing.T) {
+	st := newTestStore(t)
+	srv := httptest.NewServer(NewMux(Deps{Store: st}))
+	defer srv.Close()
+	for _, q := range []string{"type=p2p,chat", "origin=nuevo", "contact=si", "sort=old", "limit=0", "limit=501", "limit=x", "offset=-1"} {
+		resp, err := http.Get(srv.URL + "/api/chats?" + q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("?%s: status %d, want 400", q, resp.StatusCode)
+		}
+	}
+}
+
+// BenchmarkHandleChats measures T198 on the real-sized 555 base:
+// go test ./internal/restapi -run '^$' -bench HandleChats -benchtime 10x
+// bytes/resp is the body the dashboard downloads for each tab.
+func BenchmarkHandleChats(b *testing.B) {
+	st, err := store.Open(filepath.Join(b.TempDir(), "piumy.db"))
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer st.Close()
+	h := NewMux(Deps{Store: st, LIDResolver: seedChats(b, st, realChats)})
+
+	for _, bc := range []struct{ name, query string }{
+		{"sin_parametros", ""},
+		{"chats", "?type=p2p&origin=inbound_spoke"},
+		{"contactos_p1", "?type=p2p&contact=1&sort=name&limit=50"},
+		{"busqueda", "?type=p2p&q=agenda%2012&limit=50"},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			var n int
+			for i := 0; i < b.N; i++ {
+				rec := httptest.NewRecorder()
+				h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/chats"+bc.query, nil))
+				if rec.Code != http.StatusOK {
+					b.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+				}
+				n = rec.Body.Len()
+			}
+			b.ReportMetric(float64(n), "bytes/resp")
+		})
 	}
 }

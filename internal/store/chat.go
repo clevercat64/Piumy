@@ -983,7 +983,26 @@ func scanChat(scan func(dest ...any) error) (Chat, error) {
 	return c, nil
 }
 
+// ListChats is ListChatRows with enrichChat on every row.
 func (s *Store) ListChats(limit int) ([]Chat, error) {
+	out, err := s.ListChatRows(limit)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		if err := s.enrichChat(&out[i]); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// ListChatRows returns up to limit chats rows as stored, most recent first,
+// WITHOUT enrichChat (T198, ct-2026-11-11-1145): Origin, LastSpeaker,
+// LastText and LastModel stay empty, and ClaimedBy/ClaimedUntil are the raw
+// columns, not the effective claim. For a caller that reads many rows and
+// needs only the columns — enrichChat costs 3-4 queries per chat.
+func (s *Store) ListChatRows(limit int) ([]Chat, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -1000,15 +1019,7 @@ func (s *Store) ListChats(limit int) ([]Chat, error) {
 		}
 		out = append(out, c)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	for i := range out {
-		if err := s.enrichChat(&out[i]); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
+	return out, rows.Err()
 }
 
 // GetChat returns a single chat by JID. ok is false if the chat doesn't exist.
@@ -1105,21 +1116,30 @@ func effectiveClaim(claimedBy string, claimedUntil, now int64) (string, int64) {
 // here until the next one of those. Still strictly better than before
 // (which never worked at all).
 func (s *Store) ChatOrigin(jid string) (string, error) {
-	var hasRealMessage bool
+	var hasRealMessage, inGroup bool
 	if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM messages WHERE chat_jid = ? AND `+realMessageSQL+`)`, jid).Scan(&hasRealMessage); err != nil {
 		return "", err
 	}
-	if hasRealMessage {
-		return "inbound_spoke", nil
+	if !hasRealMessage {
+		if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM group_members WHERE member_jid = ?)`, jid).Scan(&inGroup); err != nil {
+			return "", err
+		}
 	}
-	var inGroup bool
-	if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM group_members WHERE member_jid = ?)`, jid).Scan(&inGroup); err != nil {
-		return "", err
+	return OriginFor(hasRealMessage, inGroup), nil
+}
+
+// OriginFor is ChatOrigin's mapping once its two lookups are answered —
+// split out (T198, ct-2026-11-11-1145) so a listing already holding
+// ChatJIDsWithMessages (same realMessageSQL) and the group_members rows
+// derives the same Origin in memory, without 1-2 queries per chat.
+func OriginFor(hasRealMessage, inGroup bool) string {
+	switch {
+	case hasRealMessage:
+		return "inbound_spoke"
+	case inGroup:
+		return "group_discovered"
 	}
-	if inGroup {
-		return "group_discovered", nil
-	}
-	return "synced_contact", nil
+	return "synced_contact"
 }
 
 // EffectiveRules resolves a chat's rules through the hierarchy ("sin rules
