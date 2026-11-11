@@ -6,6 +6,25 @@ Se actualiza en cada deploy/build junto con el relanzamiento del gateway.
 
 ---
 
+## 0.12.4 — 2026-11-10
+
+### Fixed
+- **Cambiar la foto de perfil desde el tablero ya debería funcionar.** Antes
+  WhatsApp no contestaba y el botón fallaba a los 75 segundos. Piumy mandaba
+  un dato de más que WhatsApp no espera para la foto propia; ahora va igual que
+  en otros clientes que sí la cambian. Pendiente de confirmar contra WhatsApp.
+
+### Added
+- **El tablero dice hace cuánto se actualizó** y avisa "sin señal,
+  reconectando..." si se corta la conexión; se corrige solo al volver.
+  Un número que Piumy no informó se muestra como "—", no como 0.
+- **Instalación en Linux y macOS.** Un archivo de descarga por plataforma
+  (Linux amd64/arm64/armv7, macOS Intel/Apple) con un instalador que deja Piumy
+  arrancando solo y actualiza sin borrar la sesión de WhatsApp ni las claves.
+  No probado todavía en un Mac ni en un Linux reales.
+
+---
+
 ## 0.12.3 — 2026-09-30
 
 ### Fixed
