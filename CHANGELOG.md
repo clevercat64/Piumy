@@ -6,6 +6,19 @@ Se actualiza en cada deploy/build junto con el relanzamiento del gateway.
 
 ---
 
+## 0.13.3 — 2026-11-12
+
+### Fixed
+- **Tras rechazar un borrador, el agente vuelve a recibir el chat al instante**, aunque ya
+  haya otro borrador pendiente: antes esperaba la misma pausa creciente que un mensaje sin
+  atender (T205).
+
+### Notes
+- Es la primera versión que la 0.13.2 debería instalar sola, sin el Setup a mano: la prueba
+  de que el actualizador ya no queda trabado (T206).
+
+---
+
 ## 0.13.2 — 2026-11-11
 
 ### Added
