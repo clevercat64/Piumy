@@ -1,6 +1,9 @@
 package store
 
-import "database/sql"
+import (
+	"database/sql"
+	"time"
+)
 
 // Draft is an auto-reply worker's candidate reply — NOT the outbox. A draft
 // only ever reaches the outbox (and gets sent) once approved via the
@@ -269,6 +272,14 @@ func (s *Store) EditDraft(id int64, text string) (ok bool, err error) {
 // messages for a redispatch (round < cap) or leave the chat for the owner
 // to resolve directly via edit_draft/discard_draft (round == cap). ok is
 // false if the draft doesn't exist or wasn't pending.
+//
+// Stamps rejected_ts with time.Now() itself (T205) rather than taking it
+// as a parameter — the one store write in this file that doesn't, on
+// purpose: adding a ts param would change the signature for all existing
+// callers across 5 packages, one of which (capipush_test.go) regularly
+// carries other agents' own uncommitted work. MostRecentRejectionAt is the
+// only reader, and it only cares about ordering real dispatches against a
+// real wall-clock event, so a caller-supplied test ts buys nothing here.
 func (s *Store) RejectDraft(id int64, reason string) (chatJID string, burstMaxTS int64, round int, ok bool, err error) {
 	err = s.db.QueryRow(`SELECT chat_jid, COALESCE(burst_max_ts,0), round FROM drafts WHERE id = ? AND status = 'pending'`, id).
 		Scan(&chatJID, &burstMaxTS, &round)
@@ -278,10 +289,30 @@ func (s *Store) RejectDraft(id int64, reason string) (chatJID string, burstMaxTS
 	if err != nil {
 		return "", 0, 0, false, err
 	}
-	if _, err := s.db.Exec(`UPDATE drafts SET status = 'rejected', reject_reason = ? WHERE id = ?`, reason, id); err != nil {
+	if _, err := s.db.Exec(`UPDATE drafts SET status = 'rejected', reject_reason = ?, rejected_ts = ? WHERE id = ?`, reason, time.Now().Unix(), id); err != nil {
 		return "", 0, 0, false, err
 	}
 	return chatJID, burstMaxTS, round, true, nil
+}
+
+// MostRecentRejectionAt returns the latest rejected_ts across ALL of
+// chatJID's drafts (T205) — deliberately not scoped to "the chat's single
+// most recent draft" the way PendingRejectionNote/nextDraftRound are: a
+// newer, unrelated, still-pending draft for the same chat must never hide
+// an older one's rejection from capipush. ok is false only when the chat
+// has never had a rejection with a recorded timestamp (MAX ignores the
+// NULLs a pre-T205 rejection leaves behind, same as SQL always does).
+func (s *Store) MostRecentRejectionAt(chatJID string) (rejectedAt int64, ok bool, err error) {
+	var rejectedAtN sql.NullInt64
+	err = s.db.QueryRow(`SELECT MAX(rejected_ts) FROM drafts WHERE chat_jid = ? AND status = 'rejected'`, chatJID).
+		Scan(&rejectedAtN)
+	if err != nil {
+		return 0, false, err
+	}
+	if !rejectedAtN.Valid {
+		return 0, false, nil
+	}
+	return rejectedAtN.Int64, true, nil
 }
 
 // PendingRejectionNote returns chatJID's outstanding rejection — the reason

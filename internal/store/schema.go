@@ -285,6 +285,14 @@ var columnMigrations = []string{
 	// guessed value.
 	`ALTER TABLE outbox ADD COLUMN media_seconds INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE drafts ADD COLUMN media_seconds INTEGER NOT NULL DEFAULT 0`,
+	// T205 (ct-2026-11-11-1618-t205-tras-rechazar-un-borrador-el-nuevo,
+	// capipush's redispatch backoff): WHEN a draft was rejected, not just
+	// that it was (status already covers that). Deliberately nullable, no
+	// DEFAULT: every rejection that happened before this migration has no
+	// recorded time and must read back NULL, never a guessed 0 (epoch)
+	// that MostRecentRejectionAt's MAX() could mistake for a real,
+	// very-old timestamp.
+	`ALTER TABLE drafts ADD COLUMN rejected_ts INTEGER`,
 }
 
 // confirmationModeMigration adds chats.confirmation_mode with a flat

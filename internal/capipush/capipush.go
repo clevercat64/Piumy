@@ -1326,6 +1326,32 @@ func (p *Pusher) dispatch(chatJID, sender string, burst []store.Message) error {
 	backoffLogKey := "backoff:" + chatJID + "\x00" + anchorMsg.ID
 	maxRedispatch := p.store.SettingInt(store.SettingCapipushMaxRedispatch, p.cfg.MaxRedispatch)
 	attempt := p.redispatchCount[anchor]
+	// T205: a reject_draft is the owner's deliberate action, already
+	// bounded on its own (store.MaxDraftRounds) — it must not ALSO pay the
+	// Fibonacci backoff an unattended message would. Signal: the chat's
+	// own most recent rejection, ANY draft, not just "the chat's single
+	// most recent one" (PendingRejectionNote/nextDraftRound's own notion)
+	// — a newer, unrelated, still-pending draft must never hide an older
+	// rejection from this check. Compared against THIS anchor's own
+	// lastDispatchAt at second precision: created_ts/rejected_ts are
+	// seconds (time.Now().Unix()) while lastDispatchAt carries
+	// sub-second, so a fast reject right after a dispatch routinely lands
+	// in the SAME second — ">=" (not strict ">") so that tie resolves
+	// toward dispatching, never toward silently sitting on a deliberate
+	// retry for a minute (Citrino: the error costs less on the
+	// "dispatched a bit early" side, and MaxDraftRounds still bounds it).
+	// Purely time-based, so it needs no "already consumed" bookkeeping of
+	// its own: the next SUCCESSFUL dispatch's own lastDispatchAt write
+	// moves past the rejection, and — same as redispatchCount — a
+	// delivery FAILURE never touches lastDispatchAt at all, so it can
+	// never spend this one-time pass either.
+	if rejectedAt, hasRejection, err := p.store.MostRecentRejectionAt(chatJID); err != nil {
+		log.Printf("capipush: most recent rejection for dispatch %s: %v", chatJID, err)
+	} else if hasRejection {
+		if lastAt, dispatched := p.lastDispatchAt[anchor]; !dispatched || rejectedAt >= lastAt.Unix() {
+			attempt = 0
+		}
+	}
 	if attempt >= maxRedispatch {
 		// The containment (ct-2026-07-11-074123, recalibrated S4b): a
 		// message that's been SUCCESSFULLY dispatched MaxRedispatch times

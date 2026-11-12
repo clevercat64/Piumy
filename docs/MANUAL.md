@@ -1347,6 +1347,7 @@ Piumy. Ver `docs/F1A-STORE-ACCESO.md`.
 - `RejectDraft(id, reason) (chatJID string, burstMaxTS int64, round int, ok bool, err error)` (T15) — a diferencia de `DiscardDraft`, pide OTRO intento: guarda `reason` EN el draft (no en un campo aparte — Citrino: "el motivo tiene que viajar con el mensaje, no aparte"), pasa `status` a `rejected`. El caller (MCP/REST) compara `round` contra `MaxDraftRounds` para decidir si llama `MarkPendingBefore` (reabre el redespacho) o deja el chat tal cual (tope alcanzado — `edit_draft`/`discard_draft` resuelven a mano).
 - `EditDraft(id, text) (ok, error)` (T15) — "editar sin aprobar": reemplaza el texto, `status` queda `pending`, sigue esperando `approve_draft`. Mismo guard `AND status = 'pending'` que `ApproveDraft`/`DiscardDraft`/`RejectDraft`.
 - `PendingRejectionNote(chatJID) (reason, text string, ok bool, err error)` (T15) — el draft MÁS RECIENTE del chat, solo si sigue `rejected` (nadie redraft-eó todavía). Autolimpia solo: en cuanto existe un draft nuevo para ese chat (cualquier status), la consulta por `created_ts DESC LIMIT 1` deja de traer el rechazado. La llama `capipush.dispatchPayload` en cada despacho — ver `capipush` abajo.
+- `MostRecentRejectionAt(chatJID) (rejectedAt int64, ok bool, err error)` (T205) — `MAX(rejected_ts)` de CUALQUIER borrador `rejected` del chat, a diferencia de `PendingRejectionNote`/`nextDraftRound` que miran solo el draft más reciente: un borrador nuevo y todavía pendiente no esconde un rechazo viejo. `ok` es false si el chat nunca tuvo un rechazo con hora registrada (los de antes de T205 quedan en NULL y `MAX` los ignora). La hora la estampa `RejectDraft` (`rejected_ts = time.Now().Unix()`, en el mismo `UPDATE`, sin cambiar su firma); columna `drafts.rejected_ts INTEGER` nullable y sin DEFAULT, migración en `columnMigrations`. Quien lo lee es `capipush.dispatch()`.
 
 **Media** (`media.go`, F4d: `full_path` + `GetMedia` nuevos)
 - `Media{MsgID, ChatJID, Path, FullPath, Mime, Size, TS}` — `Path` es lo que
@@ -8223,6 +8224,17 @@ propio que describen se sacó en T28, ver `docs/T28-DIAGRAMA-CAPI-SIN-CIFRADO.md
     NO por ID pelado: un ID real de WhatsApp es único globalmente así que
     nunca colisiona en producción, pero la clave compuesta lo vuelve
     invariante en vez de supuesto.
+  - **Un `reject_draft` no paga backoff (T205):** `dispatch()` consulta
+    `store.MostRecentRejectionAt(chatJID)` justo tras leer `attempt`; si hay
+    un rechazo y (el anchor nunca se despachó O `rejectedAt >=
+    lastDispatchAt[anchor].Unix()`), usa `attempt = 0` en ESE despacho: pedir
+    otro intento es una acción deliberada de quien revisa el borrador y ya
+    está acotada por `store.MaxDraftRounds`, no una espera sin atender.
+    Compara `>=` al segundo (`rejected_ts` es en segundos, `lastDispatchAt`
+    trae sub-segundo): el empate se resuelve despachando. Sin contabilidad
+    de «consumido»: el siguiente despacho exitoso adelanta `lastDispatchAt`
+    más allá del rechazo, y un fallo de entrega nunca toca `lastDispatchAt`,
+    así que tampoco lo gasta. Test: `internal/capipush/reject_redispatch_test.go`.
   - Al llegar al tope, `dispatch` lo retiene (loguea, no lo auto-despacha
     más) — sigue visible en `PendingDedicated`/`get_pending` para
     recuperación manual.
