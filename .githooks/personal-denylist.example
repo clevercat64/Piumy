@@ -1,0 +1,14 @@
+# Ejemplo de la lista local de identificadores reales conocidos (T207).
+#
+# NO pongas aqui datos reales: este archivo se versiona. Copialo a
+# .git/info/personal-denylist (o apunta PIUMY_PERSONAL_DENYLIST a tu archivo),
+# que git nunca versiona, y ahi si escribi los valores reales. Ver
+# personal-denylist.sh.
+#
+# Una entrada por linea, texto literal, sin distinguir mayusculas. Las lineas
+# vacias, las que empiezan con # y las de menos de 4 caracteres se ignoran.
+#
+# Valores inventados (prefijo 555 y nombres de relleno):
+Contacto Inventado Uno
+Grupo De Prueba Inventado
+5550001

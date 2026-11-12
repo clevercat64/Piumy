@@ -106,7 +106,7 @@ Agent-facing manuals live in `internal/mcpserver/manuals/` and are embedded in t
 
 Two rules carry more weight than the rest:
 
-- **No personal data in the repository — not even test data.** No phone numbers, WhatsApp identifiers, emails or real names; no chat, contact or history dumps. When a test needs an identifier, use the `555` prefix (`555000001@s.whatsapp.net`). A pre-commit hook enforces this: enable it with `git config core.hooksPath .githooks`.
+- **No personal data in the repository — not even test data.** No phone numbers, WhatsApp identifiers, emails or real names; no chat, contact or history dumps. When a test needs an identifier, use the `555` prefix (`555000001@s.whatsapp.net`). A pre-commit hook enforces this: enable it with `git config core.hooksPath .githooks`. It also reads an optional local list of known real identifiers (names, groups) from `.git/info/personal-denylist`, never versioned — see `.githooks/personal-denylist.example`.
 - **The hard limits belong in the code**, never in a prompt or a manual. A rule an agent can be talked out of is not a rule.
 
 ## License
