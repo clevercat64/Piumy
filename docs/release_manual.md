@@ -289,6 +289,15 @@ crear modulos en la boveda con full acceso para la ia»): el camino es que el ag
 publicación en segundo plano (`run_in_background`, sin el tope de 120 s del bloque) y, para la
 firma, un módulo de la bóveda con acceso para la IA en vez de `popup`.
 
+**Medido con la 0.13.2 (2026-11-11 21:50):** `gh release create` lanzado por el agente en segundo
+plano (`run_in_background`) **pasó** el clasificador y publicó los 8 assets sin el boss; la firma
+con el módulo en `mcp` tampoco lo necesitó. Si el clasificador vuelve a bloquearlo, el camino del
+bloque `ejecutar devolver` de arriba sigue valiendo.
+
+**El actualizador mira GitHub a los 2-20 min de arrancar y después cada 6-12 h.** Para comprobar
+que una versión nueva se instala sola sin esperar horas, se reinicia Piumy (fuera del Job de la
+pestaña) y se mira `GET /api/update` a los 20 min.
+
 ## 7. Verificar lo publicado
 
 El actualizador exige tres cosas de cada release: la firma, el `digest` que GitHub
