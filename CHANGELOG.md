@@ -6,6 +6,42 @@ Se actualiza en cada deploy/build junto con el relanzamiento del gateway.
 
 ---
 
+## 0.13.2 — 2026-11-11
+
+### Added
+- **Piumy avisa cuando WhatsApp se cae**, al agente principal y en el tablero, que
+  además dice por qué (T190).
+
+### Changed
+- **Tablero nuevo, una pantalla por sección.** Una sola barra arriba con el título y
+  las acciones, «Necesita tu atención» en el Resumen, y Reglas pasa a ser su propia
+  pantalla (T197).
+- **La tarjeta de un agente pide una sola cosa:** «Pega la dirección de cAPI». Se
+  guarda sola, dice su estado en una frase y deja el resto en «Avanzado». La lista
+  de agentes mide la mitad de alto (T197).
+- **Las cajas de Reglas usan todo el ancho y crecen con el texto**, sin caja dentro
+  de caja; Guardar se activa solo con cambios (T197).
+- **Las listas largas llegan por partes.** Chats, Grupos y Contactos piden solo lo
+  que se ve, con búsqueda en el servidor (T198, T197).
+
+### Fixed
+- **La actualización automática ya no queda trabada para siempre** por mensajes
+  viejos que ningún agente va a atender ni por envíos fallidos que nunca van a
+  salir: solo la frena lo reciente. Rige desde la versión que la trae instalada,
+  así que la 0.13.2 se instala con el criterio anterior (T206).
+- **Una activación manual en vuelo ya no la pisa el nivel de la configuración** (T201).
+- **Tras rechazar un borrador, el nuevo intento lee el borrador correcto** cuando
+  dos se crearon en el mismo segundo (T205).
+- **Datos personales fuera del código y del historial público**, con un freno antes
+  de cada commit (T207).
+
+### Notes
+- Pruebas: los tests de tiempos esperan el evento real y no un plazo de reloj (T184);
+  una migración destructiva de la base ya no entra en silencio (T199); un 401 de
+  WhatsApp sigue cortando el envío (T200).
+
+---
+
 ## 0.13.1 — 2026-11-11
 
 ### Added
