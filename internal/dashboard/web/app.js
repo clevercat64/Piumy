@@ -2155,10 +2155,10 @@
       var contactLevelEl = document.getElementById("origin_contact_level");
       contactLevelEl.innerHTML = "";
       contactLevelEl.appendChild(buildOriginLevelControl("config-level-default-contact", results[1].level));
-      document.getElementById("origin_new_rules").value = results[2].rules || "";
-      document.getElementById("origin_contact_rules").value = results[3].rules || "";
-      document.getElementById("type_group_rules").value = results[4].rules || "";
-      document.getElementById("identity_rules").value = results[5].identity || "";
+      setRuleText(RULE_BOXES.new_number, results[2].rules || "");
+      setRuleText(RULE_BOXES.contact, results[3].rules || "");
+      setRuleText(RULE_BOXES.group, results[4].rules || "");
+      setRuleText(RULE_BOXES.identity, results[5].identity || "");
       state.originAgentDefaults = {};
       AGENT_DEFAULT_TYPES.forEach(function (entry, i) {
         var agentID = results[6 + i].agent_id || "";
@@ -2172,35 +2172,64 @@
       renderAgents();
     });
   }
-  // flashSaveResult (T13, ct-2026-08-05-123147): "guardar tiene que
-  // confirmar que guardó, sin recargar la página" — mismo texto/criterio
-  // que config_email_save ya usa (más abajo), factorizado acá porque la
-  // pestaña Reglas lo repite 4 veces (T79, ct-2026-08-27-2034, sacó la
-  // quinta — la regla general).
-  function flashSaveResult(elId) {
-    var el = document.getElementById(elId);
-    el.textContent = t("action.saved");
-    setTimeout(function () { el.textContent = ""; }, 2500);
+  // ── las cajas de reglas (T197, pedido del boss: «estas cajas de reglas
+  // no están responsivas y son muy pequeñas hacia abajo») ─────────────────
+  // Las cuatro comparten UN comportamiento: el texto crece con lo que tiene
+  // (sin barra propia ni renglones cortados), y su Guardar dice si hay
+  // cambios sin guardar — se habilita solo entonces. `saved` es el último
+  // texto que el servidor tiene; una recarga (loadOriginDefaults) no pisa
+  // lo que el dueño está escribiendo.
+  var RULE_BOXES = {
+    identity: { textarea: "identity_rules", save: "identity_save", result: "identity_save_result", endpoint: "identity", field: "identity" },
+    group: { textarea: "type_group_rules", save: "type_group_rules_save", result: "type_group_rules_save_result", endpoint: "type-rules", field: "rules" },
+    new_number: { textarea: "origin_new_rules", save: "origin_new_rules_save", result: "origin_new_rules_save_result", endpoint: "rules-default-new-number", field: "rules" },
+    contact: { textarea: "origin_contact_rules", save: "origin_contact_rules_save", result: "origin_contact_rules_save_result", endpoint: "rules-default-contact", field: "rules" },
+  };
+  // autoGrow: el alto justo para todo el texto, con un mínimo de los rows
+  // del HTML (2) y un techo en el CSS (max-height: 50vh, después se
+  // desplaza adentro). Oculto (otra sección) mide 0: ahí no se toca, y
+  // showSection lo vuelve a medir al entrar a Reglas.
+  function autoGrow(el) {
+    if (!el.offsetParent) return;
+    el.style.height = "auto";
+    el.style.height = (el.scrollHeight + el.offsetHeight - el.clientHeight) + "px";
   }
-  document.getElementById("identity_save").addEventListener("click", function () {
-    post("/api/admin/identity", { identity: document.getElementById("identity_rules").value })
-      .then(function () { flashSaveResult("identity_save_result"); })
-      .catch(function (e) { alert(t("error.prefix") + e.message); });
-  });
-  document.getElementById("origin_new_rules_save").addEventListener("click", function () {
-    post("/api/admin/rules-default-new-number", { rules: document.getElementById("origin_new_rules").value })
-      .then(function () { flashSaveResult("origin_new_rules_save_result"); })
-      .catch(function (e) { alert(t("error.prefix") + e.message); });
-  });
-  document.getElementById("origin_contact_rules_save").addEventListener("click", function () {
-    post("/api/admin/rules-default-contact", { rules: document.getElementById("origin_contact_rules").value })
-      .then(function () { flashSaveResult("origin_contact_rules_save_result"); })
-      .catch(function (e) { alert(t("error.prefix") + e.message); });
-  });
-  document.getElementById("type_group_rules_save").addEventListener("click", function () {
-    post("/api/admin/type-rules", { rules: document.getElementById("type_group_rules").value })
-      .then(function () { flashSaveResult("type_group_rules_save_result"); })
-      .catch(function (e) { alert(t("error.prefix") + e.message); });
+  function growRuleBoxes() {
+    Object.keys(RULE_BOXES).forEach(function (k) { autoGrow(document.getElementById(RULE_BOXES[k].textarea)); });
+  }
+  function ruleBoxDirty(box) {
+    var el = document.getElementById(box.textarea);
+    var dirty = el.value !== (box.saved || "");
+    el.closest(".origindefault-row").classList.toggle("dirty", dirty);
+    document.getElementById(box.save).disabled = !dirty;
+    document.getElementById(box.result).textContent = dirty ? t("rules.unsaved") : "";
+    return dirty;
+  }
+  function setRuleText(box, text) {
+    var el = document.getElementById(box.textarea);
+    var editing = box.saved !== undefined && el.value !== box.saved;
+    box.saved = text;
+    if (!editing) el.value = text;
+    ruleBoxDirty(box);
+    autoGrow(el);
+  }
+  window.addEventListener("resize", debounce(growRuleBoxes)); // otro ancho, otros renglones
+  Object.keys(RULE_BOXES).forEach(function (k) {
+    var box = RULE_BOXES[k];
+    var el = document.getElementById(box.textarea);
+    el.addEventListener("input", function () { autoGrow(el); ruleBoxDirty(box); });
+    document.getElementById(box.save).addEventListener("click", function () {
+      var body = {};
+      body[box.field] = el.value;
+      post("/api/admin/" + box.endpoint, body).then(function () {
+        box.saved = body[box.field];
+        ruleBoxDirty(box);
+        // "guardar tiene que confirmar que guardó, sin recargar la página"
+        // (T13, ct-2026-08-05-123147).
+        document.getElementById(box.result).textContent = t("action.saved");
+        setTimeout(function () { ruleBoxDirty(box); }, 2500);
+      }).catch(function (e) { alert(t("error.prefix") + e.message); });
+    });
   });
 
   // En Contactos filtra el servidor (T197): se espera a que el dueño deje de
@@ -2305,6 +2334,7 @@
     // (T172d) — el dueño acaba de hacer click, es cuando más le importa.
     if (sec === "contactos") loadContacts();
     if (sec === "clientes") loadClients().catch(function () {});
+    if (sec === "rules") growRuleBoxes(); // oculta no se puede medir: se mide al entrar
   }
   tabBtns.forEach(function (btn) {
     btn.addEventListener("click", function () { showSection(btn.getAttribute("data-tab")); });

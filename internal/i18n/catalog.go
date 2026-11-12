@@ -98,13 +98,14 @@ var esCatalog = map[string]string{
 	// Pestaña Reglas
 	"rules.identity_label":     "Identidad",
 	"rules.identity_hint":      `(rige el tono de las tres reglas de abajo — "asistente de qué")`,
-	"rules.legend":             "Grupos rige los chats de grupo. Contactos pisa a Mensajes nuevos en los chats 1 a 1 — todo chat cae en una de las tres.",
+	"rules.legend":             "Cada chat sigue una sola de estas reglas: los de grupo, Grupos; los 1 a 1 con alguien de tu agenda, Contactos del celular; todos los demás, Mensajes nuevos.",
 	"rules.groups_hint":        "(todo chat de grupo sin reglas propias)",
 	"rules.new_messages_label": "Mensajes nuevos",
 	"rules.new_messages_hint":  "(números desconocidos)",
 	"rules.contacts_label":     "Contactos del celular",
 	"rules.contacts_hint":      "(agenda, pisa a Mensajes nuevos)",
-	"rules.boss_hint":          "(el chat del dueño — sin modo ni reglas, T71 ya lo saca del preámbulo)",
+	"rules.boss_hint":          "(tu propio chat: no lleva modo ni reglas)",
+	"rules.unsaved":            "Cambios sin guardar",
 
 	// Footer — el nombre del dueño NO va acá (es dato, no interfaz; queda
 	// en el marcado como nodo aparte, ver index.html).
@@ -685,13 +686,14 @@ var enCatalog = map[string]string{
 
 	"rules.identity_label":     "Identity",
 	"rules.identity_hint":      `(sets the tone for the three rules below — "assistant of what")`,
-	"rules.legend":             "Groups governs group chats. Contacts overrides New messages in 1-on-1 chats — every chat falls into one of the three.",
+	"rules.legend":             "Each chat follows exactly one of these rules: group chats follow Groups; one-to-one chats with someone in your address book, Phone contacts; everyone else, New messages.",
 	"rules.groups_hint":        "(any group chat with no rules of its own)",
 	"rules.new_messages_label": "New messages",
 	"rules.new_messages_hint":  "(unknown numbers)",
 	"rules.contacts_label":     "Phone contacts",
 	"rules.contacts_hint":      "(address book, overrides New messages)",
-	"rules.boss_hint":          "(the owner's chat — no mode or rules, T71 already excludes it from the preamble)",
+	"rules.boss_hint":          "(your own chat: it has no mode or rules)",
+	"rules.unsaved":            "Unsaved changes",
 
 	"footer.thanks":  "Thanks for using Piumy.",
 	"footer.made_by": "Made by",

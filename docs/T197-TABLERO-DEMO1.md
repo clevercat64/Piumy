@@ -142,3 +142,22 @@ Antes → después (4 agentes, datos 555): la lista mide 3.463 → 1.998 px a 14
   confirmación (T76: el boss rechazó cualquier candado ahí).
 - **Un solo nivel de caja**: en Agentes las tarjetas van directo sobre el fondo, sin el marco de la
   sección alrededor.
+
+## Reglas: cajas que muestran todo el texto (pedido del boss)
+
+Boss, con captura de Reglas: «estas cajas de reglas no están responsivas y son muy pequeñas hacia
+abajo. además tienen mucho margen, es como una caja dentro de otra caja».
+
+- Las reglas usan todo el ancho de la sección (antes, un tope de 640 px dejaba vacía la mitad
+  derecha). Segunda vuelta, con la captura delante (boss: «caja dentro de caja, dentro de caja,
+  dentro de caja, por ultimo baja el marjen»): cada regla es solo su título y su texto, sin borde ni
+  fondo propios —el único borde es el del texto—, separadas por una línea fina y poco margen.
+- El texto mide lo que tiene (`autoGrow`), sin aire debajo: 2 renglones como mínimo y hasta media
+  pantalla; más que eso se desplaza adentro (boss: «se agrande solo al tamaño, pero con un maximo
+  aceptado»). Se vuelve a medir al entrar a Reglas y al cambiar el ancho.
+- Cabecera en una línea: título y aclaración a la izquierda, selectores a la derecha; en el teléfono
+  los selectores bajan a ancho completo (resuelve también el select cortado a 360 px de T192).
+- Guardar abajo a la derecha: se habilita solo con cambios, y entonces el texto se marca y dice
+  «Cambios sin guardar». Una recarga no pisa lo que el dueño está escribiendo.
+- La leyenda, en una frase clara; la aclaración de Boss ya no muestra jerga interna («T71 ya lo saca
+  del preámbulo»).

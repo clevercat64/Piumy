@@ -522,18 +522,48 @@ body {
    solo alarga la línea. Esta pestaña pide su propio límite de lectura en vez
    de heredar el del resto del tablero (instrucción explícita del contrato:
    "no conviertas un problema de tabla en un problema de tipografía"). */
-.origindefaults { display: flex; flex-direction: column; gap: 12px; margin: 14px 0; max-width: 640px; }
-.origindefaults-legend { margin: 0 0 -2px; }
-.origindefault-row {
-  border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--bg2);
-}
+/* T197 (pedido del boss: «estas cajas de reglas no están responsivas y
+   son muy pequeñas hacia abajo. además tienen mucho margen, es como una
+   caja dentro de otra caja»): las tarjetas usan todo el ancho de la
+   sección (antes, un tope de 640 px dejaba vacía la mitad derecha). Segunda
+   vuelta, boss: «caja dentro de caja, dentro de caja, dentro de caja, por
+   ultimo baja el marjen»: cada regla es solo su título y su texto, sin
+   borde ni fondo propios — el único borde es el del texto —, separadas
+   por una línea fina y poco margen. */
+.origindefaults { display: flex; flex-direction: column; gap: 12px; margin: 0; }
+.origindefaults-legend { margin: 0; }
+.origindefault-row { border: 0; background: transparent; padding: 0; }
+.origindefault-row + .origindefault-row { padding-top: 12px; border-top: 1px solid var(--border); }
+/* Cabecera: título y aclaración a la izquierda, selectores a la derecha;
+   en el teléfono los selectores bajan a ancho completo. */
 .origindefault-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap;
   margin-bottom: 8px;
 }
-.origindefault-label { font-size: 12.5px; font-weight: 600; color: var(--text); }
-.origindefault-row .inp { min-height: 50px; font-size: 12.5px; padding: 8px 10px; }
-.origindefault-row .smbtn { margin-top: 6px; }
+.origindefault-head > div { display: flex; gap: 8px; }
+.origindefault-label { font-size: 13.5px; font-weight: 600; color: var(--text); flex: 1 1 280px; }
+/* El texto mide lo que tiene (autoGrow en app.js), sin aire debajo: 2
+   renglones como mínimo (rows del HTML) y hasta media pantalla; más que
+   eso se desplaza adentro (boss: «se agrande solo al tamaño, pero con un
+   maximo aceptado»). */
+.origindefault-row .inp {
+  font-size: 13.5px; line-height: 1.55; padding: 8px 12px;
+  resize: none; overflow-y: auto; max-height: 50vh;
+  min-height: 0; /* sin el mínimo de 150 px de textarea.inp (modales), que dejaba aire */
+}
+/* Guardar abajo a la derecha, con aire; se habilita solo con cambios y
+   entonces se destaca, con «Cambios sin guardar» al lado. */
+.rule-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 8px; }
+.rule-actions .result { color: var(--dim); font-size: 12.5px; }
+.rule-actions .smbtn:disabled { opacity: .5; cursor: default; }
+.origindefault-row.dirty .inp { border-color: var(--amber); }
+.origindefault-row.dirty .rule-actions .result { color: var(--amber); }
+.origindefault-row.dirty .rule-actions .smbtn { background: var(--green); color: var(--on-accent); border-color: var(--green); }
+@media (max-width: 560px) {
+  .origindefault-head > div { flex: 1 1 100%; }
+  .origindefault-head > div > * { flex: 1 1 0; min-width: 0; }
+  .origindefault-head select { width: 100%; min-height: 44px; }
+}
 
 /* ── tabs: chats / grupos / contactos (S1h shell, portado del mockup) ──── */
 /* .tabs-head se borró en T172b tramo 1: era el contenedor de las pestañas
@@ -916,9 +946,9 @@ td.list-empty p.list-empty { padding: 0; }
 /* ── tab Agentes (M1, ct-2026-07-22-1301) ────────────────────────────── */
 #agentlist, #agentcardlist { display: flex; flex-direction: column; gap: 16px; }
 /* Un solo nivel de caja (T197, boss: «es como una caja dentro de otra
-   caja»): en Agentes cada tarjeta va directo sobre el fondo, sin el marco
-   de la tarjeta de la sección alrededor. */
-.app[data-sec="agentes"] #convcard { border: 0; background: transparent; padding: 0; }
+   caja»): en Agentes y en Reglas cada tarjeta va directo sobre el fondo,
+   sin el marco de la tarjeta de la sección alrededor. */
+.app:is([data-sec="agentes"], [data-sec="rules"]) #convcard { border: 0; background: transparent; padding: 0; }
 /* T197 (pedido del boss: «simplificar esto ... los botones todos hacia
    abajo dejando aire»): más aire adentro y entre tarjetas. */
 .agentcard {
