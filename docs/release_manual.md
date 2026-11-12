@@ -42,8 +42,9 @@ rama `master`), salvo los que dicen `pwsh`. Los placeholders `<v>` son la versi�
   la genera el boss (`go run ./cmd/signrelease keygen`); la línea `PRIVADA` va al vault
   y a ningún otro lado, la `PUBLICA` va a `pubkey.go`.
 - **El módulo del vault con la clave privada existe:** «Piumy firma», id
-  `a110eebc96264bc1b0bd0d3977578331`, variable `PIUMY_FIRMA`, acceso `popup` (la bóveda
-  pide la contraseña del boss en cada firma). Creado el 2026-11-11; su pública es la de
+  `a110eebc96264bc1b0bd0d3977578331`, variable `PIUMY_FIRMA`, acceso `mcp` y alcance `local`
+  (solo los agentes de este proyecto): desde el 2026-11-11 20:13 el boss lo pasó de `popup`
+  a `mcp` para que la firma no lo espere. Creado el 2026-11-11; su pública es la de
   `pubkey.go`. Lo comprueba `vault_list` (sale el nombre, nunca el valor).
 
 ## 1. VERSION, CHANGELOG y el commit de release
@@ -165,10 +166,10 @@ vault_run(
 vault_run_status()      # exited, exit_code 0; leaked_in_output [] y leaked_to_disk [] con sweep_complete true
 ```
 
-`vault_run` pide que el boss apruebe el script la primera vez y cada vez que cambia, y la
-bóveda le pide su contraseña (el módulo es `popup`). **La ventana de aprobación se cierra
-sola a los 5 minutos** y cuenta como rechazo: avisarle al boss ANTES de lanzar y lanzar
-cuando contesta que está mirando (2026-11-11: la primera corrida venció sin que la viera).
+Con el módulo en `mcp`, `vault_run` no abre el diálogo de aprobación (todos los módulos de
+`env` son `mcp`) y la firma corre sin el boss. Solo si la bóveda está cerrada se la pide a él.
+Si alguna vez el módulo vuelve a `popup`: la aprobación vence a los 5 minutos y cuenta como
+rechazo; avisarle ANTES de lanzar (2026-11-11: la primera corrida venció sin que la viera).
 
 **Qué hace el script**, en este orden, y falla con un mensaje claro en cada uno:
 
