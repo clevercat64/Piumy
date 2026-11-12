@@ -914,10 +914,18 @@ td.list-empty p.list-empty { padding: 0; }
 .draftactions { display: flex; flex-wrap: wrap; gap: 8px; flex-shrink: 0; max-width: 100%; }
 
 /* ── tab Agentes (M1, ct-2026-07-22-1301) ────────────────────────────── */
-#agentlist { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+#agentlist, #agentcardlist { display: flex; flex-direction: column; gap: 16px; }
+/* Un solo nivel de caja (T197, boss: «es como una caja dentro de otra
+   caja»): en Agentes cada tarjeta va directo sobre el fondo, sin el marco
+   de la tarjeta de la sección alrededor. */
+.app[data-sec="agentes"] #convcard { border: 0; background: transparent; padding: 0; }
+/* T197 (pedido del boss: «simplificar esto ... los botones todos hacia
+   abajo dejando aire»): más aire adentro y entre tarjetas. */
 .agentcard {
-  border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; background: var(--bg2);
+  border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; background: var(--bg2);
 }
+/* El estado en una frase, debajo del nombre (agentStatusText). */
+.agentstatus { margin: 4px 0 0; font-size: 12.5px; color: var(--dim); }
 .agentcard-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .agentbadge {
   font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
@@ -940,10 +948,23 @@ td.list-empty p.list-empty { padding: 0; }
    un corte. Mismo idioma que .origindefault-row .inp, más arriba: un
    .inp con reglas propias para SU zona, no un cambio al .inp global. */
 .agentcard-body .inp { text-overflow: ellipsis; }
-/* T140 (ct-2026-09-05-1607) — "Editar campos manualmente": separa el
-   toggle de corrección del campo de pegado de arriba, mismo respiro que
-   .agentcard-actions ya usa para separarse del bloque anterior. */
-.manualfieldstoggle { margin-top: 10px; }
+/* «Avanzado» (T197; antes «Editar campos manualmente», T140): los campos
+   sueltos, cerrados por defecto, en la tarjeta y en el alta. El resumen es
+   el control: 44 px de alto para el dedo. */
+.agentadvanced { margin-top: 8px; }
+.agentadvanced > summary {
+  display: flex; align-items: center; min-height: 44px; width: fit-content;
+  cursor: pointer; color: var(--dim); font-size: 13px;
+}
+.agentadvanced > summary:hover, .agentadvanced[open] > summary { color: var(--text); }
+/* El resultado de pegar o guardar, en palabras, debajo del campo. */
+.agentpasteresult { margin: 8px 0 0; }
+.agentpasteresult:empty { display: none; } /* sin resultado todavía, no reserva lugar */
+/* Botones, todos abajo (T197): Ping y Promover a la izquierda, Borrar al
+   otro extremo y sin relleno — menos peso, lejos de los otros dos. */
+.agentcard-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+.agentdelete { margin-left: auto; background: transparent; border-color: transparent; color: var(--red); }
+.agentdelete:hover { border-color: var(--red); }
 /* Atiende (T72, ct-2026-08-27-1625) — vista inversa de origindefault-row:
    parada en el agente, un checkbox por tipo. */
 .agenttypes { margin-top: 6px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }

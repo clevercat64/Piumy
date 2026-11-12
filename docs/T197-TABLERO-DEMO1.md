@@ -111,3 +111,34 @@ apple-hig-expert; corrida en un solo contexto, sin subagentes de diseño):
 - *Queda para su commit:* los contadores «cola:» y «52 / 71» y la salud sin palabras (P5, commit 3); la
   fila de chat de 294 px en el teléfono (P3, commit 3); la fila de pestañas cortada sin señal de que
   hay más a 360 px (P9, T202).
+
+## Agentes: una tarjeta que se configura pegando una línea (pedido del boss)
+
+Boss, con captura de la tarjeta de un agente secundario: «por favor simplificar esto, y especificar
+"pega direccion de CAPI" algo así, lo demas avanzando se setea solo, los botones todos hacia abajo
+dejando aire, les dije que analicen, esperaba que no se les pasara algo como eso».
+
+**Por qué se nos pasó.** La revisión T192 (P6) midió tamaños —la tarjeta de 3.454 px, el formulario
+siempre abierto— pero no contó **cuántos campos le pide una tarea al dueño**: para conectar un agente
+alcanza con pegar una línea, y la tarjeta le mostraba seis campos, un Guardar y tres filas de botones
+intercaladas. La medida que faltaba es «pasos y campos por tarea», no «píxeles por pantalla».
+
+Antes → después (4 agentes, datos 555): la lista mide 3.463 → 1.998 px a 1440 y 3.960 → 2.326 px a
+360; 0 errores JS.
+
+- **Arriba**, rol y nombre, y el estado en una frase: «Listo para recibir · 127.0.0.1:7801», o lo que
+  le falta («Le falta el PIN: pega la dirección de cAPI»). «Conectado» de verdad no se puede saber sin
+  despertar al agente —el Ping le inyecta un mensaje real (`handleCAPIPing`)—, así que no hay pings
+  automáticos: la frase suma el resultado del último Ping que el dueño haya probado. Una sonda que no
+  inyecte queda para otro contrato.
+- **Un solo campo**, «Pega la dirección de cAPI»: la línea entera se interpreta
+  (`parseAgentCredentialsPaste`, el mismo de T73/T141) y **se guarda sola**; debajo, el resultado en
+  palabras («✓ Guardado: 127.0.0.1:7801», o el error). Una línea que no se reconoce, se dice.
+- **Avanzado** (`<details>`, cerrado; queda abierto a través del refresco de 15 s): ID, nombre,
+  endpoint, terminal y PIN, editables con su Guardar. El alta usa el mismo campo y el mismo Avanzado,
+  y conserva «Crear»: el boss pidió revisar antes de crear (T73).
+- **Números asignados** encima de los botones; **botones todos abajo** con aire: Ping y Promover a la
+  izquierda, «Borrar agente» al otro extremo, sin relleno y con su modal de siempre. Promover sigue sin
+  confirmación (T76: el boss rechazó cualquier candado ahí).
+- **Un solo nivel de caja**: en Agentes las tarjetas van directo sobre el fondo, sin el marco de la
+  sección alrededor.

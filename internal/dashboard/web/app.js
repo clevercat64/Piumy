@@ -1340,6 +1340,31 @@
   function agentCardElementID(agentID) {
     return "agentcard-" + agentID;
   }
+  // T197 (pedido del boss: «simplificar esto ... lo demas avanzando se
+  // setea solo»): lo que una tarjeta recuerda entre refrescos de 15 s —
+  // si «Avanzado» quedó abierto, el último resultado de pegar/guardar y el
+  // último Ping. Solo de esta sesión del navegador: no es dato del agente.
+  var agentAdvancedOpen = {};
+  var agentLastResult = {};
+  var agentLastPing = {};
+  function endpointHost(endpoint) { return (endpoint || "").replace(/^https?:\/\//, "").replace(/\/+$/, ""); }
+  // agentStatusText: el estado en una frase. "Conectado" de verdad no se
+  // puede saber sin despertar al agente — el Ping le inyecta un mensaje
+  // real (handleCAPIPing) —, así que dice lo que SÍ se sabe: si tiene lo
+  // necesario para recibir, o qué le falta, y el resultado del último Ping
+  // si el dueño lo probó.
+  function agentStatusText(a) {
+    var missing = [];
+    if (!a.endpoint) missing.push(t("agent.missing_address"));
+    if (!a.antenna_terminal_id) missing.push(t("agent.missing_terminal"));
+    if (!a.pinpass_set) missing.push(t("agent.missing_pin"));
+    var text = missing.length
+      ? t("agent.status_missing", { list: missing.join(", ") })
+      : t("agent.status_ready", { host: endpointHost(a.endpoint) });
+    var ping = agentLastPing[a.agent_id];
+    if (ping !== undefined) text += " · " + (ping ? t("agent.ping_answered") : t("agent.ping_no_answer"));
+    return text;
+  }
 
   // renderAgents refresca la lista de tarjetas cada vez que se llama
   // (loadAgents, cada 15s — "cero F5" sigue intacto para eso), pero el
@@ -1456,6 +1481,8 @@
     // (T140), uno por agente en vez de uno solo.
     card.id = agentCardElementID(a.agent_id);
 
+    // Arriba (T197, pedido del boss): quién es — rol y nombre — y, en una
+    // frase, si está listo para recibir (agentStatusText).
     var head = document.createElement("div");
     head.className = "agentcard-head";
     var badge = document.createElement("span");
@@ -1467,183 +1494,127 @@
     head.appendChild(badge);
     head.appendChild(headName);
     card.appendChild(head);
-
-    var idLine = document.createElement("p");
-    idLine.className = "dimnote";
-    idLine.textContent = t("agent.id_prefix") + a.agent_id;
-    card.appendChild(idLine);
+    var status = document.createElement("p");
+    status.className = "agentstatus";
+    status.textContent = agentStatusText(a);
+    card.appendChild(status);
 
     card.appendChild(buildAgentTypesControl(a));
 
+    // La puerta (T197, boss: «especificar "pega direccion de CAPI" ... lo
+    // demas avanzando se setea solo»): UN campo. Pegar la línea entera de
+    // la antena la interpreta (parseAgentCredentialsPaste, el mismo de
+    // T73/T141) y la GUARDA SOLA — antes completaba los campos y esperaba
+    // un Guardar. El nombre no se pisa si el agente ya tiene uno (T141: el
+    // boss ya nombró sus agentes). Debajo, el resultado en palabras.
     var body = document.createElement("div");
     body.className = "agentcard-body";
-
-    // Zona de pegado (T141, ct-2026-09-07-1155, boss: "en vez de borrar y
-    // agregar a un agente, tambien es necesario actualizarlo con su link
-    // de antena de una linea") — mismo parseo y mismo tratamiento que la
-    // del form de alta (T73/T75), con una sola diferencia: el nombre NO se
-    // pisa si el agente ya tiene uno (el boss ya nombró sus agentes, pegar
-    // una antena nueva no debería rebautizarlos).
-    var pasteZoneInput = agentInput(body, t("label.paste_credentials"), "", {
+    var pasteZoneInput = agentInput(body, t("agent.paste_label"), "", {
       placeholder: t("placeholder.antenna_line"),
-      hint: t("hint.antenna_paste_card"),
+      hint: t("agent.paste_hint_card"),
     });
-    var nameInput = agentInput(body, t("modal.name_heading"), a.name, { placeholder: t("placeholder.agent_name") });
-    var endpointInput = agentInput(body, t("agent.label_endpoint"), a.endpoint, isPrincipal
-      ? { placeholder: "http://192.168.1.10:8787", hint: t("hint.endpoint_lan_only") }
-      : { placeholder: "http://192.168.1.10:8787" });
-    var terminalInput = agentInput(body, t("agent.label_terminal_id"), a.antenna_terminal_id, { placeholder: t("placeholder.terminal_id_example") });
-    var pinInput = agentInput(body, t("agent.label_pin"), "", { password: true, placeholder: a.pinpass_set ? t("placeholder.pin_saved") : "••••••••" });
+    var saveResult = document.createElement("p");
+    saveResult.className = "agentpingresult agentpasteresult";
+    saveResult.setAttribute("role", "status");
+    saveResult.textContent = agentLastResult[a.agent_id] || "";
+    body.appendChild(saveResult);
     card.appendChild(body);
 
+    // Avanzado (T197): los campos sueltos y el ID crudo, cerrados por
+    // defecto y editables igual que antes, con su propio Guardar. <details>
+    // nativo: se abre con teclado y el lector de pantalla dice si está
+    // abierto. agentAdvancedOpen lo deja abierto a través del refresco.
+    var advanced = document.createElement("details");
+    advanced.className = "agentadvanced";
+    advanced.open = !!agentAdvancedOpen[a.agent_id];
+    advanced.addEventListener("toggle", function () { agentAdvancedOpen[a.agent_id] = advanced.open; });
+    var summary = document.createElement("summary");
+    summary.textContent = t("agent.advanced");
+    advanced.appendChild(summary);
+    var idLine = document.createElement("p");
+    idLine.className = "dimnote";
+    idLine.textContent = t("agent.id_prefix") + a.agent_id;
+    advanced.appendChild(idLine);
+    var nameInput = agentInput(advanced, t("modal.name_heading"), a.name, { placeholder: t("placeholder.agent_name") });
+    var endpointInput = agentInput(advanced, t("agent.label_endpoint"), a.endpoint, isPrincipal
+      ? { placeholder: "http://192.168.1.10:8787", hint: t("hint.endpoint_lan_only") }
+      : { placeholder: "http://192.168.1.10:8787" });
+    var terminalInput = agentInput(advanced, t("agent.label_terminal_id"), a.antenna_terminal_id, { placeholder: t("placeholder.terminal_id_example") });
+    var pinInput = agentInput(advanced, t("agent.label_pin"), "", { password: true, placeholder: a.pinpass_set ? t("placeholder.pin_saved") : "••••••••" });
     var saveRow = document.createElement("div");
     saveRow.className = "agentcard-actions";
     var saveBtn = document.createElement("button");
     saveBtn.className = "btn pri sm";
     saveBtn.textContent = t("action.save");
-    var saveResult = document.createElement("span");
-    saveResult.className = "agentpingresult";
+    saveRow.appendChild(saveBtn);
+    advanced.appendChild(saveRow);
+    card.appendChild(advanced);
 
-    // markDirty (T141): cualquier toque en la tarjeta la saca de la rotación
-    // del refresco de 15s (renderAgents) hasta el próximo Guardar exitoso —
-    // "input" delegado cubre tipeo a mano y pegado sin marca reconocida; el
-    // pegado que SÍ parsea llama markDirty directo (más abajo, applyPaste)
-    // porque ahí se previene el evento nativo y "input" nunca llega a
-    // disparar solo.
+    // markDirty (T141): tocar un campo saca la tarjeta de la rotación del
+    // refresco de 15s (renderAgents) hasta el próximo guardado exitoso,
+    // para que el refresco no borre lo que el dueño está escribiendo.
     function markDirty() { editingAgentIDs[a.agent_id] = true; }
     body.addEventListener("input", markDirty);
+    advanced.addEventListener("input", markDirty);
 
-    // applyPaste — mismo criterio que applyParsedCredentials del form de
-    // alta (nunca inventa un campo que el texto no trae, nunca dispara
-    // Guardar solo), con la única diferencia de este contrato: el nombre
-    // no se pisa si nameInput ya tiene algo.
+    // save: el mismo agent-update para el pegado y para el Guardar de
+    // Avanzado. pinpass SOLO si hay uno nuevo — el campo siempre arranca
+    // vacío (nunca se muestra el secreto guardado), así que "vacío"
+    // significa "no tocar", no "borrar" (mismo contrato que
+    // set_agent_capi/agent-update: "omit to keep current").
+    function save() {
+      var reqBody = {
+        agent_id: a.agent_id, name: nameInput.value,
+        endpoint: endpointInput.value, antenna_terminal_id: terminalInput.value,
+      };
+      if (pinInput.value) reqBody.pinpass = pinInput.value;
+      saveResult.textContent = t("action.saving");
+      post("/api/admin/agent-update", reqBody).then(function () {
+        agentLastResult[a.agent_id] = t("agent.saved_host", { host: endpointHost(reqBody.endpoint) });
+        delete editingAgentIDs[a.agent_id]; // T141: recién acá vuelve a la rotación del refresco
+        loadAgents();
+      }).catch(function (e) {
+        saveResult.textContent = agentLastResult[a.agent_id] = t("error.prefix") + e.message;
+      });
+    }
+    saveBtn.onclick = save;
+    // applyPaste: nunca inventa un campo que el texto no trae; el nombre,
+    // solo si estaba vacío. Después guarda.
     function applyPaste(parsed) {
       markDirty();
       if (parsed.endpoint) endpointInput.value = parsed.endpoint;
       if (parsed.terminalID) terminalInput.value = parsed.terminalID;
       if (parsed.pin) pinInput.value = parsed.pin;
       if (parsed.name && !nameInput.value) nameInput.value = parsed.name;
-      saveResult.textContent = t("agent.autodetected");
-      setTimeout(function () { saveResult.textContent = ""; }, 2500);
+      pasteZoneInput.value = ""; // scratch — la línea entera nunca viaja en agent-update
+      save();
     }
-    body.addEventListener("paste", function (ev) {
+    // Un pegado reconocido en el campo de arriba o en cualquiera de
+    // Avanzado (el dueño ya pegó una vez en Endpoint por error, T75) va por
+    // el mismo camino. NO en toda la tarjeta: el buscador de números de
+    // abajo también vive en ella, y un "ip:puerto" pegado ahí no es una
+    // credencial para guardar. null = no es una credencial: pegado normal.
+    function onPaste(ev) {
       var clip = ev.clipboardData || window.clipboardData;
       var parsed = parseAgentCredentialsPaste(clip.getData("text"));
       if (!parsed) return;
       ev.preventDefault();
       applyPaste(parsed);
-    });
+    }
+    body.addEventListener("paste", onPaste);
+    advanced.addEventListener("paste", onPaste);
+    // "input" también: un pegado con el menú del mouse, o texto puesto por
+    // código, no siempre dispara "paste" (T75). Al salir del campo con algo
+    // que no se reconoce, se dice — no se descarta en silencio.
     pasteZoneInput.addEventListener("input", function () {
       var parsed = parseAgentCredentialsPaste(pasteZoneInput.value);
-      if (!parsed) return;
-      applyPaste(parsed);
-      pasteZoneInput.value = ""; // scratch — nunca viaja en agent-update
+      if (parsed) applyPaste(parsed);
     });
     pasteZoneInput.addEventListener("change", function () {
-      var parsed = parseAgentCredentialsPaste(pasteZoneInput.value);
-      if (!parsed) return;
-      applyPaste(parsed);
-      pasteZoneInput.value = "";
+      if (pasteZoneInput.value.trim() && !parseAgentCredentialsPaste(pasteZoneInput.value)) {
+        saveResult.textContent = t("agent.paste_unrecognized");
+      }
     });
-
-    saveBtn.onclick = function () {
-      var reqBody = {
-        agent_id: a.agent_id, name: nameInput.value,
-        endpoint: endpointInput.value, antenna_terminal_id: terminalInput.value,
-      };
-      // pinpass: SOLO si el boss tecleó algo nuevo — el campo siempre
-      // arranca vacío (nunca se muestra el secreto guardado), así que
-      // "vacío" significa "no tocar", no "borrar" (mismo contrato que
-      // set_agent_capi/agent-update ya documentan: "omit to keep current").
-      if (pinInput.value) reqBody.pinpass = pinInput.value;
-      saveResult.textContent = t("action.saving");
-      post("/api/admin/agent-update", reqBody).then(function () {
-        saveResult.textContent = t("action.saved");
-        delete editingAgentIDs[a.agent_id]; // T141: recién acá vuelve a la rotación del refresco
-        loadAgents();
-      }).catch(function (e) {
-        saveResult.textContent = t("error.prefix") + e.message;
-      });
-    };
-    saveRow.appendChild(saveBtn);
-    saveRow.appendChild(saveResult);
-    card.appendChild(saveRow);
-
-    // Ping por-agente (M2, ct-2026-07-22-1301) — sin cambios.
-    var actions = document.createElement("div");
-    actions.className = "agentcard-actions";
-    var pingBtn = document.createElement("button");
-    pingBtn.className = "smbtn";
-    pingBtn.textContent = t("agent.ping_button");
-    var pingResult = document.createElement("span");
-    pingResult.className = "agentpingresult";
-    pingBtn.onclick = function () {
-      pingResult.textContent = t("agent.sending_ping");
-      post("/api/admin/capi-ping", { agent_id: a.agent_id }).then(function (d) {
-        // d.result: texto armado por el backend (Go) — servidor, no
-        // catálogo. Anotado para la etapa 3 (ver nota del contrato), sin
-        // tocarlo acá.
-        pingResult.textContent = (d.ok ? "✓ " : "✗ ") + d.result;
-      }).catch(function (e) {
-        pingResult.textContent = t("error.prefix") + e.message;
-      });
-    };
-    actions.appendChild(pingBtn);
-    actions.appendChild(pingResult);
-    card.appendChild(actions);
-
-    // Cambiar de rol (T76, ct-2026-08-27-1752, boss verbatim: "poder
-    // cambiar si tengo un secundario a al principal de manera rápida") —
-    // click directo, sin modal ni confirmación: el dueño lo pidió rápido y
-    // explícitamente rechazó cualquier candado nuevo ("me da lo mismo que
-    // piensen que van a haber problemas... yo lo quiero, como yo lo
-    // digo"). Solo en la card de un SECUNDARIO — la del principal no
-    // muestra el botón porque "promoverse a sí mismo" no es una acción,
-    // no un candado.
-    if (!isPrincipal) {
-      var promoteRow = document.createElement("div");
-      promoteRow.className = "agentcard-actions";
-      var promoteBtn = document.createElement("button");
-      promoteBtn.className = "btn gho sm";
-      promoteBtn.textContent = t("action.promote_to_principal");
-      var promoteResult = document.createElement("span");
-      promoteResult.className = "agentpingresult";
-      promoteBtn.onclick = function () {
-        promoteResult.textContent = t("agent.promoting");
-        post("/api/admin/agent-promote", { agent_id: a.agent_id }).then(function () {
-          promoteResult.textContent = "";
-          loadAgents();
-        }).catch(function (e) {
-          promoteResult.textContent = t("error.prefix") + e.message;
-        });
-      };
-      promoteRow.appendChild(promoteBtn);
-      promoteRow.appendChild(promoteResult);
-      card.appendChild(promoteRow);
-    }
-
-    // Borrar (M3, ct-2026-07-22-1301 + paso 2; el principal incluido desde
-    // T76, ct-2026-08-27-1752 — "no puedo borrar a la gente principal...
-    // a mí no me interesa [los problemas], yo lo quiero, como yo lo
-    // digo"): TODOS los agentes pueden borrarse ahora, mismo modal de
-    // confirmación que ya existía (no uno nuevo). "Borrar" al principal
-    // no deja la fila vacía porque nunca fue una fila — lo vacía a KV
-    // (store.ClearPrincipalAgent), el mismo estado de una instalación
-    // recién hecha.
-    //
-    // T86 (ct-2026-08-28-0451): envuelto en .agentcard-actions, como las
-    // otras dos filas de botones (Guardar/Ping) — antes iba suelto
-    // directo en `card`, sin el margin-top:10px que .agentcard-actions ya
-    // da, así que el espacio contra "Ping" quedaba distinto del espacio
-    // entre las otras filas ("espaciados distintos entre sí", boss).
-    var deleteRow = document.createElement("div");
-    deleteRow.className = "agentcard-actions";
-    var deleteBtn = document.createElement("button");
-    deleteBtn.className = "btn danger sm";
-    deleteBtn.textContent = t("action.delete_agent");
-    deleteBtn.onclick = function () { openDeleteAgentModal(a); };
-    deleteRow.appendChild(deleteBtn);
-    card.appendChild(deleteRow);
 
     // Números asignados (T86, ct-2026-08-28-0451): el `if (!isPrincipal)`
     // que vivía acá describía el mundo anterior a T70 (ct-2026-08-27-1404)
@@ -1664,6 +1635,65 @@
     renderAssignedNumbers(assignedList, a.agent_id);
 
     card.appendChild(renderAssignSearch(a.agent_id, assignedList));
+
+    // Botones, TODOS abajo y con aire (T197, boss: «los botones todos
+    // hacia abajo dejando aire»): Ping y Promover a la izquierda; Borrar al
+    // otro extremo y con menos peso, para que no quede a un dedo de los
+    // demás.
+    var footer = document.createElement("div");
+    footer.className = "agentcard-footer";
+    // Ping por-agente (M2, ct-2026-07-22-1301). Su resultado también
+    // queda en la frase de estado de arriba (agentLastPing).
+    var pingBtn = document.createElement("button");
+    pingBtn.className = "smbtn";
+    pingBtn.textContent = t("agent.ping_button");
+    var pingResult = document.createElement("span");
+    pingResult.className = "agentpingresult";
+    pingBtn.onclick = function () {
+      pingResult.textContent = t("agent.sending_ping");
+      post("/api/admin/capi-ping", { agent_id: a.agent_id }).then(function (d) {
+        // d.result: texto armado por el backend (Go) — servidor, no
+        // catálogo. Anotado para la etapa 3 (ver nota del contrato), sin
+        // tocarlo acá.
+        pingResult.textContent = (d.ok ? "✓ " : "✗ ") + d.result;
+        agentLastPing[a.agent_id] = !!d.ok;
+        status.textContent = agentStatusText(a);
+      }).catch(function (e) {
+        pingResult.textContent = t("error.prefix") + e.message;
+      });
+    };
+    footer.appendChild(pingBtn);
+    // Cambiar de rol (T76, ct-2026-08-27-1752, boss verbatim: "poder
+    // cambiar si tengo un secundario a al principal de manera rápida") —
+    // click directo, sin modal ni confirmación: el dueño lo pidió rápido y
+    // explícitamente rechazó cualquier candado nuevo ("me da lo mismo que
+    // piensen que van a haber problemas... yo lo quiero, como yo lo
+    // digo"). Solo en la card de un SECUNDARIO — "promoverse a sí mismo"
+    // no es una acción.
+    if (!isPrincipal) {
+      var promoteBtn = document.createElement("button");
+      promoteBtn.className = "btn gho sm";
+      promoteBtn.textContent = t("action.promote_to_principal");
+      promoteBtn.onclick = function () {
+        pingResult.textContent = t("agent.promoting");
+        post("/api/admin/agent-promote", { agent_id: a.agent_id }).then(function () {
+          pingResult.textContent = "";
+          loadAgents();
+        }).catch(function (e) {
+          pingResult.textContent = t("error.prefix") + e.message;
+        });
+      };
+      footer.appendChild(promoteBtn);
+    }
+    footer.appendChild(pingResult);
+    // Borrar (M3 + T76: todos los agentes, el principal incluido): el mismo
+    // modal de confirmación de siempre, que dice cuántos chats se sueltan.
+    var deleteBtn = document.createElement("button");
+    deleteBtn.className = "btn sm agentdelete";
+    deleteBtn.textContent = t("action.delete_agent");
+    deleteBtn.onclick = function () { openDeleteAgentModal(a); };
+    footer.appendChild(deleteBtn);
+    card.appendChild(footer);
 
     return card;
   }
@@ -1764,27 +1794,22 @@
     // sin tocar — 8 casos verdes), mismo llenado que el onpaste de más
     // abajo (aplicado vía applyParsedCredentials): esta zona solo cambia
     // DE DÓNDE llega el texto, nunca cómo se interpreta.
-    var pasteZoneInput = agentInput(form, t("label.paste_credentials"), "", {
+    var pasteZoneInput = agentInput(form, t("agent.paste_label"), "", {
       placeholder: t("placeholder.antenna_line"),
       hint: t("hint.antenna_paste_create"),
     });
 
     // T140 (ct-2026-09-05-1607, el dueño: "que solo se requiera el campo
     // del pegado de antena, nada de ediciones a mano") — los 5 campos
-    // individuales dejan de ser el camino normal: quedan detrás de este
-    // toggle, colapsados por defecto sea que el pegado los haya llenado
-    // todos o no. Siguen ahí para corrección puntual, nunca a la vista
-    // por defecto — "un campo en vez de seis" (el mismo pedido resuelve
-    // de paso el desorden de la zona).
-    var manualToggle = document.createElement("button");
-    manualToggle.className = "btn gho sm manualfieldstoggle";
-    manualToggle.type = "button";
-    manualToggle.textContent = t("label.edit_fields_manually");
-    form.appendChild(manualToggle);
-
-    var manualFields = document.createElement("div");
-    manualFields.className = "hidden";
-    manualToggle.onclick = function () { manualFields.classList.toggle("hidden"); };
+    // individuales dejan de ser el camino normal: quedan en «Avanzado»,
+    // cerrado por defecto sea que el pegado los haya llenado todos o no.
+    // T197: el mismo <details> que la tarjeta de cada agente, para que las
+    // dos digan lo mismo de la misma forma.
+    var manualFields = document.createElement("details");
+    manualFields.className = "agentadvanced";
+    var manualSummary = document.createElement("summary");
+    manualSummary.textContent = t("agent.advanced");
+    manualFields.appendChild(manualSummary);
 
     var idInput = agentInput(manualFields, t("label.agent_id"), "", { placeholder: t("placeholder.agent_id_example") });
     var nameInput = agentInput(manualFields, t("modal.name_heading"), "", { placeholder: t("placeholder.agent_name") });
@@ -1851,10 +1876,10 @@
 
     createBtn.onclick = function () {
       if (!idInput.value.trim() || !endpointInput.value.trim() || !terminalInput.value.trim() || !pinInput.value.trim()) {
-        // T140: los campos que faltan viven detrás de "Editar campos
-        // manualmente" — el mensaje de error no sirve de nada si lo que
-        // falta queda escondido, así que esto los muestra de una.
-        manualFields.classList.remove("hidden");
+        // T140: los campos que faltan viven en «Avanzado» — el mensaje de
+        // error no sirve de nada si lo que falta queda escondido, así que
+        // esto los muestra de una.
+        manualFields.open = true;
         result.textContent = t("validation.agent_required_fields");
         return;
       }
