@@ -30,7 +30,7 @@ Respuesta: el `MessageId` (string) o boolean. Métodos que usamos: `sendText`,
 - `event == "onStateChanged"` → actualizar `Connected` (CONNECTED vs el resto).
 
 **Message (campos que usamos):** `from`/`chatId` (ChatId), `sender`/`author`, `id`
-(MessageId, ej. `false_447...@c.us_HEX`), `body` (texto para type chat; open-wa ya
+(MessageId, ej. `false_555...@c.us_HEX`), `body` (texto para type chat; open-wa ya
 desenvuelve los contenedores — no hace falta el `unwrapMessage` de whatsmeow), `type`, `t`
 (timestamp), `notifyName`, `fromMe`, `isGroupMsg`, `caption`/`mimetype` (media, post-MVP).
 
