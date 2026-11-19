@@ -647,13 +647,25 @@ func TestAReadyUpdateThatIsNoLongerNewerIsNotLaunched(t *testing.T) {
 	u.cfg.CurrentVersion = "9.9.9" // installed by hand in the meantime
 	h.idle = ""
 
-	u.tick(context.Background())
-
+	if got := u.tick(context.Background()); got != u.retry {
+		t.Errorf("discarded update: next tick in %s, want %s", got, u.retry)
+	}
 	if len(h.launched) != 0 || h.stops != 0 {
 		t.Error("installed a version that is not newer than the one running")
 	}
 	if u.load().Ready != nil {
 		t.Error("kept waiting with an update that can never be installed")
+	}
+	if _, err := os.Stat(u.updatesDir()); !os.IsNotExist(err) {
+		t.Errorf("discarded update: stat updates directory = %v, want it gone", err)
+	}
+
+	next := newFixture(t, "9.9.10")
+	u.apiBase, u.downloadBase = next.srv.URL, next.srv.URL
+	h.idle = BlockedBusy
+	u.tick(context.Background())
+	if ready := u.load().Ready; ready == nil || ready.Version != next.version {
+		t.Errorf("next tick: Ready = %+v, want version %s", ready, next.version)
 	}
 }
 
@@ -683,6 +695,16 @@ func TestAnInstallerThatWillNotStartIsAFailureAndPiumyKeepsRunning(t *testing.T)
 	st := u.load()
 	if st.Pending != "" || st.Failure == nil || st.Failure.Count != 1 {
 		t.Errorf("state %+v: want pending cleared and one failure", st)
+	}
+	if !f.downloadedPackage() {
+		t.Fatal("setup: installer package was never downloaded")
+	}
+
+	requestsBefore := len(f.requested())
+	u.tick(context.Background())
+	requests := f.requested()[requestsBefore:]
+	if len(requests) != 1 || requests[0] != "/repos/clevercat64/Piumy/releases/latest" {
+		t.Errorf("tick after failure: requests = %v, want only a latest release check", requests)
 	}
 }
 

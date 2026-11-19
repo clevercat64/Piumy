@@ -173,8 +173,11 @@ func (u *Updater) tick(ctx context.Context) time.Duration {
 	if u.load().Ready == nil {
 		u.check(ctx)
 	}
-	if u.load().Ready != nil && u.apply() == applyBlocked {
-		return u.retry // a verified update is waiting for a quiet moment
+	if u.load().Ready != nil {
+		switch u.apply() {
+		case applyBlocked, applyDropped:
+			return u.retry
+		}
 	}
 	return window
 }

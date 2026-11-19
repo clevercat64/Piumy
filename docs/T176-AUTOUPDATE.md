@@ -37,8 +37,12 @@ flowchart TD
     RD --> Q{puertas de la máquina:<br/>único Piumy.exe, cola vacía,<br/>sin despacho en vuelo}
     Q -->|alguna falla| W[espera 5 min y vuelve a mirar]
     W --> Q
-    Q -->|todas| P[re-hash del archivo, anota update.pending, lanza el instalador desprendido]
-    P --> ST[stop propio: cierre ordenado]
+    Q -->|todas| RV{¿pasa la re-verificación del archivo?}
+    RV -->|no| DR[anota el fallo, borra updates/, espera 5 min]
+    DR --> E
+    RV -->|sí| P[anota update.pending e intenta lanzar el instalador desprendido]
+    P -->|falla| DR
+    P -->|listo| ST[stop propio: cierre ordenado]
     ST --> N[el instalador deja el programa nuevo y lo arranca]
     N --> R
 ```

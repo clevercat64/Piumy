@@ -101,6 +101,8 @@ func (u *Updater) fail(version, reason string) {
 		s.Failure = f
 		s.Ready = nil
 	})
+	// With Ready cleared, none of the downloads are referenced.
+	os.RemoveAll(u.updatesDir())
 }
 
 // updatesDir holds the downloads; it is removed once nothing needs it.
