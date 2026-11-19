@@ -146,6 +146,10 @@ func validateSend(ctx context.Context, d Deps, active ActiveDispatch, bound bool
 	if store.ChatIsOff(c.Status) {
 		return store.Chat{}, "refusing to send: " + to + " is " + c.Status + " — the owner must change its status first"
 	}
+	// A boss dispatch stays bound after consumption, so only an unconsumed one can bypass a pause.
+	if c.PausedUntil > time.Now().Unix() && !(bound && !active.Done && active.Level == LevelBoss) {
+		return store.Chat{}, "refusing to send: the owner paused the agent on " + to + " — close this turn with silent_act"
+	}
 	return c, ""
 }
 

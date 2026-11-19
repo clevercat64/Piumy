@@ -1232,6 +1232,23 @@ Piumy. Ver `docs/F1A-STORE-ACCESO.md`.
   la cola de despacho sino una RELECTURA — la usa `capipush.stillPending` para revalidar un
   burst justo antes de despacharlo. Test: `TestUnhandledIDsBoundsAndScope`.
 - `MarkPendingBefore(chatJID, tsResp)` (T15, ct-2026-08-05-123241) — inverso exacto de `MarkHandledBefore` (mismo bound de ts): `reject_draft` la llama cuando el borrador rechazado no llegó al tope de rondas, para que el mensaje que lo disparó vuelva a `PendingDedicated` y el próximo sweep de `capipush` lo redespache — estado honesto (el pedido sigue sin contestar), no un canal aparte para "rechazado".
+- **T208 (ct-2026-11-11-2206-t208) — pausa del agente por chat (`store/pause.go`).**
+  `chats.paused_until` (migración aditiva, `DEFAULT 0`) es un PISO, no un
+  temporizador: ningún inbound con `ts <= paused_until` se despacha, ni
+  siquiera después de que la pausa vence, porque lo que llegó durante la
+  pausa lo atendió el dueño. `notPausedSQL` (`pending.go`: `m.ts >
+  c.paused_until`) entra en `pendingDedicatedWhere` (que ahora usan
+  `PendingDedicated` y `PendingChatsDispatch`), en
+  `CountRecentPendingNonBoss` y en `UnhandledIDs`, así que una pausa que cae
+  después del barrido igual frena la ráfaga. `SetPausedUntil(jid, until)`
+  fija el piso de un chat existente (no crea filas). `PausedForever =
+  253402300799` (año 9999, cabe exacto en un número de JavaScript) es la
+  pausa sin fin. `ResumeChat(jid, now)` sube el piso a `now` solo si la
+  pausa sigue activa: lo de la pausa queda atrás, y una pausa ya vencida no
+  se toca. `Chat.PausedUntil` se lee con el resto de la fila (`scanChat`).
+  `store.OwnerModel = "boss"` (`outbox.go`) etiqueta lo que el dueño
+  escribió en persona, desde el teléfono (T100) o desde el tablero (T208).
+  Detalle y decisiones en `docs/T208-PAUSA-Y-ENVIO-DEL-DUENO.md`.
 - `CountPendingDedicated()` — mismo filtro que `PendingDedicated` (T5:
   también `mode IN ('dedicated','auto')`, en lockstep — un conteo distinto
   haría mentir al semáforo) / `CountOutboundSince(ts)`
@@ -2361,7 +2378,7 @@ retry/backoff/dead-letter, y el facade `Controller`. Ver
   propio celular. El entrante del contacto quedaba `handled=0`, seguía en
   `PendingDedicated`, y el agente lo despachaba.
   - Guarda el saliente (`store.AddMessage`, `FromMe:true`, `Model:"boss"` —
-    constante `ownerReplyModel`, para no confundirlo con la respuesta de un
+    constante `store.OwnerModel` desde T208, para no confundirlo con la respuesta de un
     modelo de IA) — **deliberado, no solo cerrar el pendiente**: el tablero
     tampoco mostraba lo que el dueño escribió desde el teléfono, así que la
     conversación se veía incompleta y el agente perdía el contexto de lo ya
@@ -5164,6 +5181,14 @@ el modelo vigente: tracking por `terminal_id`, default DENY) +
     dejó de ser `readonly` como consecuencia.
 
 **send_message + draft** (`send.go`, F4c completa la rama `ready → send|draft`)
+- **T208 — `validateSend` respeta la pausa del dueño.** Si
+  `chat.PausedUntil > ahora`, rechaza con «refusing to send: the owner
+  paused the agent on <to> — close this turn with silent_act». La única
+  excepción es un despacho del dueño (`LevelBoss`) vinculado y todavía SIN
+  consumir (`bound && !active.Done`): un despacho de jefe sigue vinculado
+  después de consumirse, así que solo el primero pasa. Un despacho sin
+  vínculo no puede ser `LevelBoss` (`Gate.Active` devuelve
+  `ActiveDispatch{}`), por eso ese caso no tiene prueba propia.
 - `validateSend(ctx context.Context, d Deps, active ActiveDispatch, bound bool, to, model, policyVersion string) (store.Chat, string)`
   — firma actualizada por T147 (ct-2026-09-07): ya no recibe `*Gate` y
   llama `gate.Active` internamente (dos lecturas independientes por
@@ -9060,6 +9085,19 @@ DB-admin/draft-approval (F4c) + el seam de tokens (F4d) — admin directo
 del dueño desde la LAN, sin agente de por medio. Grupo/perfil NO están acá
 (solo MCP, F4c).
 
+- **T208 (ct-2026-11-11-2206-t208) — el dueño escribe y pausa desde el
+  tablero (`owner_chat.go`, registrado en `registerAdminRoutes`).**
+  `POST /api/admin/send {chat_id, text}` encola con `store.OwnerModel` por
+  el mismo outbox que el agente (governor y ventanas aleatorias anti-ban) y
+  DESPUÉS marca atendido lo pendiente hasta ese segundo
+  (`MarkHandledBefore`): si encolar falla, lo pendiente sigue para el
+  agente. Rechaza `status@broadcast` (escribir ahí publicaría un estado) y
+  un chat que no existe (404). `POST /api/admin/pause {chat_id, until}`:
+  `until` futuro = pausa hasta esa hora unix (tope `PausedForever`), `0` =
+  sin fin, `-1` = reanudar; `until` ausente = 400, porque 0 ya significa
+  «para siempre». `GET /api/chats` expone `paused_until` en cada fila,
+  también en 0. Sin medir todavía: WhatsApp real y la parte del tablero
+  (T208 parte B).
 - **T174a (ct-2026-11-10-210158) — `GET`/`POST /api/admin/drift-reports`
   (`drift.go`).** El interruptor de los reportes de drift, opcionales y
   apagados por defecto. `GET` → `{enabled, url}`: `enabled` es el valor

@@ -293,6 +293,12 @@ var columnMigrations = []string{
 	// that MostRecentRejectionAt's MAX() could mistake for a real,
 	// very-old timestamp.
 	`ALTER TABLE drafts ADD COLUMN rejected_ts INTEGER`,
+	// T208 (ct-2026-11-11-2206-t208): the owner paused the agent on this
+	// chat. 0 (the DEFAULT, and every pre-existing row) = not paused;
+	// otherwise a unix second, and no message with ts <= paused_until is ever
+	// dispatched (notPausedSQL). A floor, not a timer: nothing has to run when
+	// a temporal pause ends, and what arrived during it stays behind for good.
+	`ALTER TABLE chats ADD COLUMN paused_until INTEGER NOT NULL DEFAULT 0`,
 }
 
 // confirmationModeMigration adds chats.confirmation_mode with a flat

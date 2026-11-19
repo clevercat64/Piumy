@@ -7,9 +7,10 @@ type Outbox struct {
 	ToJID     string `json:"to_jid"`
 	Text      string `json:"text"`
 	CreatedTS int64  `json:"created_ts"`
-	// Model is which model queued this reply (empty for a human-sent
-	// REST/dashboard message). Carried through to messages.model once the
-	// adapter actually sends it and knows the real WhatsApp message ID.
+	// Model is which model queued this reply (empty for a gateway notice,
+	// OwnerModel for what the owner wrote from the dashboard). Carried
+	// through to messages.model once the adapter actually sends it and knows
+	// the real WhatsApp message ID.
 	Model string `json:"model,omitempty"`
 	// RetryCount / NextRetryTS / LastError / DeadLetter: anti-ban retry
 	// state (never resend in a tight loop). NextRetryTS is a backoff
@@ -47,9 +48,14 @@ type Outbox struct {
 	MediaSeconds int `json:"media_seconds,omitempty"`
 }
 
+// OwnerModel is messages.model (and Outbox.Model on the way there) of what the
+// owner wrote in person: from the phone (corepipeline.handleOwnerReply, T100)
+// or from the dashboard (POST /api/admin/send, T208). One tag, so the
+// conversation reads both the same way.
+const OwnerModel = "boss"
+
 // Enqueue queues an outbound message with no model attribution — for
-// callers with no model concept (e.g. a human manually sending via
-// REST/dashboard).
+// callers with no model concept (the gateway's own notices to a chat).
 func (s *Store) Enqueue(toJID, text string, ts int64) error {
 	return s.EnqueueWithModel(toJID, text, ts, "")
 }

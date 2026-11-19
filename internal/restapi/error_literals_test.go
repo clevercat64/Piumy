@@ -54,6 +54,13 @@ var errorLiteralExceptions = map[string]string{
 	"chat_jid and a positive tokens are required": "técnico — endpoint de metering, nunca llamado desde app.js (ningún caller real en el tablero)",
 	"agent_id, endpoint, antenna_terminal_id and pinpass are required": "técnico — app.js valida los 4 campos ANTES de mandar el POST (createBtn.onclick), este contrato solo se viola llamando el endpoint directo",
 
+	// T208 (ct-2026-11-11-2206-t208): POST /api/admin/send y /api/admin/pause.
+	"text is required":                          "técnico — contrato de API del envío del dueño: el front no habilita Enviar con la caja vacía; solo se viola llamando el endpoint directo",
+	"status@broadcast cannot be written to":     "técnico — el tablero no ofrece Estados como conversación; escribir ahí PUBLICARÍA un estado, solo se llega llamando el endpoint directo",
+	"chat not found":                            "técnico — el tablero solo ofrece chats que existen; solo se viola llamando el endpoint directo",
+	"until is required":                         "técnico — contrato de API de la pausa: el front siempre manda until (0 = sin fin, así que su ausencia no se lee como 0); solo se viola llamando el endpoint directo",
+	"until must be a future unix time, 0 or -1": "técnico — contrato de API de la pausa: el valor sale de los botones Pausar/Reanudar del tablero, que calculan la hora; solo se viola llamando el endpoint directo",
+
 	"mode must be none|discretion|always":                "técnico — contrato de API, el valor sale de un <select> del tablero",
 	"mode must be dedicated|auto":                        "técnico — contrato de API, el valor sale de un <select> del tablero",
 	"level must be boss|auto|confirm|unattended|ignored": "técnico — contrato de API, el valor sale de un <select> del tablero",

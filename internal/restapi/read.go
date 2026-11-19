@@ -316,6 +316,8 @@ type chatOut struct {
 	// Empty for a "group_member" pseudo-row (not a real chats row, ChatOrigin
 	// never runs on it — same convention as HistoryState/RulesSource above).
 	Origin string `json:"origin,omitempty"`
+	// Keep zero explicit so the dashboard can read the same key on every row.
+	PausedUntil int64 `json:"paused_until"`
 }
 
 // resolveCanonical returns jid's real-number identity via LIDResolver when
@@ -703,6 +705,7 @@ func (d Deps) handleChats(w http.ResponseWriter, r *http.Request) {
 			ResolvedNumber: resolvedNumber,
 			IsContact:      c.ContactName != "",
 			RulesSource:    rulesSourceFor(c, isGroup, rulesTypeGroup, rulesOriginNew, rulesOriginContact),
+			PausedUntil:    c.PausedUntil,
 		}})
 	}
 	for _, m := range members {

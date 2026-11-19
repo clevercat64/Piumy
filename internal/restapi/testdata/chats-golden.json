@@ -20,7 +20,8 @@
     "history_state": "pending",
     "resolved_number": "",
     "is_contact": false,
-    "origin": "inbound_spoke"
+    "origin": "inbound_spoke",
+    "paused_until": 0
   },
   {
     "jid": "5550000016@g.us",
@@ -43,7 +44,8 @@
     "history_state": "pending",
     "resolved_number": "",
     "is_contact": false,
-    "origin": "inbound_spoke"
+    "origin": "inbound_spoke",
+    "paused_until": 0
   },
   {
     "jid": "5550000015@s.whatsapp.net",
@@ -65,7 +67,8 @@
     "history_state": "pending",
     "resolved_number": "",
     "is_contact": false,
-    "origin": "synced_contact"
+    "origin": "synced_contact",
+    "paused_until": 0
   },
   {
     "jid": "5550000014@s.whatsapp.net",
@@ -87,7 +90,8 @@
     "history_state": "pending",
     "resolved_number": "",
     "is_contact": false,
-    "origin": "synced_contact"
+    "origin": "synced_contact",
+    "paused_until": 0
   },
   {
     "jid": "5550000013@s.whatsapp.net",
@@ -110,7 +114,8 @@
     "history_state": "pending",
     "resolved_number": "",
     "is_contact": true,
-    "origin": "synced_contact"
+    "origin": "synced_contact",
+    "paused_until": 0
   },
   {
     "jid": "5550000012@s.whatsapp.net",
@@ -133,7 +138,8 @@
     "history_state": "pending",
     "resolved_number": "",
     "is_contact": true,
-    "origin": "synced_contact"
+    "origin": "synced_contact",
+    "paused_until": 0
   },
   {
     "jid": "5550000011@s.whatsapp.net",
@@ -156,7 +162,8 @@
     "history_state": "pending",
     "resolved_number": "",
     "is_contact": true,
-    "origin": "synced_contact"
+    "origin": "synced_contact",
+    "paused_until": 0
   },
   {
     "jid": "5550000009@s.whatsapp.net",
@@ -180,7 +187,8 @@
     "history_state": "pending",
     "resolved_number": "",
     "is_contact": true,
-    "origin": "synced_contact"
+    "origin": "synced_contact",
+    "paused_until": 0
   },
   {
     "jid": "5550000008@s.whatsapp.net",
@@ -204,7 +212,8 @@
     "history_state": "pending",
     "resolved_number": "",
     "is_contact": true,
-    "origin": "inbound_spoke"
+    "origin": "inbound_spoke",
+    "paused_until": 0
   },
   {
     "jid": "5550000006@s.whatsapp.net",
@@ -228,7 +237,8 @@
     "history_state": "pending",
     "resolved_number": "",
     "is_contact": true,
-    "origin": "synced_contact"
+    "origin": "synced_contact",
+    "paused_until": 0
   },
   {
     "jid": "5550000005@s.whatsapp.net",
@@ -252,7 +262,8 @@
     "history_state": "pending",
     "resolved_number": "",
     "is_contact": true,
-    "origin": "inbound_spoke"
+    "origin": "inbound_spoke",
+    "paused_until": 0
   },
   {
     "jid": "5550000003@lid",
@@ -275,7 +286,8 @@
     "history_state": "pending",
     "resolved_number": "5550000004@s.whatsapp.net",
     "is_contact": false,
-    "origin": "inbound_spoke"
+    "origin": "inbound_spoke",
+    "paused_until": 0
   },
   {
     "jid": "5550000002@s.whatsapp.net",
@@ -297,7 +309,8 @@
     "history_state": "pending",
     "resolved_number": "",
     "is_contact": false,
-    "origin": "synced_contact"
+    "origin": "synced_contact",
+    "paused_until": 0
   },
   {
     "jid": "5550000001@s.whatsapp.net",
@@ -320,7 +333,8 @@
     "history_state": "pending",
     "resolved_number": "",
     "is_contact": false,
-    "origin": "inbound_spoke"
+    "origin": "inbound_spoke",
+    "paused_until": 0
   },
   {
     "jid": "5550000017@s.whatsapp.net",
@@ -341,7 +355,8 @@
     "group_jid": "5550000016@g.us",
     "has_messages": false,
     "resolved_number": "",
-    "is_contact": false
+    "is_contact": false,
+    "paused_until": 0
   },
   {
     "jid": "5550000018@s.whatsapp.net",
@@ -362,7 +377,8 @@
     "group_jid": "5550000016@g.us",
     "has_messages": false,
     "resolved_number": "",
-    "is_contact": false
+    "is_contact": false,
+    "paused_until": 0
   },
   {
     "jid": "5550000020@lid",
@@ -383,7 +399,8 @@
     "group_jid": "5550000016@g.us",
     "has_messages": false,
     "resolved_number": "5550000013@s.whatsapp.net",
-    "is_contact": true
+    "is_contact": true,
+    "paused_until": 0
   },
   {
     "jid": "5550000022@s.whatsapp.net",
@@ -404,7 +421,8 @@
     "group_jid": "5550000016@g.us",
     "has_messages": false,
     "resolved_number": "",
-    "is_contact": false
+    "is_contact": false,
+    "paused_until": 0
   },
   {
     "jid": "5550000024@s.whatsapp.net",
@@ -425,7 +443,8 @@
     "group_jid": "5550000023@g.us",
     "has_messages": false,
     "resolved_number": "",
-    "is_contact": false
+    "is_contact": false,
+    "paused_until": 0
   },
   {
     "jid": "5550000025@s.whatsapp.net",
@@ -446,7 +465,8 @@
     "group_jid": "5550000023@g.us",
     "has_messages": false,
     "resolved_number": "",
-    "is_contact": false
+    "is_contact": false,
+    "paused_until": 0
   },
   {
     "jid": "5550000027@lid",
@@ -467,7 +487,8 @@
     "group_jid": "5550000023@g.us",
     "has_messages": false,
     "resolved_number": "5550000012@s.whatsapp.net",
-    "is_contact": true
+    "is_contact": true,
+    "paused_until": 0
   },
   {
     "jid": "5550000029@s.whatsapp.net",
@@ -488,6 +509,7 @@
     "group_jid": "5550000023@g.us",
     "has_messages": false,
     "resolved_number": "",
-    "is_contact": false
+    "is_contact": false,
+    "paused_until": 0
   }
 ]

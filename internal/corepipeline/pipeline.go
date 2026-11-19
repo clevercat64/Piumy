@@ -323,12 +323,6 @@ func (p *Pipeline) handleInbound(msg gateway.Inbound) {
 	}
 }
 
-// ownerReplyModel tags a stored message as the owner's own reply (from
-// another linked device, not an AI-generated one) — messages.model is
-// otherwise "" for inbound and the model name for an agent's outbound reply
-// (T100, ct-2026-08-29-1649).
-const ownerReplyModel = "boss"
-
 // handleOwnerReply persists an outbound message the OWNER sent to a real
 // contact from another device (the phone) and closes that chat's earlier
 // pending queue — T100 (ct-2026-08-29-1649). whatsmeow.handleMessage only
@@ -353,7 +347,7 @@ func (p *Pipeline) handleOwnerReply(msg gateway.Inbound) {
 		Text:    msg.Text,
 		TS:      msg.TS,
 		Type:    msg.Type,
-		Model:   ownerReplyModel,
+		Model:   store.OwnerModel,
 	}
 	if err := p.store.AddMessage(m); err != nil {
 		log.Printf("corepipeline: store owner reply: %v", err)

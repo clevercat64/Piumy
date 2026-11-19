@@ -50,6 +50,8 @@ func markHandledForDispatch(st *store.Store, chatJID, sender string, ts int64) e
 }
 
 func (d Deps) registerAdminRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/admin/send", d.auth(d.handleOwnerSend))
+	mux.HandleFunc("POST /api/admin/pause", d.auth(d.handlePauseChat))
 	mux.HandleFunc("POST /api/admin/chat-rules", d.auth(d.handleSetChatRules))
 	mux.HandleFunc("POST /api/admin/is-boss", d.auth(d.handleSetIsBoss))
 	mux.HandleFunc("POST /api/admin/approver", d.auth(d.handleSetIsApprover))

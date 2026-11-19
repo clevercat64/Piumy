@@ -137,6 +137,13 @@ type Chat struct {
 	// silent_act call — a single last-reason slot, not a history.
 	SilenceReason string `json:"silence_reason,omitempty"`
 	SilenceAt     int64  `json:"silence_at,omitempty"`
+
+	// PausedUntil (T208, ct-2026-11-11-2206-t208): the owner paused the agent
+	// on this chat. 0 = not paused; PausedForever = no end; otherwise the
+	// unix second the pause ends. A value in the past is an ended pause, kept
+	// because it is the floor below which messages are never dispatched
+	// (notPausedSQL) — callers compare it with the clock, they never clear it.
+	PausedUntil int64 `json:"paused_until"`
 }
 
 // IsGroupJID reports whether jid is a WhatsApp group chat (@g.us vs
@@ -973,7 +980,7 @@ const chatColumns = `jid, COALESCE(name,''), mode, last_ts, unread,
 	confirmation_mode, COALESCE(confirmer,''),
 	COALESCE(description,''), COALESCE(group_invite_link,''),
 	COALESCE(claimed_by,''), claimed_until, mode_source, COALESCE(contact_name,''),
-	history_state, COALESCE(silence_reason,''), silence_at, config_level_source`
+	history_state, COALESCE(silence_reason,''), silence_at, config_level_source, paused_until`
 
 func scanChat(scan func(dest ...any) error) (Chat, error) {
 	var c Chat
@@ -981,7 +988,7 @@ func scanChat(scan func(dest ...any) error) (Chat, error) {
 	err := scan(&c.JID, &c.Name, &c.Mode, &c.LastTS, &c.Unread, &active, &archived, &c.Status, &isBoss, &isApprover,
 		&c.Memory, &c.Context, &c.Rules, &c.ConfirmationMode, &c.Confirmer,
 		&c.Description, &c.GroupInviteLink, &c.ClaimedBy, &c.ClaimedUntil, &c.ModeSource, &c.ContactName,
-		&c.HistoryState, &c.SilenceReason, &c.SilenceAt, &c.ConfigLevelSource)
+		&c.HistoryState, &c.SilenceReason, &c.SilenceAt, &c.ConfigLevelSource, &c.PausedUntil)
 	if err != nil {
 		return Chat{}, err
 	}

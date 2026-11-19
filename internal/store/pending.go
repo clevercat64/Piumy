@@ -15,6 +15,9 @@ const offStatusSQL = `c.status NOT IN ('ignored', 'blacklist')`
 // in sync.
 const notStatusBroadcastSQL = `c.jid != '` + StatusBroadcastJID + `'`
 
+// The dispatch floor still excludes the backlog after the pause expires.
+const notPausedSQL = `m.ts > c.paused_until`
+
 // Pending is a chat waiting for a reply: its most recent message is inbound
 // (from_me=0) — the contact has the last word. The golden rule: the agent
 // must NOT always have the last word, so a chat where WE spoke last is never
@@ -106,10 +109,7 @@ func (s *Store) PendingChatsDispatch(limit int, now int64) ([]Pending, error) {
 			COALESCE(c.claimed_by,''), c.claimed_until
 		FROM messages m
 		JOIN chats c ON c.jid = m.chat_jid
-		WHERE m.from_me = 0 AND m.handled = 0
-		AND c.mode IN ('dedicated', 'auto')
-		AND (c.is_boss = 1 OR (c.active = 1 AND `+offStatusSQL+`))
-		AND `+notStatusBroadcastSQL+`
+		WHERE `+pendingDedicatedWhere+`
 		AND m.rowid = (
 			SELECT m2.rowid FROM messages m2
 			WHERE m2.chat_jid = m.chat_jid AND m2.from_me = 0 AND m2.handled = 0
@@ -189,9 +189,7 @@ func (s *Store) PendingDedicated(limit int) ([]Message, error) {
 	rows, err := s.db.Query(`SELECT `+messageColumns+`
 		FROM messages m
 		JOIN chats c ON c.jid = m.chat_jid
-		WHERE m.from_me = 0 AND m.handled = 0 AND c.mode IN ('dedicated', 'auto')
-		AND (c.is_boss = 1 OR (c.active = 1 AND `+offStatusSQL+`))
-		AND `+notStatusBroadcastSQL+`
+		WHERE `+pendingDedicatedWhere+`
 		ORDER BY m.ts ASC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -203,9 +201,13 @@ func (s *Store) PendingDedicated(limit int) ([]Message, error) {
 // with fromTS <= ts <= toTS. capipush.dispatch re-reads its burst through it
 // right before dispatching (T196): the sweep's PendingDedicated snapshot can
 // be stale by then, and a burst the agent already closed must not go out again.
+// The owner's pause (T208) counts as "no longer pending" for the same reason:
+// one that landed after the sweep read the queue holds the burst back here.
 func (s *Store) UnhandledIDs(chatJID string, fromTS, toTS int64) (map[string]bool, error) {
-	rows, err := s.db.Query(`SELECT id FROM messages
-		WHERE chat_jid = ? AND from_me = 0 AND handled = 0 AND ts BETWEEN ? AND ?`, chatJID, fromTS, toTS)
+	rows, err := s.db.Query(`SELECT m.id FROM messages m
+		JOIN chats c ON c.jid = m.chat_jid
+		WHERE m.chat_jid = ? AND m.from_me = 0 AND m.handled = 0 AND m.ts BETWEEN ? AND ?
+		AND `+notPausedSQL, chatJID, fromTS, toTS)
 	if err != nil {
 		return nil, err
 	}
@@ -268,15 +270,18 @@ func (s *Store) MarkPendingBefore(chatJID string, tsResp int64) error {
 }
 
 // pendingDedicatedWhere is the ONE condition both counts below share with
-// PendingDedicated — same mode/config_level gate, including the
-// StatusBroadcastJID exclusion (T84, ct-2026-08-27-2314). It is a single
-// constant rather than three copies because T5 already warned what a
-// mismatch costs: the queue count would lie about what is actually pending.
-// Keeping them in lockstep by construction beats keeping them by discipline.
+// PendingDedicated and PendingChatsDispatch — same mode/config_level gate,
+// including the StatusBroadcastJID exclusion (T84, ct-2026-08-27-2314) and
+// the owner's pause (T208). It is a single constant rather than copies
+// because T5 already warned what a mismatch costs: the queue count would lie
+// about what is actually pending. Keeping them in lockstep by construction
+// beats keeping them by discipline — the last two inline copies went when
+// the pause had to join them.
 const pendingDedicatedWhere = `m.from_me = 0 AND m.handled = 0
 	AND c.mode IN ('dedicated', 'auto')
 	AND (c.is_boss = 1 OR (c.active = 1 AND ` + offStatusSQL + `))
-	AND ` + notStatusBroadcastSQL
+	AND ` + notStatusBroadcastSQL + `
+	AND ` + notPausedSQL
 
 // CountPendingDedicated returns the total number of unhandled inbound
 // messages PendingDedicated would return, with no time limit — this is what
@@ -347,6 +352,7 @@ func (s *Store) CountRecentPendingNonBoss(sinceTS int64) (int, error) {
 		WHERE m.from_me = 0 AND m.handled = 0 AND c.mode IN ('dedicated', 'auto')
 		AND c.is_boss = 0 AND c.active = 1 AND `+offStatusSQL+`
 		AND `+notStatusBroadcastSQL+`
+		AND `+notPausedSQL+`
 		AND m.ts >= ?`, sinceTS).Scan(&count)
 	return count, err
 }
