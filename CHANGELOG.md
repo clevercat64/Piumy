@@ -6,6 +6,22 @@ Se actualiza en cada deploy/build junto con el relanzamiento del gateway.
 
 ---
 
+## 0.13.4 — 2026-11-27
+
+### Changed
+- **WhatsApp (whatsmeow) al día**, versión del 26-nov: declara la versión actual de
+  WhatsApp Web y maneja mejor una conexión que se cae a medio camino.
+
+### Fixed
+- **El actualizador ya no se queda medio día sin mirar** después de descartar una descarga
+  vieja: vuelve a consultar a los 5 minutos y borra lo que quedó en disco (T209).
+
+### Notes
+- Base para escribirle a un chat y pausar al agente desde el tablero: el servidor ya lo
+  sabe hacer; los botones llegan en la próxima versión (T208).
+
+---
+
 ## 0.13.3 — 2026-11-12
 
 ### Fixed
