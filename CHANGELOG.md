@@ -6,6 +6,15 @@ Se actualiza en cada deploy/build junto con el relanzamiento del gateway.
 
 ---
 
+## 0.13.5 — 2026-11-27
+
+### Fixed
+- **Los borradores se leen completos en el tablero**: antes el texto se cortaba en una sola
+  línea, en letra chica. Ahora se ve entero, con sus saltos de línea, y en pantallas angostas
+  los botones bajan debajo del texto.
+
+---
+
 ## 0.13.4 — 2026-11-27
 
 ### Changed
