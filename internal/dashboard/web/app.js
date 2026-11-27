@@ -2930,7 +2930,6 @@
       var text = document.createElement("div");
       text.className = "drafttext";
       text.textContent = d.text;
-      text.title = d.text; // se corta con "…" (T188): el borrador completo, al pasar el cursor
       info.appendChild(who);
       info.appendChild(text);
       var actions = document.createElement("div");
